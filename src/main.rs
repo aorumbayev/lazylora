@@ -1,46 +1,31 @@
-use std::io;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::{
-    DefaultTerminal, Frame,
-    buffer::Buffer,
-    layout::Rect,
-    style::Stylize,
-    symbols::border,
-    text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
-};
 
-fn main() -> color_eyre::Result<()> {
+use color_eyre::Result;
+
+mod algorand;
+mod app_state;
+mod tui;
+mod ui;
+
+use app_state::App;
+
+/// Application entry point
+fn main() -> Result<()> {
+    // Setup terminal
     color_eyre::install()?;
-    let terminal = ratatui::init();
-    let result = App::new().run(terminal);
-    ratatui::restore();
-    result
-}
+    let mut terminal = tui::init()?;
 
-/// The main application which holds the state and logic of the application.
-#[derive(Debug, Default)]
-pub struct App {
-    counter: u8,
-    exit: bool,
-}
+    // Create and run app
+    let app_result = App::new().run(&mut terminal);
 
-impl App {
-    /// runs the application's main loop until the user quits
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        while !self.exit {
-            terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events()?;
-        }
-        Ok(())
+    // Restore terminal
+    if let Err(err) = tui::restore() {
+        eprintln!(
+            "Failed to restore terminal. Run `reset` or restart your terminal to recover: {}",
+            err
+        );
     }
 
-    fn draw(&self, frame: &mut Frame) {
-        todo!()
-    }
-
-    fn handle_events(&mut self) -> io::Result<()> {
-        todo!()
-    }
+    // Return the app result
+    app_result
 }
