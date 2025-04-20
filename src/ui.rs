@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
-    symbols::{border, line, scrollbar},
+    symbols::{border, scrollbar},
     text::{Line, Span},
     widgets::{
         Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Scrollbar,
@@ -322,7 +322,7 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     let txn_items: Vec<ListItem> = transactions_to_display
         .iter()
         .enumerate()
-        .map(|(list_idx, (orig_idx, txn))| {
+        .map(|(_list_idx, (orig_idx, txn))| {
             let is_selected = app.selected_transaction_index == Some(*orig_idx);
             let txn_type_style = Style::default().fg(txn.txn_type.color());
 
@@ -603,7 +603,7 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             let table = Table::new(rows, [Constraint::Length(15), Constraint::Min(40)])
                 .block(Block::default())
                 .column_spacing(1)
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+                .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
             frame.render_widget(table, inner_area);
 

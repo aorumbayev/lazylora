@@ -1,0 +1,182 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*"
+
+    workflow_dispatch:
+        inputs:
+            version:
+                description: "Version to release (e.g., v0.1.0)"
+                required: true
+                default: ""
+
+env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: 1
+
+jobs:
+    create-release:
+        runs-on: ubuntu-latest
+        outputs:
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+            tag: ${{ steps.get_tag.outputs.tag }}
+        steps:
+            - name: Get tag
+              id: get_tag
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+                  else
+                    echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Create Release
+              id: create_release
+              uses: actions/create-release@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tag_name: ${{ steps.get_tag.outputs.tag }}
+                  release_name: LazyLora ${{ steps.get_tag.outputs.tag }}
+                  draft: false
+                  prerelease: false
+                  body: |
+                      # LazyLora ${{ steps.get_tag.outputs.tag }}
+
+                      Terminal UI for Algorand blockchain exploration.
+
+                      ## Installation
+
+                      ```bash
+                      curl -fsSL https://raw.githubusercontent.com/aorumbayev/lazylora/main/install.sh | bash
+                      ```
+
+                      ## Manual Installation
+
+                      Download the appropriate binary for your platform and extract it to your PATH.
+
+    build:
+        needs: create-release
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - build: linux
+                      os: ubuntu-latest
+                      target: x86_64-unknown-linux-gnu
+                    - build: macos-x86_64
+                      os: macos-latest
+                      target: x86_64-apple-darwin
+                    - build: macos-aarch64
+                      os: macos-latest
+                      target: aarch64-apple-darwin
+
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Install Rust toolchain
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  target: ${{ matrix.target }}
+                  override: true
+
+            - name: Build
+              uses: actions-rs/cargo@v1
+              with:
+                  command: build
+                  args: --release --target ${{ matrix.target }}
+
+            - name: Prepare package
+              shell: bash
+              run: |
+                  tag_name="${{ needs.create-release.outputs.tag }}"
+                  tag_name="${tag_name/v/}"
+
+                  cd target/${{ matrix.target }}/release
+                  ARCHIVE_NAME="lazylora-${tag_name}-${{ matrix.target }}"
+
+                  if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+                    7z a "${ARCHIVE_NAME}.zip" lazylora.exe
+                    echo "ASSET=${ARCHIVE_NAME}.zip" >> $GITHUB_ENV
+                  else
+                    tar czf "${ARCHIVE_NAME}.tar.gz" lazylora
+                    echo "ASSET=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
+                  fi
+
+            - name: Code sign (macOS)
+              if: startsWith(matrix.os, 'macos')
+              env:
+                  MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+                  MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+                  MACOS_CERTIFICATE_NAME: ${{ secrets.MACOS_CERTIFICATE_NAME }}
+                  MACOS_CI_KEYCHAIN_PWD: ${{ secrets.MACOS_CI_KEYCHAIN_PWD }}
+              run: |
+                  if [ -n "$MACOS_CERTIFICATE" ] && [ -n "$MACOS_CERTIFICATE_PWD" ]; then
+                    echo "Signing macOS binary..."
+                    
+                    # Create keychain
+                    security create-keychain -p "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+                    security default-keychain -s build.keychain
+                    security unlock-keychain -p "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+                    
+                    # Import certificate
+                    echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
+                    security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+                    
+                    # Enable codesigning
+                    security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CI_KEYCHAIN_PWD" build.keychain
+                    
+                    # Sign the binary
+                    /usr/bin/codesign --force -s "$MACOS_CERTIFICATE_NAME" --options runtime target/${{ matrix.target }}/release/lazylora -v
+                    
+                    # Repackage
+                    cd target/${{ matrix.target }}/release
+                    binary_path=$(pwd)/lazylora
+                    tag_name="${{ needs.create-release.outputs.tag }}"
+                    tag_name="${tag_name/v/}"
+                    ARCHIVE_NAME="lazylora-${tag_name}-${{ matrix.target }}"
+                    
+                    # Remove old archive
+                    rm "${ARCHIVE_NAME}.tar.gz"
+                    
+                    # Create new archive with signed binary
+                    tar czf "${ARCHIVE_NAME}.tar.gz" lazylora
+                  else
+                    echo "Skipping code signing as certificates are not provided"
+                  fi
+
+            - name: Upload Release Asset
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  upload_url: ${{ needs.create-release.outputs.upload_url }}
+                  asset_path: target/${{ matrix.target }}/release/${{ env.ASSET }}
+                  asset_name: ${{ env.ASSET }}
+                  asset_content_type: application/octet-stream
+
+    update-installer:
+        needs: [create-release, build]
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+
+            - name: Update Version in Files
+              run: |
+                  VERSION="${{ needs.create-release.outputs.tag }}"
+                  VERSION="${VERSION/v/}"
+
+                  # Replace version in Cargo.toml (for next development cycle)
+                  sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+
+                  # Create a new commit with version bump
+                  git config --local user.email "action@github.com"
+                  git config --local user.name "GitHub Action"
+                  git add Cargo.toml
+                  git commit -m "chore: bump version to ${VERSION} [skip ci]"
+                  git push
