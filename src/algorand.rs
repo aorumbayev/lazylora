@@ -1,4 +1,5 @@
 use color_eyre::Result;
+use ratatui::style::Color;
 use reqwest::Client;
 use serde_json::Value;
 
@@ -13,25 +14,25 @@ pub enum Network {
 impl Network {
     pub fn as_str(&self) -> &str {
         match self {
-            Network::MainNet => "MainNet",
-            Network::TestNet => "TestNet",
-            Network::LocalNet => "LocalNet",
+            Self::MainNet => "MainNet",
+            Self::TestNet => "TestNet",
+            Self::LocalNet => "LocalNet",
         }
     }
 
     pub fn indexer_url(&self) -> &str {
         match self {
-            Network::MainNet => "https://mainnet-idx.algonode.cloud",
-            Network::TestNet => "https://testnet-idx.algonode.cloud",
-            Network::LocalNet => "http://localhost:8980",
+            Self::MainNet => "https://mainnet-idx.algonode.cloud",
+            Self::TestNet => "https://testnet-idx.algonode.cloud",
+            Self::LocalNet => "http://localhost:8980",
         }
     }
 
     pub fn algod_url(&self) -> &str {
         match self {
-            Network::MainNet => "https://mainnet-api.algonode.cloud",
-            Network::TestNet => "https://testnet-api.algonode.cloud",
-            Network::LocalNet => "http://localhost:8080",
+            Self::MainNet => "https://mainnet-api.algonode.cloud",
+            Self::TestNet => "https://testnet-api.algonode.cloud",
+            Self::LocalNet => "http://localhost:8080",
         }
     }
 }
@@ -51,24 +52,25 @@ impl AlgoClient {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn get_transaction_by_id(&self, txid: &str) -> Result<Option<Transaction>> {
         let url = format!("{}/v2/transactions/{}", self.network.indexer_url(), txid);
-
-        let response = match self
+        let response = self
             .client
             .get(&url)
             .header("accept", "application/json")
             .send()
             .await
-        {
-            Ok(resp) if resp.status().is_success() => resp,
-            _ => return Ok(None),
-        };
+            .map_err(|_| color_eyre::eyre::eyre!("Failed to fetch transaction"))?;
 
-        let json: Value = match response.json().await {
-            Ok(data) => data,
-            Err(_) => return Ok(None),
-        };
+        if !response.status().is_success() {
+            return Ok(None);
+        }
+
+        let json: Value = response
+            .json()
+            .await
+            .map_err(|_| color_eyre::eyre::eyre!("Failed to parse transaction JSON"))?;
 
         let txn_json = match json.get("transaction") {
             Some(txn) => txn,
@@ -80,11 +82,54 @@ impl AlgoClient {
         let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
         let to = extract_receiver(txn_json, &txn_type);
 
+        // Extract additional transaction details
+        let timestamp = txn_json["round-time"]
+            .as_u64()
+            .map(format_timestamp)
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let block = txn_json["confirmed-round"].as_u64().unwrap_or(0);
+        let fee = txn_json["fee"].as_u64().unwrap_or(0);
+
+        let note = txn_json["note"]
+            .as_str()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| {
+                txn_json["note"]
+                    .as_array()
+                    .map(|bytes| format!("{:?}", bytes))
+                    .unwrap_or_else(|| "None".to_string())
+            });
+
+        // Extract amount based on transaction type
+        let (amount, asset_id) = match txn_type {
+            TxnType::Payment => {
+                let amount = txn_json["payment-transaction"]["amount"]
+                    .as_u64()
+                    .unwrap_or(0);
+                (amount, None)
+            }
+            TxnType::AssetTransfer => {
+                let amount = txn_json["asset-transfer-transaction"]["amount"]
+                    .as_u64()
+                    .unwrap_or(0);
+                let asset_id = txn_json["asset-transfer-transaction"]["asset-id"].as_u64();
+                (amount, asset_id)
+            }
+            _ => (0, None),
+        };
+
         Ok(Some(Transaction {
             id,
             txn_type,
             from,
             to,
+            timestamp,
+            block,
+            fee,
+            note,
+            amount,
+            asset_id,
         }))
     }
 
@@ -104,7 +149,7 @@ impl AlgoClient {
             return Ok(Vec::new());
         }
 
-        let mut blocks = Vec::new();
+        let mut blocks = Vec::with_capacity(limit);
 
         for i in 0..limit {
             if i >= latest_round as usize {
@@ -133,7 +178,6 @@ impl AlgoClient {
             let block = block_data.get("block").unwrap_or(&block_data);
             let timestamp_secs = block["ts"].as_u64().unwrap_or(0);
             let formatted_time = format_timestamp(timestamp_secs);
-
             let txn_count = count_transactions(block);
 
             blocks.push(AlgoBlock {
@@ -196,7 +240,7 @@ impl AlgoClient {
 
         let empty_vec = Vec::new();
         let transactions_array = json["transactions"].as_array().unwrap_or(&empty_vec);
-        let mut transactions = Vec::new();
+        let mut transactions = Vec::with_capacity(transactions_array.len());
 
         for txn_json in transactions_array {
             let id = txn_json["id"].as_str().unwrap_or("unknown").to_string();
@@ -204,11 +248,54 @@ impl AlgoClient {
             let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
             let to = extract_receiver(txn_json, &txn_type);
 
+            // Extract additional transaction details
+            let timestamp = txn_json["round-time"]
+                .as_u64()
+                .map(format_timestamp)
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            let block = txn_json["confirmed-round"].as_u64().unwrap_or(0);
+            let fee = txn_json["fee"].as_u64().unwrap_or(0);
+
+            let note = txn_json["note"]
+                .as_str()
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| {
+                    txn_json["note"]
+                        .as_array()
+                        .map(|bytes| format!("{:?}", bytes))
+                        .unwrap_or_else(|| "None".to_string())
+                });
+
+            // Extract amount based on transaction type
+            let (amount, asset_id) = match txn_type {
+                TxnType::Payment => {
+                    let amount = txn_json["payment-transaction"]["amount"]
+                        .as_u64()
+                        .unwrap_or(0);
+                    (amount, None)
+                }
+                TxnType::AssetTransfer => {
+                    let amount = txn_json["asset-transfer-transaction"]["amount"]
+                        .as_u64()
+                        .unwrap_or(0);
+                    let asset_id = txn_json["asset-transfer-transaction"]["asset-id"].as_u64();
+                    (amount, asset_id)
+                }
+                _ => (0, None),
+            };
+
             transactions.push(Transaction {
                 id,
                 txn_type,
                 from,
                 to,
+                timestamp,
+                block,
+                fee,
+                note,
+                amount,
+                asset_id,
             });
         }
 
@@ -283,30 +370,25 @@ fn format_timestamp(timestamp_secs: u64) -> String {
         return "Timestamp not available".to_string();
     }
 
-    let genesis_timestamp: i64 = 1560211200; // June 11, 2019
-    let datetime =
-        chrono::DateTime::from_timestamp(timestamp_secs as i64, 0).unwrap_or_else(|| {
-            chrono::DateTime::from_timestamp(genesis_timestamp, 0)
-                .unwrap_or_else(|| chrono::Utc::now())
-        });
+    let datetime = chrono::DateTime::from_timestamp(timestamp_secs as i64, 0)
+        .unwrap_or_else(|| chrono::Utc::now());
 
     datetime.format("%a, %d %b %Y %H:%M:%S").to_string()
 }
 
 fn count_transactions(block: &Value) -> u16 {
     if let Some(txns) = block.get("txns") {
-        if txns.is_array() {
-            txns.as_array().unwrap().len() as u16
-        } else if txns.is_object() {
-            txns.get("transactions")
-                .and_then(|t| t.as_array())
-                .map_or(0, |arr| arr.len()) as u16
-        } else {
-            0
+        if let Some(arr) = txns.as_array() {
+            return arr.len() as u16;
+        } else if let Some(obj) = txns.as_object() {
+            if let Some(transactions) = obj.get("transactions") {
+                if let Some(arr) = transactions.as_array() {
+                    return arr.len() as u16;
+                }
+            }
         }
-    } else {
-        0
     }
+    0
 }
 
 /// Basic block information
@@ -334,29 +416,29 @@ pub enum TxnType {
 impl TxnType {
     pub fn as_str(&self) -> &str {
         match self {
-            TxnType::Payment => "Payment",
-            TxnType::AppCall => "App Call",
-            TxnType::AssetTransfer => "Asset Transfer",
-            TxnType::AssetConfig => "Asset Config",
-            TxnType::AssetFreeze => "Asset Freeze",
-            TxnType::KeyReg => "Key Registration",
-            TxnType::StateProof => "State Proof",
-            TxnType::Heartbeat => "Heartbeat",
-            TxnType::Unknown => "Unknown",
+            Self::Payment => "Payment",
+            Self::AppCall => "App Call",
+            Self::AssetTransfer => "Asset Transfer",
+            Self::AssetConfig => "Asset Config",
+            Self::AssetFreeze => "Asset Freeze",
+            Self::KeyReg => "Key Registration",
+            Self::StateProof => "State Proof",
+            Self::Heartbeat => "Heartbeat",
+            Self::Unknown => "Unknown",
         }
     }
 
-    pub fn color(&self) -> ratatui::style::Color {
+    pub fn color(&self) -> Color {
         match self {
-            TxnType::Payment => ratatui::style::Color::Green,
-            TxnType::AppCall => ratatui::style::Color::Blue,
-            TxnType::AssetTransfer => ratatui::style::Color::Yellow,
-            TxnType::AssetConfig => ratatui::style::Color::Cyan,
-            TxnType::AssetFreeze => ratatui::style::Color::Magenta,
-            TxnType::KeyReg => ratatui::style::Color::Red,
-            TxnType::StateProof => ratatui::style::Color::Gray,
-            TxnType::Heartbeat => ratatui::style::Color::White,
-            TxnType::Unknown => ratatui::style::Color::DarkGray,
+            Self::Payment => Color::Green,
+            Self::AppCall => Color::Blue,
+            Self::AssetTransfer => Color::Yellow,
+            Self::AssetConfig => Color::Cyan,
+            Self::AssetFreeze => Color::Magenta,
+            Self::KeyReg => Color::Red,
+            Self::StateProof => Color::Gray,
+            Self::Heartbeat => Color::White,
+            Self::Unknown => Color::DarkGray,
         }
     }
 }
@@ -368,4 +450,10 @@ pub struct Transaction {
     pub txn_type: TxnType,
     pub from: String,
     pub to: String,
+    pub timestamp: String,
+    pub block: u64,
+    pub fee: u64,
+    pub note: String,
+    pub amount: u64,
+    pub asset_id: Option<u64>,
 }

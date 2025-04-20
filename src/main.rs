@@ -1,5 +1,3 @@
-
-
 use color_eyre::Result;
 
 mod algorand;
@@ -20,10 +18,7 @@ fn main() -> Result<()> {
 
     // Restore terminal
     if let Err(err) = tui::restore() {
-        eprintln!(
-            "Failed to restore terminal. Run `reset` or restart your terminal to recover: {}",
-            err
-        );
+        eprintln!("Failed to restore terminal: {}", err);
     }
 
     // Return the app result
