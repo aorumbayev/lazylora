@@ -5,14 +5,50 @@ description = "Unofficial terminal user interface for Algorand Blockchain explor
 authors = ["Altynbek Orumbayev <aorumbayev@pm.me>"]
 license = "MIT"
 edition = "2024"
+repository = "https://github.com/aorumbayev/lazylora"
 
 [dependencies]
 crossterm = "0.29.0"
 ratatui = "0.29.0"
 color-eyre = "0.6.3"
 tokio = { version = "1.44.2", features = ["full"] }
-reqwest = { version = "0.12.15", features = ["json"] }
+reqwest = { version = "0.12.15", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4.40"
 arboard = "3.3.0"
+clap = { version = "4.5.9", features = ["derive"] }
+tempfile = "3.8"
+zip = "0.6"
+tar = "0.4"
+flate2 = "1.0"
+dirs = "5.0"
+semver = "1.0"
+anyhow = "1.0"
+self_update = { version = "0.40.0", features = [
+    "archive-tar",
+    "archive-zip",
+    "compression-flate2",
+    "rustls",
+] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[package.metadata.bundle]
+name = "LazyLora"
+identifier = "dev.aorumbayev.lazylora"
+icon = ["assets/icon.png"]
+version = "0.1.0"
+resources = ["assets"]
+copyright = "Copyright (c) Altynbek Orumbayev 2024. All rights reserved."
+category = "Developer Tool"
+short_description = "Terminal UI for Algorand blockchain"
+long_description = """
+LazyLora is a terminal user interface for exploring the Algorand blockchain.
+It provides a simple and intuitive way to browse blocks and transactions.
+"""

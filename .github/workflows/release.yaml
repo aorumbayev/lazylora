@@ -1,0 +1,175 @@
+name: Release
+
+on:
+    push:
+        branches:
+            - main
+
+permissions:
+    contents: write # Needed for semantic-release to push tags, create releases, and commit version bumps
+    issues: write # Needed for semantic-release to comment on issues/PRs
+    pull-requests: write # Needed for semantic-release to comment on issues/PRs
+
+env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: 1
+    # Default binary name
+    BINARY_NAME: lazylora
+
+jobs:
+    determine-version:
+        name: Determine Next Version
+        runs-on: ubuntu-latest
+        outputs:
+            next_version: ${{ steps.semantic_dry_run.outputs.new_release_version }}
+            is_new_release: ${{ steps.semantic_dry_run.outputs.new_release_published }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # Fetch all history for semantic-release
+
+            - name: Semantic Release Dry Run
+              id: semantic_dry_run
+              uses: cycjimmy/semantic-release-action@v4
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  branch: main
+                  dry_run: true # Only determine the version, don't release
+                  extra_plugins: |
+                      @semantic-release/commit-analyzer
+                      @semantic-release/release-notes-generator
+                      @semantic-release/github
+
+    build:
+        name: Build ${{ matrix.target }}
+        needs: determine-version
+        # Only run build if a new version was determined
+        if: needs.determine-version.outputs.is_new_release == 'true'
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - build: linux-x86_64
+                      os: ubuntu-latest
+                      target: x86_64-unknown-linux-gnu
+                      arch: x86_64
+                      os_tag: linux
+                    - build: macos-x86_64
+                      os: macos-latest
+                      target: x86_64-apple-darwin
+                      arch: x86_64
+                      os_tag: darwin
+                    - build: macos-aarch64
+                      os: macos-latest
+                      target: aarch64-apple-darwin
+                      arch: aarch64
+                      os_tag: darwin
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust toolchain
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  target: ${{ matrix.target }}
+                  override: true
+
+            - name: Build binary with correct version
+              uses: actions-rs/cargo@v1
+              # Set CARGO_PKG_VERSION env var to override Cargo.toml version for this build
+              env:
+                  CARGO_PKG_VERSION: ${{ needs.determine-version.outputs.next_version }}
+              with:
+                  command: build
+                  args: --release --target ${{ matrix.target }}
+
+            - name: Prepare package artifact
+              shell: bash
+              run: |
+                  PACKAGE_DIR="target/${{ matrix.target }}/release"
+                  # Use the determined version in the archive name for consistency (optional)
+                  # VERSION="${{ needs.determine-version.outputs.next_version }}"
+                  # ARCHIVE_NAME="${{ env.BINARY_NAME }}-${VERSION}-${{ matrix.arch }}-${{ matrix.os_tag }}.tar.gz"
+                  ARCHIVE_NAME="${{ env.BINARY_NAME }}-${{ matrix.arch }}-${{ matrix.os_tag }}.tar.gz"
+
+                  cd "${PACKAGE_DIR}"
+                  tar czf "${ARCHIVE_NAME}" ${{ env.BINARY_NAME }}
+                  echo "ASSET_PATH=$(pwd)/${ARCHIVE_NAME}" >> $GITHUB_ENV
+                  echo "ASSET_NAME=${ARCHIVE_NAME}" >> $GITHUB_ENV
+                  echo "Package created: ${ARCHIVE_NAME}"
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ env.ASSET_NAME }}
+                  path: ${{ env.ASSET_PATH }}
+                  if-no-files-found: error
+
+    release:
+        name: Create Release
+        needs: [determine-version, build]
+        # Only run release if a new version was determined
+        if: needs.determine-version.outputs.is_new_release == 'true'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            issues: write
+            pull-requests: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Download all artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: ./dist/
+                  pattern: lazylora-*-*.*
+                  merge-multiple: true
+
+            - name: List downloaded files # For debugging
+              run: ls -R ./dist
+
+            - name: Semantic Release (Create Tag & Release)
+              id: semantic_release
+              uses: cycjimmy/semantic-release-action@v4
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  branch: main
+                  # No dry_run here - perform the actual release
+                  extra_plugins: |
+                      @semantic-release/commit-analyzer
+                      @semantic-release/release-notes-generator
+                      @semantic-release/github
+
+            - name: Upload Release Assets
+              if: steps.semantic_release.outputs.new_release_published == 'true' # Double check release happened
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: >
+                  gh release upload
+                  ${{ steps.semantic_release.outputs.new_release_tag }}
+                  ./dist/* --clobber
+
+            - name: Update Cargo.toml (Post-Release Bump)
+              if: steps.semantic_release.outputs.new_release_published == 'true'
+              run: |
+                  VERSION="${{ steps.semantic_release.outputs.new_release_version }}"
+                  echo "Bumping project version in Cargo.toml to ${VERSION} for next dev cycle"
+
+                  # Using BSD sed syntax
+                  sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml && rm Cargo.toml.bak
+
+                  # Commit and push the version bump
+                  git config --local user.email "action@github.com"
+                  git config --local user.name "GitHub Action"
+                  git add Cargo.toml
+                  git commit -m "chore(release): bump version to ${VERSION} [skip ci]" 
+                  git push
