@@ -22,7 +22,7 @@ tempfile = "3.8"
 zip = "0.6"
 tar = "0.4"
 flate2 = "1.0"
-dirs = "5.0"
+dirs = "6.0"
 semver = "1.0"
 anyhow = "1.0"
 self_update = { version = "0.40.0", features = [
