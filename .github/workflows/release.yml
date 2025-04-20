@@ -75,7 +75,7 @@ jobs:
                       target: aarch64-apple-darwin
 
         steps:
-            - uses: actions/checkout@v3
+            - uses: actions/checkout@v4
 
             - name: Install Rust toolchain
               uses: actions-rs/toolchain@v1
@@ -164,7 +164,7 @@ jobs:
         needs: [create-release, build]
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v3
+            - uses: actions/checkout@v4
 
             - name: Update Version in Files
               run: |
