@@ -142,7 +142,7 @@ esac
 # Get latest version from GitHub if not specified
 if [ -z "$VERSION" ]; then
     print_msg "Determining latest version..."
-    VERSION=$(curl -s "https://api.github.com/repos/aorumbayev/lazylora/releases/latest" | grep -oP '"tag_name": "\K(.*)(?=")')
+    VERSION=$(curl -s "https://api.github.com/repos/aorumbayev/lazylora/releases/latest" | grep -o '"tag_name": "[^"]*' | cut -d'"' -f4)
 
     if [ -z "$VERSION" ]; then
         error_exit "Failed to determine latest version"
