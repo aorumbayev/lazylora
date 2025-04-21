@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LazyLora – Terminal UI for Algorand exploration</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css" integrity="sha512-…" crossorigin="anonymous">
+    <style>
+        :root {
+            /* Tokyo Night Storm Palette */
+            --bg-color: #1a1b26;        /* Background */
+            --text-color: #c0caf5;      /* Foreground */
+            --accent-color: #7aa2f7;     /* Blue - Primary Accent */
+            --secondary-color: #7dcfff; /* Cyan - Links, Secondary Accent */
+            --tertiary-color: #bb9af7;  /* Purple - Blockquotes, Keys */
+            --warning-color: #ff9e64;   /* Orange */
+            --error-color: #f7768e;     /* Red */
+            --success-color: #9ece6a;   /* Green */
+            --code-bg: #24283b;         /* Terminal Black / Code Background */
+            --header-bg: #1f2335;       /* Slightly lighter/different bg */
+            --border-color: #414868;    /* Comment color - Borders */
+            --fg-dark: #a9b1d6;         /* Darker Foreground */
+            --comment-color: #565f89;   /* Comments */
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            overflow-x: hidden; /* Prevent horizontal scroll on container */
+        }
+        
+        header {
+            background-color: var(--header-bg);
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 10px;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            gap: 15px; /* Add gap for wrapped items */
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo h1 {
+            font-size: 2.5rem;
+            color: var(--accent-color);
+            margin: 0;
+            border-bottom: none; /* Remove border from h1 in logo */
+            padding-bottom: 0;
+        }
+        
+        .logo-emoji {
+            font-size: 2rem;
+        }
+        
+        .github-link {
+            color: var(--secondary-color);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: color 0.3s;
+        }
+        
+        .github-link:hover {
+            color: var(--accent-color);
+        }
+        
+        #content {
+            padding: 20px 0;
+            word-wrap: break-word; /* Break long words to prevent overflow */
+        }
+        
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--accent-color);
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+        
+        h2 {
+            font-size: 1.8rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 5px;
+        }
+        
+        h3 {
+            font-size: 1.5rem;
+        }
+        
+        p {
+            margin-bottom: 1em;
+        }
+        
+        a {
+            color: var(--secondary-color);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            margin: 20px 0;
+            display: block; /* Ensure images don't cause inline spacing issues */
+        }
+        
+        pre {
+            background-color: var(--code-bg);
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto; /* Allow horizontal scrolling for code */
+            margin: 20px 0;
+            border: 1px solid var(--border-color);
+            color: var(--text-color); /* Ensure text color contrasts with code bg */
+            position: relative; /* Needed for absolute positioning of copy button */
+        }
+        
+        code {
+            font-family: 'Courier New', monospace;
+            background-color: var(--code-bg);
+            padding: 2px 5px;
+            border-radius: 3px;
+            color: var(--fg-dark); /* Slightly different color for inline code */
+        }
+        
+        pre code {
+            padding: 0;
+            background-color: transparent;
+            color: inherit; /* Inherit color from pre */
+            white-space: pre; /* Preserve whitespace and prevent wrapping inside pre */
+        }
+        
+        ul, ol {
+            margin-left: 20px;
+            margin-bottom: 20px;
+            padding-left: 20px; /* Ensure consistent padding */
+        }
+        
+        li {
+            margin-bottom: 5px;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--tertiary-color);
+            padding-left: 15px;
+            margin: 20px 0;
+            color: var(--fg-dark); /* Use darker foreground for blockquotes */
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            overflow-x: auto; /* Allow table scrolling on small screens */
+            display: block; /* Needed for overflow-x to work reliably */
+        }
+        
+        th, td {
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            text-align: left;
+            white-space: nowrap; /* Prevent text wrapping within cells */
+        }
+        
+        th {
+            background-color: var(--header-bg);
+            color: var(--accent-color); /* Accent color for headers */
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            font-size: 1.2rem;
+            color: var(--tertiary-color);
+        }
+        
+        .loading::after {
+            content: "⏳";
+            margin-left: 10px;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        
+        .terminal-window {
+            background-color: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            margin: 30px 0;
+            overflow: hidden; /* Contain children */
+        }
+        
+        .terminal-header {
+            background-color: var(--header-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .terminal-buttons {
+            display: flex;
+            gap: 8px;
+            margin-right: 15px;
+        }
+        
+        .terminal-button {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.2);
+        }
+        
+        .terminal-close {
+            background-color: var(--error-color); /* Red */
+        }
+        
+        .terminal-minimize {
+            background-color: #ffbd2e; /* Keep yellow from original, or use --warning-color */
+            /* background-color: var(--warning-color); */
+        }
+        
+        .terminal-maximize {
+            background-color: var(--success-color); /* Green */
+        }
+        
+        .terminal-title {
+            color: var(--fg-dark);
+            font-size: 0.9rem;
+        }
+        
+        .terminal-content {
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            color: var(--text-color);
+            line-height: 1.5;
+            overflow-x: auto; /* Allow horizontal scrolling within terminal content */
+        }
+        /* Ensure images within terminal content don't overflow padding */
+        .terminal-content img {
+             margin: 0;
+             border: none;
+             border-radius: 0;
+             max-width: 100%; /* Ensure image scales down */
+             height: auto;    /* Maintain aspect ratio */
+        }
+        /* Ensure code blocks within terminal content don't add extra padding/margin */
+         .terminal-content pre {
+             margin: 0;
+             border: none;
+             padding: 0;
+             background-color: transparent; /* Inherit terminal background */
+             overflow-x: auto; /* Allow scroll within pre */
+         }
+         .terminal-content pre code {
+             white-space: pre; /* Keep pre formatting */
+         }
+        
+        .key-bindings {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px; /* Increased gap */
+            margin: 20px 0;
+        }
+        
+        .key-binding {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background-color: var(--header-bg); /* Slightly different bg */
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .key {
+            background-color: var(--code-bg);
+            color: var(--tertiary-color);
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid var(--border-color);
+            font-weight: bold;
+            white-space: nowrap; /* Prevent key names from wrapping */
+        }
+        .description {
+            color: var(--fg-dark);
+            font-size: 0.9em;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            color: var(--comment-color); /* Use comment color for footer text */
+        }
+        footer a {
+            color: var(--secondary-color);
+        }
+        footer a:hover {
+            color: var(--accent-color);
+        }
+        
+        @media (max-width: 768px) {
+            .header-content {
+                /* flex-direction: column; */ /* Keep flex-row but allow wrap (already set) */
+                /* align-items: flex-start; */ /* Keep centered */
+                justify-content: center; /* Center items when wrapped */
+            }
+            
+            .logo h1 {
+                font-size: 2rem;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            h2 {
+                font-size: 1.5rem;
+            }
+            
+            /* Key bindings already handle responsiveness well with grid */
+            /* .key-bindings {
+                grid-template-columns: 1fr;
+            } */
+            
+            /* Ensure terminal window title/buttons don't get too cramped */
+            .terminal-header {
+                padding: 6px 10px;
+            }
+            .terminal-title {
+                font-size: 0.8rem;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis; /* Add ellipsis if title is too long */
+            }
+        }
+        
+         @media (max-width: 480px) {
+             .container {
+                 padding: 15px;
+             }
+             .logo h1 {
+                 font-size: 1.6rem;
+             }
+             h1 {
+                 font-size: 1.6rem;
+             }
+             h2 {
+                 font-size: 1.3rem;
+             }
+             pre, .terminal-content {
+                 padding: 10px; /* Reduce padding on small screens */
+             }
+             .key-bindings {
+                 grid-template-columns: 1fr; /* Stack keybindings vertically */
+             }
+             .key-binding {
+                 padding: 6px 10px;
+             }
+             .github-link {
+                 font-size: 0.9rem; /* Slightly smaller GitHub link text */
+             }
+             .github-link svg {
+                 height: 20px; /* Slightly smaller icon */
+                 width: 20px;
+             }
+         }
+
+        /* Style for the copy button on code blocks */
+        .copy-button {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px 8px;
+            font-size: 0.8em;
+            font-family: 'Courier New', monospace;
+            color: var(--fg-dark);
+            background-color: var(--header-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 3px;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s, background-color 0.2s;
+        }
+
+        .copy-button:hover {
+            opacity: 1;
+            background-color: var(--code-bg);
+            color: var(--text-color);
+        }
+
+        .copy-button:active {
+            opacity: 1;
+            background-color: var(--success-color);
+            color: var(--bg-color);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="logo">
+                <span class="logo-emoji">🔍</span>
+                <h1>LazyLora</h1>
+                <span class="logo-emoji">⚙️</span>
+            </div>
+            <a href="https://github.com/aorumbayev/lazylora/" class="github-link" target="_blank">
+                <svg height="24" width="24" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                </svg>
+                <span>View on GitHub</span>
+            </a>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div id="content">
+            <div class="loading">Loading content</div>
+        </div>
+    </div>
+    
+    <footer>
+        <p>LazyLora is licensed under the MIT License</p>
+        <p>&copy; <span id="current-year"></span> <a href="https://github.com/aorumbayev" target="_blank">aorumbayev</a></p>
+    </footer>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // 1. Set footer year
+            document.getElementById('current-year').textContent = new Date().getFullYear();
+
+            // 2. Configure marked + highlight.js
+            marked.setOptions({
+                sanitize: false,           // allow our injected HTML
+                gfm: true,
+                breaks: true,
+                highlight(code, lang) {
+                    const valid = hljs.getLanguage(lang) ? lang : 'plaintext';
+                    return hljs.highlight(code, { language: valid }).value;
+                },
+                langPrefix: 'hljs language-'
+            });
+
+            // 3. Fetch, transform, render
+            fetch('https://raw.githubusercontent.com/aorumbayev/lazylora/main/README.md')
+                .then(r => r.ok ? r.text() : Promise.reject(r.statusText))
+                .then(md => {
+                    const processed = processMarkdown(md);
+                    document.getElementById('content').innerHTML = marked.parse(processed);
+                    hljs.highlightAll(); // Highlight after content is in DOM
+                    transformKeyBindings();
+                    wrapBashBlocks();
+                    addCopyButtons(); // Add copy buttons to code blocks
+                })
+                .catch(err => showError(err));
+        });
+
+        // Process markdown: Remove first 7 lines & replace screenshot link
+        function processMarkdown(md) {
+            // Split into lines, remove the first 7, and join back
+            const lines = md.split('\n');
+            const contentWithoutHeader = lines.slice(7).join('\n');
+
+            // Keep the screenshot replacement logic (ensure image path is correct)
+            const processedContent = contentWithoutHeader.replace(
+              /!\[LazyLora Screenshot\]\(assets\/lazylora\.png\)/,
+              `<div class="terminal-window">
+                   <div class="terminal-header">
+                        <div class="terminal-buttons">
+                            <div class="terminal-button terminal-close"></div>
+                            <div class="terminal-button terminal-minimize"></div>
+                            <div class="terminal-button terminal-maximize"></div>
+                        </div>
+                        <div class="terminal-title">[lazylora ~]$ ./run_demo</div>
+                   </div>
+                   <div class="terminal-content">
+                     <img
+                       src="https://raw.githubusercontent.com/aorumbayev/lazylora/main/assets/lazylora.png"
+                       alt="LazyLora Screenshot">
+                   </div>
+                 </div>`
+            );
+            return processedContent.trim(); // Trim whitespace
+        }
+
+        function showError(e) {
+            console.error('Error loading README:', e);
+            document.getElementById('content').innerHTML = `
+                <h1>Error Loading Content</h1>
+                <p>Could not load content from GitHub. Please check your network connection or
+                    <a href="https://github.com/aorumbayev/lazylora/" target="_blank">view the repository</a> directly.</p>
+            `;
+        }
+
+        // DOM‑based "Key Bindings" → grid transformation
+        function transformKeyBindings() {
+            // Find the H2 with "Key Bindings"
+            let keyBindingsHeader = null;
+            document.querySelectorAll('#content h2').forEach(h2 => {
+                if (/key\s*bindings/i.test(h2.textContent)) {
+                    keyBindingsHeader = h2;
+                }
+            });
+
+            if (!keyBindingsHeader) return; // No Key Bindings section found
+
+            // Find the UL immediately following the header
+            const ul = keyBindingsHeader.nextElementSibling;
+            if (!ul || ul.tagName !== 'UL') return; // Expected UL not found
+
+            const grid = document.createElement('div');
+            grid.className = 'key-bindings';
+
+            // Process each list item in the UL
+            ul.querySelectorAll('li').forEach(li => {
+                const codeElement = li.querySelector('code');
+                if (!codeElement) return; // Skip if no code element
+
+                const keyText = codeElement.textContent;
+                // Get text content excluding the code part and the colon
+                const descriptionText = li.textContent.replace(keyText, '').replace(':', '').trim();
+
+                const item = document.createElement('div');
+                item.className = 'key-binding';
+                // Escape HTML in description to prevent XSS
+                const safeDescription = descriptionText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                item.innerHTML = `
+                    <span class="key">${keyText}</span>
+                    <span class="description">${safeDescription}</span>
+                `;
+                grid.appendChild(item);
+            });
+
+            // Replace the original UL with the new grid structure
+            ul.replaceWith(grid);
+        }
+
+        // Wrap bash/sh code blocks in terminal style
+        function wrapBashBlocks() {
+            document.querySelectorAll('pre > code.language-bash, pre > code.language-sh').forEach(code => {
+                const pre = code.parentElement;
+                // Avoid re-wrapping if already inside a terminal
+                if (!pre || pre.closest('.terminal-window')) {
+                    return;
+                }
+
+                const term = document.createElement('div');
+                term.className = 'terminal-window';
+                term.innerHTML = `
+                    <div class="terminal-header">
+                        <div class="terminal-buttons">
+                            <div class="terminal-button terminal-close"></div>
+                            <div class="terminal-button terminal-minimize"></div>
+                            <div class="terminal-button terminal-maximize"></div>
+                        </div>
+                        <div class="terminal-title">bash ~ $</div>
+                    </div>
+                    <div class="terminal-content"></div>
+                `;
+
+                // Prepare the pre element for moving
+                pre.style.margin = '0';
+                pre.style.border = 'none';
+                pre.style.overflowX = 'auto'; // Ensure scrollability inside terminal
+
+                // Insert the terminal div before the original pre
+                pre.parentNode.insertBefore(term, pre);
+
+                // Move the pre element into the terminal's content area
+                term.querySelector('.terminal-content').appendChild(pre);
+            });
+        }
+
+        // Add copy buttons to pre > code blocks
+        function addCopyButtons() {
+            document.querySelectorAll('#content pre').forEach(pre => {
+                const code = pre.querySelector('code');
+                if (!code) return; // Skip if no code element found
+
+                const button = document.createElement('button');
+                button.className = 'copy-button';
+                button.textContent = 'Copy';
+
+                button.addEventListener('click', () => {
+                    navigator.clipboard.writeText(code.textContent)
+                        .then(() => {
+                            button.textContent = 'Copied!';
+                            button.style.backgroundColor = 'var(--success-color)'; // Optional: success color feedback
+                            button.style.color = 'var(--bg-color)';
+                            setTimeout(() => {
+                                button.textContent = 'Copy';
+                                button.style.backgroundColor = ''; // Revert style
+                                button.style.color = '';
+                            }, 2000); // Revert after 2 seconds
+                        })
+                        .catch(err => {
+                            console.error('Failed to copy text: ', err);
+                            button.textContent = 'Error';
+                            setTimeout(() => {
+                                button.textContent = 'Copy';
+                            }, 2000);
+                        });
+                });
+
+                pre.appendChild(button);
+            });
+        }
+    </script>
+</body>
+</html>
+
