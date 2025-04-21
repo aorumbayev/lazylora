@@ -60,6 +60,7 @@ jobs:
                   target: ${{ matrix.target }}
                   features: vendored-openssl
                   include: LICENSE,README.md
+                  checksum: sha256
                   token: ${{ secrets.GITHUB_TOKEN }}
 
     test-installation:
