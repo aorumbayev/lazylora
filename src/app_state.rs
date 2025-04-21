@@ -3,6 +3,7 @@ use color_eyre::Result;
 use crossterm::event::{
     self, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
+use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -11,6 +12,11 @@ use std::time::{Duration, Instant};
 
 use crate::algorand::{AlgoBlock, AlgoClient, Network, SearchResultItem, Transaction};
 use crate::ui;
+
+// Global state for storing pending popup messages
+lazy_static! {
+    static ref PENDING_POPUPS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+}
 
 /// Focus area in the application
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,6 +78,7 @@ pub struct App {
     pub viewing_search_result: bool,
     runtime: tokio::runtime::Runtime,
     client: AlgoClient,
+    current_client: Arc<Mutex<AlgoClient>>,
 }
 
 impl App {
@@ -87,6 +94,7 @@ impl App {
 
         let network = Network::MainNet;
         let client = AlgoClient::new(network);
+        let current_client = Arc::new(Mutex::new(client.clone()));
 
         Self {
             network,
@@ -108,6 +116,7 @@ impl App {
             viewing_search_result: false,
             runtime,
             client,
+            current_client,
         }
     }
 
@@ -120,17 +129,33 @@ impl App {
         let mut last_tick = Instant::now();
 
         while !self.exit {
+            // Check for any pending popup messages
+            if let Ok(mut pending_popups) = PENDING_POPUPS.lock() {
+                if !pending_popups.is_empty() && self.popup_state == PopupState::None {
+                    let msg = pending_popups.remove(0);
+                    self.popup_state = PopupState::Message(msg);
+                }
+            }
+
             let timeout = tick_rate
                 .checked_sub(last_tick.elapsed())
                 .unwrap_or(Duration::from_secs(0));
 
             if event::poll(timeout)? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind == KeyEventKind::Press {
-                        self.handle_key_event(key)?;
+                match event::read()? {
+                    Event::Key(key) => {
+                        if key.kind == KeyEventKind::Press {
+                            self.handle_key_event(key)?;
+                        }
                     }
-                } else if let Event::Mouse(mouse) = event::read()? {
-                    self.handle_mouse_input(mouse)?;
+                    Event::Mouse(mouse) => {
+                        self.handle_mouse_input(mouse)?;
+                    }
+                    Event::Resize(_, _) => {
+                        // Immediate redraw on terminal resize to update UI
+                        terminal.draw(|frame| ui::render(self, frame))?;
+                    }
+                    _ => {}
                 }
             }
 
@@ -319,7 +344,46 @@ impl App {
                         }
                         KeyCode::Char(' ') => {
                             let mut show_live = self.show_live.lock().unwrap();
+                            let was_off = !*show_live;
                             *show_live = !*show_live;
+
+                            // If we're turning live updates on, verify network connectivity
+                            if was_off && *show_live {
+                                // Update client to use current network
+                                self.client = AlgoClient::new(self.network);
+
+                                // Update the shared client used by the polling thread
+                                let mut current_client = self.current_client.lock().unwrap();
+                                *current_client = self.client.clone();
+
+                                // Clone what we need for the async check
+                                let runtime = self.runtime.handle().clone();
+                                let client = self.client.clone();
+
+                                // Launch a check in the background
+                                thread::spawn(move || {
+                                    runtime.block_on(async {
+                                        // Check network status
+                                        match client.get_network_status().await {
+                                            Err(error_msg) => {
+                                                // Store error message for the main thread to display
+                                                if let Ok(mut pending_popups) =
+                                                    PENDING_POPUPS.lock()
+                                                {
+                                                    pending_popups.push(error_msg);
+                                                }
+                                            }
+                                            Ok(_) => {
+                                                // Network is available, no need to do anything
+                                            }
+                                        }
+                                    });
+                                });
+
+                                // Also trigger a fresh data fetch with the current network
+                                self.initial_data_fetch();
+                            }
+
                             Ok(())
                         }
                         KeyCode::Char('f') => {
@@ -563,26 +627,91 @@ impl App {
         let blocks_clone = Arc::clone(&self.blocks);
         let txns_clone = Arc::clone(&self.transactions);
         let client = self.client.clone();
+        let network = self.network;
+        let show_live = Arc::clone(&self.show_live);
+
+        // Create a channel to receive errors
+        let (tx, rx) = mpsc::channel::<Option<String>>();
 
         thread::spawn(move || {
             runtime.block_on(async {
-                if let Ok(new_blocks) = client.get_latest_blocks(5).await {
-                    let mut blocks = blocks_clone.lock().unwrap();
-                    *blocks = new_blocks;
+                // First check if network is available with detailed error message
+                match client.get_network_status().await {
+                    Err(error_msg) => {
+                        let _ = tx.send(Some(error_msg));
+                        return;
+                    }
+                    Ok(()) => {
+                        // Network is available, continue
+                    }
                 }
 
-                if let Ok(new_txns) = client.get_latest_transactions(5).await {
-                    let mut txns = txns_clone.lock().unwrap();
-                    *txns = new_txns;
+                // Then attempt to fetch data
+                match client.get_latest_blocks(5).await {
+                    Ok(new_blocks) => {
+                        let mut blocks = blocks_clone.lock().unwrap();
+                        *blocks = new_blocks;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Some(format!("Failed to fetch blocks: {}", e)));
+                        return;
+                    }
                 }
+
+                match client.get_latest_transactions(5).await {
+                    Ok(new_txns) => {
+                        let mut txns = txns_clone.lock().unwrap();
+                        *txns = new_txns;
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Some(format!("Failed to fetch transactions: {}", e)));
+                        return;
+                    }
+                }
+
+                // Signal success
+                let _ = tx.send(None);
             });
+        });
+
+        // Handle response in the same thread
+        std::thread::spawn(move || {
+            // Wait for a response with timeout
+            match rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(Some(error_msg)) => {
+                    // If we got an error, update shared state
+                    *show_live.lock().unwrap() = false;
+
+                    // Store the receiver in a global/static location to be checked
+                    // during the next UI update cycle
+                    if let Ok(mut pending_popups) = PENDING_POPUPS.lock() {
+                        pending_popups.push(error_msg);
+                    }
+                }
+                Ok(None) => {
+                    // Success, do nothing
+                }
+                Err(_) => {
+                    // Timeout occurred
+                    let timeout_msg = format!(
+                        "Connection to {} timed out. Please check your network.",
+                        network.as_str()
+                    );
+                    *show_live.lock().unwrap() = false;
+
+                    // Store the message for the main thread to pick up
+                    if let Ok(mut pending_popups) = PENDING_POPUPS.lock() {
+                        pending_popups.push(timeout_msg);
+                    }
+                }
+            }
         });
     }
 
     fn start_data_fetching(&self) {
         let blocks_clone = Arc::clone(&self.blocks);
         let txns_clone = Arc::clone(&self.transactions);
-        let client = self.client.clone();
+        let current_client = Arc::clone(&self.current_client);
         let runtime = self.runtime.handle().clone();
         let show_live = Arc::clone(&self.show_live);
 
@@ -593,99 +722,152 @@ impl App {
         thread::spawn(move || {
             let mut last_txn_fetch = Instant::now();
             let mut last_block_fetch = Instant::now();
+            let mut last_network_check = Instant::now();
+            let mut is_network_available = true;
+            let mut network_error_shown = false;
 
             let block_interval = Duration::from_secs(5);
             let txn_interval = Duration::from_secs(5);
+            let network_check_interval = Duration::from_secs(10); // Check network every 10 seconds
 
             loop {
+                // Don't do anything if live updates are turned off
                 if !*show_live.lock().unwrap() {
+                    // Reset error flags when live updates are off
+                    network_error_shown = false;
                     thread::sleep(Duration::from_secs(1));
                     continue;
                 }
 
+                // Always get the latest client for every operation
+                let client = current_client.lock().unwrap().clone();
+
                 let now = Instant::now();
 
-                if now.duration_since(last_block_fetch) >= block_interval {
-                    last_block_fetch = now;
+                // Periodically check network status
+                if now.duration_since(last_network_check) >= network_check_interval {
+                    last_network_check = now;
 
-                    let blocks_clone = Arc::clone(&blocks_clone);
-                    let selected_block_id_clone = Arc::clone(&selected_block_id);
-                    runtime.block_on(async {
-                        if let Ok(new_blocks) = client.get_latest_blocks(5).await {
-                            if !new_blocks.is_empty() {
-                                let mut blocks = blocks_clone.lock().unwrap();
-                                let mut selected_id = selected_block_id_clone.lock().unwrap();
-
-                                // Save the currently selected block ID if any
-                                if let Some(index) =
-                                    blocks.iter().position(|b| *selected_id == Some(b.id))
-                                {
-                                    *selected_id = Some(blocks[index].id);
-                                }
-
-                                let block_map: HashMap<u64, usize> = blocks
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(i, block)| (block.id, i))
-                                    .collect();
-
-                                for new_block in new_blocks {
-                                    if !block_map.contains_key(&new_block.id) {
-                                        let pos = blocks.partition_point(|b| b.id > new_block.id);
-                                        blocks.insert(pos, new_block);
-                                    }
-                                }
-
-                                if blocks.len() > 100 {
-                                    blocks.truncate(100);
-                                }
-                            }
+                    // Get detailed connection status
+                    match runtime.block_on(async { client.get_network_status().await }) {
+                        Ok(()) => {
+                            is_network_available = true;
+                            network_error_shown = false;
                         }
-                    });
+                        Err(error_msg) => {
+                            // If this is the first error, show it
+                            if !network_error_shown {
+                                if let Ok(mut pending_popups) = PENDING_POPUPS.lock() {
+                                    pending_popups.push(error_msg);
+                                }
+                                network_error_shown = true;
+                            }
+                            is_network_available = false;
+                            thread::sleep(Duration::from_secs(1));
+                            continue;
+                        }
+                    }
                 }
 
-                if now.duration_since(last_txn_fetch) >= txn_interval {
-                    last_txn_fetch = now;
+                // Only try to fetch data if we believe the network is available
+                if is_network_available {
+                    if now.duration_since(last_block_fetch) >= block_interval {
+                        last_block_fetch = now;
 
-                    let txns_clone = Arc::clone(&txns_clone);
-                    let selected_txn_id_clone = Arc::clone(&selected_txn_id);
-                    runtime.block_on(async {
-                        if let Ok(new_txns) = client.get_latest_transactions(5).await {
-                            if !new_txns.is_empty() {
-                                let mut txns = txns_clone.lock().unwrap();
-                                let mut selected_id = selected_txn_id_clone.lock().unwrap();
+                        let blocks_clone = Arc::clone(&blocks_clone);
+                        let selected_block_id_clone = Arc::clone(&selected_block_id);
+                        let client_clone = client.clone();
 
-                                // Save the currently selected transaction ID if any
-                                if let Some(index) =
-                                    txns.iter().position(|t| *selected_id == Some(t.id.clone()))
-                                {
-                                    *selected_id = Some(txns[index].id.clone());
-                                }
+                        runtime.block_on(async {
+                            if let Ok(new_blocks) = client_clone.get_latest_blocks(5).await {
+                                if !new_blocks.is_empty() {
+                                    let mut blocks = blocks_clone.lock().unwrap();
+                                    let mut selected_id = selected_block_id_clone.lock().unwrap();
 
-                                let txn_ids: HashSet<String> =
-                                    txns.iter().map(|txn| txn.id.clone()).collect();
+                                    // Save the currently selected block ID if any
+                                    if let Some(index) =
+                                        blocks.iter().position(|b| *selected_id == Some(b.id))
+                                    {
+                                        *selected_id = Some(blocks[index].id);
+                                    }
 
-                                let mut updated_txns = Vec::with_capacity(100);
+                                    let block_map: HashMap<u64, usize> = blocks
+                                        .iter()
+                                        .enumerate()
+                                        .map(|(i, block)| (block.id, i))
+                                        .collect();
 
-                                for new_txn in new_txns {
-                                    if !txn_ids.contains(&new_txn.id) {
-                                        updated_txns.push(new_txn);
+                                    for new_block in new_blocks {
+                                        if !block_map.contains_key(&new_block.id) {
+                                            let pos =
+                                                blocks.partition_point(|b| b.id > new_block.id);
+                                            blocks.insert(pos, new_block);
+                                        }
+                                    }
+
+                                    if blocks.len() > 100 {
+                                        blocks.truncate(100);
                                     }
                                 }
-
-                                for old_txn in txns.iter().cloned() {
-                                    if updated_txns.len() >= 100 {
-                                        break;
-                                    }
-                                    if !updated_txns.iter().any(|t| t.id == old_txn.id) {
-                                        updated_txns.push(old_txn);
-                                    }
-                                }
-
-                                *txns = updated_txns;
+                            } else {
+                                // Failed to fetch blocks, check network again soon
+                                last_network_check = Instant::now()
+                                    .checked_sub(network_check_interval * 2)
+                                    .unwrap_or_else(Instant::now);
                             }
-                        }
-                    });
+                        });
+                    }
+
+                    if now.duration_since(last_txn_fetch) >= txn_interval {
+                        last_txn_fetch = now;
+
+                        let txns_clone = Arc::clone(&txns_clone);
+                        let selected_txn_id_clone = Arc::clone(&selected_txn_id);
+                        let client_clone = client.clone();
+
+                        runtime.block_on(async {
+                            if let Ok(new_txns) = client_clone.get_latest_transactions(5).await {
+                                if !new_txns.is_empty() {
+                                    let mut txns = txns_clone.lock().unwrap();
+                                    let mut selected_id = selected_txn_id_clone.lock().unwrap();
+
+                                    // Save the currently selected transaction ID if any
+                                    if let Some(index) =
+                                        txns.iter().position(|t| *selected_id == Some(t.id.clone()))
+                                    {
+                                        *selected_id = Some(txns[index].id.clone());
+                                    }
+
+                                    let txn_ids: HashSet<String> =
+                                        txns.iter().map(|txn| txn.id.clone()).collect();
+
+                                    let mut updated_txns = Vec::with_capacity(100);
+
+                                    for new_txn in new_txns {
+                                        if !txn_ids.contains(&new_txn.id) {
+                                            updated_txns.push(new_txn);
+                                        }
+                                    }
+
+                                    for old_txn in txns.iter().cloned() {
+                                        if updated_txns.len() >= 100 {
+                                            break;
+                                        }
+                                        if !updated_txns.iter().any(|t| t.id == old_txn.id) {
+                                            updated_txns.push(old_txn);
+                                        }
+                                    }
+
+                                    *txns = updated_txns;
+                                }
+                            } else {
+                                // Failed to fetch transactions, check network again soon
+                                last_network_check = Instant::now()
+                                    .checked_sub(network_check_interval * 2)
+                                    .unwrap_or_else(Instant::now);
+                            }
+                        });
+                    }
                 }
 
                 thread::sleep(Duration::from_millis(100));
@@ -718,6 +900,7 @@ impl App {
         let client = self.client.clone();
         let runtime = self.runtime.handle().clone();
         let query_clone = search_query.to_string();
+        let network = self.network;
 
         // Create a channel to receive the search results from the async operation
         let (tx, rx) = mpsc::channel::<Result<Vec<SearchResultItem>>>();
@@ -725,6 +908,16 @@ impl App {
         // Spawn a new thread to perform the search asynchronously
         thread::spawn(move || {
             runtime.block_on(async {
+                // First check if the network is available
+                if !client.is_network_available().await {
+                    let error = color_eyre::eyre::eyre!(
+                        "{} is not available. Please check your connection.",
+                        network.as_str()
+                    );
+                    let _ = tx.send(Err(error));
+                    return;
+                }
+
                 match client.search_by_query(&query_clone, search_type).await {
                     Ok(items) => {
                         // Send the search results back through the channel
@@ -762,15 +955,19 @@ impl App {
                     self.popup_state = PopupState::SearchResults(results_with_indices);
                 }
             }
-            Ok(Err(_)) => {
-                self.popup_state =
-                    PopupState::Message("Error querying the Algorand network".to_string());
+            Ok(Err(e)) => {
+                // Display the error as a user-friendly message
+                let error_msg = e.to_string();
+                self.popup_state = PopupState::Message(format!(
+                    "Error querying the Algorand network: {}",
+                    error_msg
+                ));
             }
             Err(_) => {
-                self.popup_state = PopupState::Message(
-                    "Search timed out. Please check your network connection and try again."
-                        .to_string(),
-                );
+                self.popup_state = PopupState::Message(format!(
+                    "Search timed out. Please check your connection to {}.",
+                    network.as_str()
+                ));
             }
         }
     }
@@ -778,6 +975,10 @@ impl App {
     fn switch_network(&mut self, network: Network) {
         self.network = network;
         self.client = AlgoClient::new(network);
+
+        // Update the shared client used by the polling thread
+        let mut current_client = self.current_client.lock().unwrap();
+        *current_client = self.client.clone();
 
         // Clear existing data
         {
@@ -798,8 +999,45 @@ impl App {
         self.filtered_search_results.clear();
         self.viewing_search_result = false;
 
-        // Fetch new data
-        self.initial_data_fetch();
+        // Check if network is available
+        let runtime = self.runtime.handle().clone();
+        let client = self.client.clone();
+
+        // Create a channel to receive the result
+        let (tx, rx) = mpsc::channel::<Result<(), String>>();
+
+        thread::spawn(move || {
+            runtime.block_on(async {
+                // Try to connect to the network
+                let status = client.get_network_status().await;
+                let _ = tx.send(status);
+            });
+        });
+
+        // Wait for the result with a short timeout
+        match rx.recv_timeout(Duration::from_secs(3)) {
+            Ok(Ok(())) => {
+                // Network is available, fetch data
+                self.initial_data_fetch();
+                // Ensure live updates are enabled for the new network
+                *self.show_live.lock().unwrap() = true;
+            }
+            Ok(Err(error_msg)) => {
+                // Network is not available, show specific error message
+                self.popup_state = PopupState::Message(error_msg);
+                // Force show_live to false to prevent continuous polling
+                *self.show_live.lock().unwrap() = false;
+            }
+            Err(_) => {
+                // Timeout occurred
+                self.popup_state = PopupState::Message(format!(
+                    "Connection to {} timed out. Please check your network connection.",
+                    network.as_str()
+                ));
+                // Force show_live to false to prevent continuous polling
+                *self.show_live.lock().unwrap() = false;
+            }
+        }
     }
 
     pub fn move_selection_up(&mut self) {

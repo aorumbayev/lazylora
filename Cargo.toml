@@ -1,6 +1,6 @@
 [package]
 name = "lazylora"
-version = "0.1.0"
+version = "0.3.0"
 description = "Unofficial terminal user interface for Algorand Blockchain exploration"
 authors = ["Altynbek Orumbayev <aorumbayev@pm.me>"]
 license = "MIT"
@@ -19,6 +19,7 @@ chrono = "0.4.40"
 arboard = "3.3.0"
 clap = { version = "4.5.9", features = ["derive"] }
 semver = "1.0"
+lazy_static = "1.4.0"
 self_update = { version = "0.42.0", features = [
     "archive-tar",
     "archive-zip",

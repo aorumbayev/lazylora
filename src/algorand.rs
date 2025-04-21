@@ -54,6 +54,80 @@ impl AlgoClient {
         }
     }
 
+    // Add method to check if network is available
+    pub async fn is_network_available(&self) -> bool {
+        // For LocalNet, we should check connectivity to both algod and indexer
+        let algod_url = format!("{}/health", self.network.algod_url());
+        let indexer_url = format!("{}/health", self.network.indexer_url());
+
+        // First check algod
+        let algod_result = self
+            .client
+            .get(&algod_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await;
+
+        let indexer_result = self
+            .client
+            .get(&indexer_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await;
+
+        // LocalNet requires both services to be available
+        if self.network == Network::LocalNet {
+            algod_result.is_ok() && indexer_result.is_ok()
+        } else {
+            // MainNet and TestNet are assumed to be always available
+            // But we could add additional checking here if needed
+            true
+        }
+    }
+
+    // Add a new method to get specific error message about connection
+    pub async fn get_network_status(&self) -> Result<(), String> {
+        // For LocalNet, we should check connectivity to both algod and indexer
+        let algod_url = format!("{}/health", self.network.algod_url());
+        let indexer_url = format!("{}/health", self.network.indexer_url());
+
+        // First check algod
+        let algod_result = self
+            .client
+            .get(&algod_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await;
+
+        // Then check indexer
+        let indexer_result = self
+            .client
+            .get(&indexer_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await;
+
+        // Check algod connection first
+        if let Err(e) = algod_result {
+            return Err(format!(
+                "Unable to connect to algod at {}. Error: {}",
+                self.network.algod_url(),
+                e
+            ));
+        }
+
+        // Check indexer connection for LocalNet
+        if self.network == Network::LocalNet && indexer_result.is_err() {
+            return Err(format!(
+                "Unable to connect to indexer at {}. Algod is running but indexer is not available.",
+                self.network.indexer_url()
+            ));
+        }
+
+        // All good
+        Ok(())
+    }
+
     #[allow(dead_code)]
     pub async fn get_transaction_by_id(&self, txid: &str) -> Result<Option<Transaction>> {
         let url = format!("{}/v2/transactions/{}", self.network.indexer_url(), txid);
@@ -349,30 +423,7 @@ impl AlgoClient {
             }
         };
 
-        // Deduplication might need adjustment depending on how we identify unique items across types
-        // For now, we assume the search functions return unique primary entities.
-        // If they return related transactions, that logic needs rethinking.
-        // The current search functions seem to return a single "primary" entity
-        // represented as a Transaction, which is what we are fixing.
-
-        // Let's remove the old deduplication logic as it was based on Transaction IDs.
-        // let mut unique_items = Vec::new();
-        // let mut seen_ids = HashSet::new(); // This needs a more complex ID strategy for different types
-
-        // for item in results {
-        //     // Generate a unique ID based on item type and its primary identifier
-        //     let unique_id = match &item {
-        //         SearchResultItem::Transaction(t) => format!("txn-{}", t.id),
-        //         SearchResultItem::Account(a) => format!("acc-{}", a.address),
-        //         SearchResultItem::Block(b) => format!("blk-{}", b.id),
-        //         SearchResultItem::Asset(a) => format!("asset-{}", a.id),
-        //     };
-        //     if seen_ids.insert(unique_id) {
-        //         unique_items.push(item);
-        //     }
-        // }
-
-        Ok(results) // Return the direct results for now
+        Ok(results)
     }
 
     // Search for a specific transaction by ID

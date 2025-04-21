@@ -1058,7 +1058,20 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
 
 /// Render a message popup
 fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
-    let popup_area = centered_popup_area(area, 40, 6);
+    // Calculate appropriate popup size based on message content
+    let message_lines = message.lines().count().max(1) as u16;
+    let longest_line = message
+        .lines()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(message.chars().count()) as u16;
+
+    // Ensure width is at least 40 and at most 80% of screen width
+    let popup_width = 40.max(longest_line + 6).min(area.width * 8 / 10);
+    // Ensure height accommodates message + borders + help text
+    let popup_height = 6.max(message_lines + 4);
+
+    let popup_area = centered_popup_area(area, popup_width, popup_height);
 
     // Create an outer block with title for the popup
     let popup_block = Block::default()
@@ -1074,19 +1087,42 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
 
     let inner_area = popup_block.inner(popup_area);
 
+    // Create message area that doesn't include the bottom line reserved for help text
+    let message_area = Rect::new(
+        inner_area.x,
+        inner_area.y,
+        inner_area.width,
+        inner_area.height.saturating_sub(2), // Reserve space for help text
+    );
+
     let prompt = Paragraph::new(message)
         .style(Style::default())
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
 
-    frame.render_widget(prompt, inner_area);
+    frame.render_widget(prompt, message_area);
 
-    // Add the help message at the bottom
+    // Add the help message at the bottom with visual separation
+    let separator = "─".repeat(popup_area.width.saturating_sub(2) as usize);
+    let separator_area = Rect::new(
+        popup_area.x + 1,
+        popup_area.y + popup_area.height - 3,
+        popup_area.width - 2,
+        1,
+    );
+
+    let separator_widget = Paragraph::new(separator)
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Center);
+
+    frame.render_widget(separator_widget, separator_area);
+
+    // Add the help message below the separator
     let help_text = "Press Esc to continue";
     let text_area = Rect::new(
-        popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
+        popup_area.x,
         popup_area.y + popup_area.height - 2,
-        help_text.len() as u16,
+        popup_area.width,
         1,
     );
 
