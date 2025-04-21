@@ -10,7 +10,7 @@ use ratatui::{
     },
 };
 
-use crate::algorand::{Transaction, TxnType};
+use crate::algorand::{SearchResultItem, TxnType};
 use crate::app_state::{App, Focus, PopupState, SearchType};
 
 const BLOCK_HEIGHT: u16 = 3;
@@ -38,8 +38,8 @@ pub fn render(app: &App, frame: &mut Frame) {
         PopupState::NetworkSelect(selected_index) => {
             render_network_selector(frame, size, *selected_index);
         }
-        PopupState::Search(query, search_type) => {
-            render_search_popup(frame, size, query, search_type);
+        PopupState::SearchWithType(query, search_type) => {
+            render_search_with_type_popup(frame, size, query, *search_type);
         }
         PopupState::Message(message) => {
             render_message_popup(frame, size, message);
@@ -271,11 +271,8 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         Style::default()
     };
 
-    let title = if !app.filtered_transactions.is_empty() {
-        " Search Results "
-    } else {
-        " Latest Transactions "
-    };
+    // Always show "Latest Transactions" title
+    let title = " Latest Transactions ";
 
     let txn_block = Block::default()
         .borders(Borders::ALL)
@@ -287,30 +284,17 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(txn_block.clone(), area);
     let inner_area = txn_block.inner(area);
 
-    // Determine the source of transactions to display
-    let transactions_to_display = if !app.filtered_transactions.is_empty() {
-        // If we have filtered transactions, use those
-        app.filtered_transactions
-            .iter()
-            .map(|(i, txn)| (*i, txn.clone()))
-            .collect::<Vec<_>>()
-    } else {
-        // Otherwise, use all transactions with their indices
-        let transactions = app.transactions.lock().unwrap();
-        transactions
-            .iter()
-            .enumerate()
-            .map(|(i, txn)| (i, txn.clone()))
-            .collect::<Vec<_>>()
-    };
+    // Always use app.transactions
+    let transactions = app.transactions.lock().unwrap();
+    let transactions_to_display: Vec<_> = transactions
+        .iter()
+        .enumerate()
+        .map(|(i, txn)| (i, txn.clone()))
+        .collect();
 
     if transactions_to_display.is_empty() {
-        let message = if !app.filtered_transactions.is_empty() {
-            "No matching transactions found"
-        } else {
-            "No transactions available"
-        };
-
+        // Always show "No transactions available" if empty
+        let message = "No transactions available";
         let no_data_message = Paragraph::new(message)
             .style(Style::default().fg(Color::Gray))
             .alignment(Alignment::Center);
@@ -323,11 +307,11 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         .iter()
         .map(|(orig_idx, txn)| {
             let is_selected = app.selected_transaction_index == Some(*orig_idx);
-            let txn_type_style = Style::default().fg(txn.txn_type.color());
+            let txn_type_str = txn.txn_type.as_str();
+            let entity_type_style = Style::default().fg(txn.txn_type.color());
 
             ListItem::new(vec![
                 Line::from(vec![
-                    // Add consistent icon for all rows, but different based on selection
                     if is_selected {
                         "▶ ".into()
                     } else {
@@ -340,15 +324,15 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("          "),
-                    Span::styled(format!("[{}]", txn.txn_type.as_str()), txn_type_style),
+                    Span::styled(format!("[{}]", txn_type_str), entity_type_style),
                 ]),
                 Line::from(vec![
-                    Span::raw("  "), // Indent to align with content above
+                    Span::raw("  "),
                     Span::styled("From: ", Style::default().fg(Color::Gray)),
                     Span::styled(txn.from.clone(), Style::default().fg(Color::Yellow)),
                 ]),
                 Line::from(vec![
-                    Span::raw("  "), // Indent to align with content above
+                    Span::raw("  "),
                     Span::styled("To:   ", Style::default().fg(Color::Gray)),
                     Span::styled(txn.to.clone(), Style::default().fg(Color::Cyan)),
                 ]),
@@ -368,10 +352,16 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     // Create a stateful list
     let mut list_state = ratatui::widgets::ListState::default();
     if let Some(selected_index) = app.selected_transaction_index {
-        list_state.select(Some(selected_index));
+        // Find the position of the selected transaction in the current display list
+        if let Some(display_index) = transactions_to_display
+            .iter()
+            .position(|(idx, _)| *idx == selected_index)
+        {
+            list_state.select(Some(display_index));
+        }
     }
 
-    // Determine visible range of items
+    // Determine visible range of items based on scroll position
     let txn_scroll_usize = app.transaction_scroll as usize / TXN_HEIGHT as usize;
     let start_index = txn_scroll_usize.min(txn_items.len().saturating_sub(1));
     let end_index = (start_index + items_per_page).min(txn_items.len());
@@ -382,7 +372,7 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         Vec::new()
     };
 
-    // Create and render the list - no highlight_symbol as we're adding it manually
+    // Create and render the list
     let txn_list = List::new(visible_items)
         .block(Block::default())
         .highlight_style(
@@ -391,13 +381,13 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    // Render list with state
+    // Render list with state, adjusting selected index based on visible range
     let mut modified_state = list_state.clone();
-    if let Some(selected) = list_state.selected() {
-        if selected >= start_index && selected < end_index {
-            modified_state.select(Some(selected - start_index));
+    if let Some(selected_display_index) = list_state.selected() {
+        if selected_display_index >= start_index && selected_display_index < end_index {
+            modified_state.select(Some(selected_display_index - start_index));
         } else {
-            modified_state.select(None);
+            modified_state.select(None); // Selection is outside the visible range
         }
     }
 
@@ -529,127 +519,142 @@ fn centered_popup_area(parent: Rect, width: u16, height: u16) -> Rect {
 
 /// Render transaction details popup
 fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
-    if let Some(index) = app.selected_transaction_index {
-        let transactions = app.transactions.lock().unwrap();
-
-        if let Some(txn) = transactions.get(index) {
-            // Increase popup size to fit more information
-            let popup_area = centered_popup_area(area, 76, 25);
-
-            // Create an outer block with title for the popup
-            let popup_block = Block::default()
-                .title(" Transaction Details ")
-                .title_alignment(Alignment::Center)
-                .borders(Borders::ALL)
-                .border_set(border::ROUNDED)
-                .border_style(Style::default().fg(Color::Cyan));
-
-            // Render the popup background
-            frame.render_widget(Clear, popup_area);
-            frame.render_widget(popup_block.clone(), popup_area);
-
-            let inner_area = popup_block.inner(popup_area);
-
-            // Format amount based on transaction type
-            let formatted_amount = match txn.txn_type {
-                TxnType::Payment => {
-                    // Convert microAlgos to Algos (1 Algo = 1,000,000 microAlgos)
-                    format!("{:.6} Algos", txn.amount as f64 / 1_000_000.0)
-                }
-                TxnType::AssetTransfer => {
-                    if let Some(asset_id) = txn.asset_id {
-                        format!("{} units of Asset ID: {}", txn.amount, asset_id)
-                    } else {
-                        format!("{} units", txn.amount)
-                    }
-                }
-                _ => format!("{}", txn.amount),
-            };
-
-            // Format fee from microAlgos to Algos
-            let formatted_fee = format!("{:.6} Algos", txn.fee as f64 / 1_000_000.0);
-
-            // Build the transaction details
-            let mut details = vec![
-                ("Transaction ID:", txn.id.clone()),
-                ("Type:", txn.txn_type.as_str().to_string()),
-                ("From:", txn.from.clone()),
-                ("To:", txn.to.clone()),
-                ("Timestamp:", txn.timestamp.clone()),
-                ("Block:", format!("{}", txn.block)),
-                ("Fee:", formatted_fee),
-                ("Amount:", formatted_amount),
-                ("Note:", txn.note.clone()),
-            ];
-
-            // Add asset ID if it's an asset transfer
-            if let Some(asset_id) = txn.asset_id {
-                details.push(("Asset ID:", format!("{}", asset_id)));
-            }
-
-            // Create table rows
-            let rows: Vec<Row> = details
-                .into_iter()
-                .map(|(label, value)| {
-                    Row::new(vec![
-                        Cell::from(label).style(Style::default().fg(Color::Yellow)),
-                        Cell::from(value), // Using Cell::from directly for text wrapping
-                    ])
+    // Determine the source of the transaction data
+    let transaction_opt = if app.viewing_search_result {
+        // Find the transaction in filtered_search_results
+        app.selected_transaction_id.as_ref().and_then(|txn_id| {
+            app.filtered_search_results
+                .iter()
+                .find_map(|(_, item)| match item {
+                    SearchResultItem::Transaction(t) if &t.id == txn_id => Some(t.clone()),
+                    _ => None,
                 })
-                .collect();
+        })
+    } else {
+        // Find the transaction in the main transactions list
+        app.selected_transaction_index.and_then(|index| {
+            let transactions = app.transactions.lock().unwrap();
+            transactions.get(index).cloned()
+        })
+    };
 
-            // Create table with proper constraints
-            let table = Table::new(rows, [Constraint::Length(15), Constraint::Min(40)])
-                .block(Block::default())
-                .column_spacing(1)
-                .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
+    if let Some(txn) = transaction_opt {
+        // Increase popup size to fit more information
+        let popup_area = centered_popup_area(area, 76, 25);
 
-            frame.render_widget(table, inner_area);
+        // Create an outer block with title for the popup
+        let popup_block = Block::default()
+            .title(" Transaction Details ")
+            .title_alignment(Alignment::Center)
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(Color::Cyan));
 
-            // Add copy button
-            let button_text = "[C] Copy TXN ID";
-            let button_block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan))
-                .border_set(border::ROUNDED);
+        // Render the popup background
+        frame.render_widget(Clear, popup_area);
+        frame.render_widget(popup_block.clone(), popup_area);
 
-            let button_width = button_text.len() as u16 + 4;
-            let button_height = 3;
-            let button_x = inner_area.x + (inner_area.width - button_width) / 2;
-            let button_y = inner_area.y + inner_area.height - button_height - 2;
+        let inner_area = popup_block.inner(popup_area);
 
-            let button_area = Rect::new(button_x, button_y, button_width, button_height);
+        // Format amount based on entity type
+        let formatted_amount = match txn.txn_type {
+            TxnType::Payment => {
+                // Convert microAlgos to Algos (1 Algo = 1,000,000 microAlgos)
+                format!("{:.6} Algos", txn.amount as f64 / 1_000_000.0)
+            }
+            TxnType::AssetTransfer => {
+                if let Some(asset_id) = txn.asset_id {
+                    format!("{} units of Asset ID: {}", txn.amount, asset_id)
+                } else {
+                    format!("{} units", txn.amount)
+                }
+            }
+            _ => format!("{}", txn.amount),
+        };
 
-            frame.render_widget(button_block, button_area);
+        // Format fee from microAlgos to Algos
+        let formatted_fee = format!("{:.6} Algos", txn.fee as f64 / 1_000_000.0);
 
-            let button_content = Paragraph::new(button_text)
-                .style(Style::default().fg(Color::White))
-                .alignment(Alignment::Center);
+        // Build the transaction details
+        let mut details = vec![
+            ("Transaction ID:", txn.id.clone()),
+            ("Type:", txn.txn_type.as_str().to_string()),
+            ("From:", txn.from.clone()),
+            ("To:", txn.to.clone()),
+            ("Timestamp:", txn.timestamp.clone()),
+            ("Block:", format!("{}", txn.block)),
+            ("Fee:", formatted_fee),
+            ("Amount:", formatted_amount),
+            ("Note:", txn.note.clone()),
+        ];
 
-            let button_inner_area = Rect::new(
-                button_area.x + 1,
-                button_area.y + 1,
-                button_area.width - 2,
-                button_area.height - 2,
-            );
-
-            frame.render_widget(button_content, button_inner_area);
-
-            // Add the close message at the bottom
-            let text = "Press Esc to close";
-            let text_area = Rect::new(
-                popup_area.x + (popup_area.width - text.len() as u16) / 2,
-                popup_area.y + popup_area.height - 1,
-                text.len() as u16,
-                1,
-            );
-
-            let close_msg = Paragraph::new(text)
-                .style(Style::default().fg(Color::Gray))
-                .alignment(Alignment::Center);
-
-            frame.render_widget(close_msg, text_area);
+        // Add asset ID if it's an asset transfer
+        if let Some(asset_id) = txn.asset_id {
+            details.push(("Asset ID:", format!("{}", asset_id)));
         }
+
+        // Create table rows
+        let rows: Vec<Row> = details
+            .into_iter()
+            .map(|(label, value)| {
+                Row::new(vec![
+                    Cell::from(label).style(Style::default().fg(Color::Yellow)),
+                    Cell::from(value), // Using Cell::from directly for text wrapping
+                ])
+            })
+            .collect();
+
+        // Create table with proper constraints
+        let table = Table::new(rows, [Constraint::Length(15), Constraint::Min(40)])
+            .block(Block::default())
+            .column_spacing(1)
+            .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+        frame.render_widget(table, inner_area);
+
+        // Add copy button
+        let button_text = "[C] Copy TXN ID";
+        let button_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .border_set(border::ROUNDED);
+
+        let button_width = button_text.len() as u16 + 4;
+        let button_height = 3;
+        let button_x = inner_area.x + (inner_area.width - button_width) / 2;
+        let button_y = inner_area.y + inner_area.height - button_height - 2;
+
+        let button_area = Rect::new(button_x, button_y, button_width, button_height);
+
+        frame.render_widget(button_block, button_area);
+
+        let button_content = Paragraph::new(button_text)
+            .style(Style::default().fg(Color::White))
+            .alignment(Alignment::Center);
+
+        let button_inner_area = Rect::new(
+            button_area.x + 1,
+            button_area.y + 1,
+            button_area.width - 2,
+            button_area.height - 2,
+        );
+
+        frame.render_widget(button_content, button_inner_area);
+
+        // Add the close message at the bottom
+        let text = "Press Esc to close";
+        let text_area = Rect::new(
+            popup_area.x + (popup_area.width - text.len() as u16) / 2,
+            popup_area.y + popup_area.height - 1,
+            text.len() as u16,
+            1,
+        );
+
+        let close_msg = Paragraph::new(text)
+            .style(Style::default().fg(Color::Gray))
+            .alignment(Alignment::Center);
+
+        frame.render_widget(close_msg, text_area);
     }
 }
 
@@ -668,7 +673,7 @@ fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize)
 
     // Create an outer block with title for the popup
     let popup_block = Block::default()
-        .title(" Select Network ")
+        .title(" Select Network (Esc:Cancel) ")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
@@ -703,12 +708,12 @@ fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize)
 
     frame.render_widget(table, inner_area);
 
-    // Add the help message at the bottom
-    let help_text = "↑↓:Move  Enter:Select  Esc:Cancel";
+    // Add the help message at the bottom, positioned INSIDE the inner area
+    let help_text = "↑↓:Move Enter:Select";
     let text_area = Rect::new(
-        popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
-        popup_area.y + popup_area.height - 2,
-        help_text.len() as u16,
+        inner_area.x, // Start at the inner area's left edge
+        inner_area.y + inner_area.height.saturating_sub(1), // Position on the last line of inner_area
+        inner_area.width,                                   // Use the inner area's width
         1,
     );
 
@@ -719,13 +724,18 @@ fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize)
     frame.render_widget(help_msg, text_area);
 }
 
-/// Render search popup
-fn render_search_popup(frame: &mut Frame, area: Rect, query: &str, search_type: &SearchType) {
-    let popup_area = centered_popup_area(area, 50, 10);
+/// Render search with type popup
+fn render_search_with_type_popup(
+    frame: &mut Frame,
+    area: Rect,
+    query: &str,
+    search_type: SearchType,
+) {
+    let popup_area = centered_popup_area(area, 60, 15); // Make it taller to fit search type selectors
 
     // Create an outer block with title for the popup
     let popup_block = Block::default()
-        .title(" Search Transactions ")
+        .title(" Search Algorand Network ")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
@@ -737,34 +747,301 @@ fn render_search_popup(frame: &mut Frame, area: Rect, query: &str, search_type: 
 
     let inner_area = popup_block.inner(popup_area);
 
-    // First, render the search type selector
-    let search_type_text = format!("Search type: {}", search_type.as_str());
-    let search_type_area = Rect::new(inner_area.x, inner_area.y, inner_area.width, 1);
+    // Create a text input widget with a border
+    let input_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Blue))
+        .title(" Enter search term ")
+        .title_alignment(Alignment::Left);
 
-    let search_type_para = Paragraph::new(search_type_text)
-        .style(Style::default().fg(Color::Yellow))
-        .alignment(Alignment::Left);
+    // Calculate the input area position and dimensions
+    let input_area = Rect::new(inner_area.x + 2, inner_area.y + 2, inner_area.width - 4, 3);
 
-    frame.render_widget(search_type_para, search_type_area);
+    // Render the input block
+    frame.render_widget(input_block.clone(), input_area);
 
-    // Then render the search input area
-    let query_prompt = format!(
-        "Search query: {}{}",
-        query,
-        if query.is_empty() { "" } else { "_" }
-    );
+    // Calculate inner area of the input block for the actual text
+    let text_input_area = input_block.inner(input_area);
 
-    let prompt_area = Rect::new(inner_area.x, inner_area.y + 2, inner_area.width, 1);
+    // Add cursor at the end of input
+    let input_text = format!("{}{}", query, "▏");
 
-    let prompt = Paragraph::new(query_prompt)
+    // Create the text input widget
+    let input = Paragraph::new(input_text)
         .style(Style::default())
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
 
-    frame.render_widget(prompt, prompt_area);
+    frame.render_widget(input, text_input_area);
+
+    // Search type selectors
+    let selector_y = input_area.y + 4;
+    let selector_height = 1;
+    let selector_width = inner_area.width / 5; // 4 options, but give extra space
+    let spacing = 2;
+
+    // Create and render search type selector buttons - removed "ALL" option
+    let search_types = [
+        SearchType::Transaction,
+        SearchType::Block,
+        SearchType::Account,
+        SearchType::Asset,
+    ];
+
+    let mut x_offset = inner_area.x + (inner_area.width - (4 * selector_width + 3 * spacing)) / 2;
+
+    for t in &search_types {
+        let is_selected = *t == search_type;
+        let button_style = if is_selected {
+            Style::default().bg(Color::Blue).fg(Color::White)
+        } else {
+            Style::default().bg(Color::DarkGray).fg(Color::White)
+        };
+
+        let button_rect = Rect::new(x_offset, selector_y, selector_width, selector_height);
+
+        let button = Paragraph::new(t.as_str())
+            .style(button_style)
+            .alignment(Alignment::Center);
+
+        frame.render_widget(button, button_rect);
+
+        x_offset += selector_width + spacing;
+    }
+
+    // Add help text after the selector buttons
+    let help_text1 = "Search directly queries the Algorand network";
+    let help_text2 = "Use Tab to switch between search types";
+
+    let help_area1 = Rect::new(inner_area.x + 2, selector_y + 2, inner_area.width - 4, 1);
+    let help_area2 = Rect::new(inner_area.x + 2, selector_y + 3, inner_area.width - 4, 1);
+
+    let help_msg1 = Paragraph::new(help_text1)
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+
+    let help_msg2 = Paragraph::new(help_text2)
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+
+    frame.render_widget(help_msg1, help_area1);
+    frame.render_widget(help_msg2, help_area2);
+
+    // Add the control help message at the bottom
+    let control_text = "Tab: Change Type  Enter: Search  Esc: Cancel";
+    let text_area = Rect::new(
+        popup_area.x + (popup_area.width - control_text.len() as u16) / 2,
+        popup_area.y + popup_area.height - 2,
+        control_text.len() as u16,
+        1,
+    );
+
+    let control_msg = Paragraph::new(control_text)
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+
+    frame.render_widget(control_msg, text_area);
+}
+
+/// Render search results popup
+fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, SearchResultItem)]) {
+    let popup_area = centered_popup_area(area, 76, 20);
+
+    // Create an outer block with title for the popup
+    let popup_block = Block::default()
+        .title(" Search Results ")
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    // Render the popup background
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(popup_block.clone(), popup_area);
+
+    let inner_area = popup_block.inner(popup_area);
+
+    let mut list_items = Vec::new();
+    for (i, (_idx, item)) in results.iter().enumerate() {
+        let is_selected = i == 0;
+
+        // Match on the SearchResultItem type to create the list item content
+        let list_item = match item {
+            SearchResultItem::Transaction(txn) => {
+                let amount_text = match txn.txn_type {
+                    TxnType::Payment => {
+                        format!("{:.6} Algos", txn.amount as f64 / 1_000_000.0)
+                    }
+                    TxnType::AssetTransfer => {
+                        if let Some(asset_id) = txn.asset_id {
+                            format!("{} units (Asset: {})", txn.amount, asset_id)
+                        } else {
+                            format!("{} units", txn.amount)
+                        }
+                    }
+                    _ => format!("{}", txn.amount),
+                };
+
+                let id_span = Span::styled(
+                    txn.id.clone(),
+                    Style::default()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::BOLD),
+                );
+                let type_span = Span::styled(
+                    format!("[{}]", txn.txn_type.as_str()),
+                    Style::default().fg(txn.txn_type.color()),
+                );
+
+                let line1 = Line::from(vec![
+                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    id_span,
+                    "  ".into(),
+                    type_span,
+                ]);
+                let line2 = Line::from(vec![
+                    Span::styled("  From: ", Style::default().fg(Color::Gray)),
+                    Span::styled(txn.from.clone(), Style::default().fg(Color::Yellow)),
+                ]);
+                let line3 = Line::from(vec![
+                    Span::styled("  To:   ", Style::default().fg(Color::Gray)),
+                    Span::styled(txn.to.clone(), Style::default().fg(Color::Cyan)),
+                ]);
+                let line4 = Line::from(vec![
+                    "  ".into(),
+                    Span::styled(txn.timestamp.clone(), Style::default().fg(Color::Gray)),
+                    "  ".into(),
+                    Span::styled(amount_text, Style::default().fg(Color::Green)),
+                ]);
+                vec![line1, line2, line3, line4, Line::from("")]
+            }
+            SearchResultItem::Block(block) => {
+                let id_span = Span::styled(
+                    format!("Block # {}", block.id),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                );
+                let type_span = Span::styled("[Block]", Style::default().fg(Color::White));
+
+                let line1 = Line::from(vec![
+                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    id_span,
+                    "  ".into(),
+                    type_span,
+                ]);
+                let line2 = Line::from(vec![
+                    Span::styled("  Time: ", Style::default().fg(Color::Gray)),
+                    Span::styled(block.timestamp.clone(), Style::default().fg(Color::Yellow)),
+                ]);
+                let line3 = Line::from(vec![
+                    Span::styled("  Txns: ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        format!("{}", block.txn_count),
+                        Style::default().fg(Color::Green),
+                    ),
+                ]);
+                let line4 = Line::from(vec![
+                    Span::styled("  Proposer: ", Style::default().fg(Color::Gray)),
+                    Span::styled(block.proposer.clone(), Style::default().fg(Color::Magenta)),
+                ]);
+                vec![line1, line2, line3, line4, Line::from("")]
+            }
+            SearchResultItem::Account(account) => {
+                let id_span = Span::styled(
+                    account.address.clone(),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                );
+                let type_span = Span::styled("[Account]", Style::default().fg(Color::Yellow));
+                let balance_text = format!("{:.6} Algos", account.balance as f64 / 1_000_000.0);
+
+                let line1 = Line::from(vec![
+                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    id_span,
+                    "  ".into(),
+                    type_span,
+                ]);
+                let line2 = Line::from(vec![
+                    Span::styled("  Balance: ", Style::default().fg(Color::Gray)),
+                    Span::styled(balance_text, Style::default().fg(Color::Green)),
+                ]);
+                let line3 = Line::from(vec![
+                    Span::styled("  Status: ", Style::default().fg(Color::Gray)),
+                    Span::styled(account.status.clone(), Style::default().fg(Color::Cyan)),
+                ]);
+                let line4 = Line::from(vec![
+                    Span::styled("  Assets: ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        format!("{}", account.assets_count),
+                        Style::default().fg(Color::Magenta),
+                    ),
+                ]);
+                vec![line1, line2, line3, line4, Line::from("")]
+            }
+            SearchResultItem::Asset(asset) => {
+                let id_span = Span::styled(
+                    format!("Asset # {}", asset.id),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                );
+                let type_span = Span::styled("[Asset]", Style::default().fg(Color::Green));
+                let name = if asset.name.is_empty() {
+                    "<unnamed>".to_string()
+                } else {
+                    asset.name.clone()
+                };
+                let unit = if asset.unit_name.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(" ({})", asset.unit_name)
+                };
+                let total_supply = format!("{} (decimals: {})", asset.total, asset.decimals);
+
+                let line1 = Line::from(vec![
+                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    id_span,
+                    "  ".into(),
+                    type_span,
+                ]);
+                let line2 = Line::from(vec![
+                    Span::styled("  Name: ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        format!("{}{}", name, unit),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ]);
+                let line3 = Line::from(vec![
+                    Span::styled("  Creator: ", Style::default().fg(Color::Gray)),
+                    Span::styled(asset.creator.clone(), Style::default().fg(Color::Yellow)),
+                ]);
+                let line4 = Line::from(vec![
+                    Span::styled("  Total: ", Style::default().fg(Color::Gray)),
+                    Span::styled(total_supply, Style::default().fg(Color::Magenta)),
+                ]);
+                vec![line1, line2, line3, line4, Line::from("")]
+            }
+        };
+
+        list_items.push(ListItem::new(list_item).style(if is_selected {
+            Style::default().bg(Color::DarkGray)
+        } else {
+            Style::default()
+        }));
+    }
+
+    // Create a list with wrapping enabled
+    let txn_list = List::new(list_items)
+        .block(Block::default())
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    frame.render_widget(txn_list, inner_area);
 
     // Add the help message at the bottom
-    let help_text = "Tab:Change Type  Enter:Search  Esc:Cancel";
+    let help_text = "↑↓: Navigate  Enter: Select  Esc: Cancel";
     let text_area = Rect::new(
         popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
         popup_area.y + popup_area.height - 2,
@@ -806,120 +1083,6 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
 
     // Add the help message at the bottom
     let help_text = "Press Esc to continue";
-    let text_area = Rect::new(
-        popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
-        popup_area.y + popup_area.height - 2,
-        help_text.len() as u16,
-        1,
-    );
-
-    let help_msg = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::Gray))
-        .alignment(Alignment::Center);
-
-    frame.render_widget(help_msg, text_area);
-}
-
-/// Render search results popup
-fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Transaction)]) {
-    let popup_area = centered_popup_area(area, 76, 20);
-
-    // Create an outer block with title for the popup
-    let popup_block = Block::default()
-        .title(" Search Results ")
-        .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan));
-
-    // Render the popup background
-    frame.render_widget(Clear, popup_area);
-    frame.render_widget(popup_block.clone(), popup_area);
-
-    let inner_area = popup_block.inner(popup_area);
-
-    let mut list_items = Vec::new();
-    for (i, (_idx, txn)) in results.iter().enumerate() {
-        let is_selected = i == 0;
-
-        // Format amount based on transaction type
-        let amount_text = match txn.txn_type {
-            TxnType::Payment => {
-                format!("{:.6} Algos", txn.amount as f64 / 1_000_000.0)
-            }
-            TxnType::AssetTransfer => {
-                if let Some(asset_id) = txn.asset_id {
-                    format!("{} units (Asset: {})", txn.amount, asset_id)
-                } else {
-                    format!("{} units", txn.amount)
-                }
-            }
-            _ => "".to_string(),
-        };
-
-        // Use Line::from with word wrapping for long content
-        let id_span = Span::styled(
-            txn.id.clone(),
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        );
-
-        let from_span = Span::styled(txn.from.clone(), Style::default().fg(Color::Yellow));
-        let to_span = Span::styled(txn.to.clone(), Style::default().fg(Color::Cyan));
-
-        // Create lines with proper styling
-        let line1 = Line::from(vec![
-            if is_selected {
-                "▶ ".into()
-            } else {
-                "⬚ ".into()
-            },
-            id_span,
-            "  ".into(),
-            Span::styled(
-                format!("[{}]", txn.txn_type.as_str()),
-                Style::default().fg(txn.txn_type.color()),
-            ),
-        ]);
-
-        // For the address lines, use a more structured approach that allows wrapping
-        let line2_prefix = "  From: ";
-        let line2 = Line::from(vec![
-            Span::styled(line2_prefix, Style::default().fg(Color::Gray)),
-            from_span,
-        ]);
-
-        let line3_prefix = "  To:   ";
-        let line3 = Line::from(vec![
-            Span::styled(line3_prefix, Style::default().fg(Color::Gray)),
-            to_span,
-        ]);
-
-        let line4 = Line::from(vec![
-            "  ".into(),
-            Span::styled(txn.timestamp.clone(), Style::default().fg(Color::Gray)),
-            "  ".into(),
-            Span::styled(amount_text, Style::default().fg(Color::Green)),
-        ]);
-
-        let item_text = vec![line1, line2, line3, line4, Line::from("")];
-        list_items.push(ListItem::new(item_text).style(if is_selected {
-            Style::default().bg(Color::DarkGray)
-        } else {
-            Style::default()
-        }));
-    }
-
-    // Create a list with wrapping enabled
-    let txn_list = List::new(list_items)
-        .block(Block::default())
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-
-    frame.render_widget(txn_list, inner_area);
-
-    // Add the help message at the bottom
-    let help_text = "Enter:Select  Esc:Cancel";
     let text_area = Rect::new(
         popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
         popup_area.y + popup_area.height - 2,

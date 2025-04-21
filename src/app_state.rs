@@ -4,11 +4,12 @@ use crossterm::event::{
     self, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
 use std::collections::{HashMap, HashSet};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::algorand::{AlgoBlock, AlgoClient, Network, Transaction};
+use crate::algorand::{AlgoBlock, AlgoClient, Network, SearchResultItem, Transaction};
 use crate::ui;
 
 /// Focus area in the application
@@ -19,56 +20,34 @@ pub enum Focus {
     Sidebar,
 }
 
-/// Search type
+/// State for popups
+#[derive(Debug, Clone, PartialEq)]
+pub enum PopupState {
+    None,
+    NetworkSelect(usize),               // Index of the selected network
+    SearchWithType(String, SearchType), // Search query with explicit search type
+    Message(String),                    // A message to display to the user
+    SearchResults(Vec<(usize, SearchResultItem)>), // Search results with original indices
+}
+
+/// Search type for explicit search selector
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SearchType {
-    All,
-    TxnID,
-    AssetID,
-    Address,
-    Block,
+    Transaction, // Search only transactions (default)
+    Asset,       // Search only assets
+    Account,     // Search only accounts
+    Block,       // Search only blocks
 }
 
 impl SearchType {
     pub fn as_str(&self) -> &str {
         match self {
-            Self::All => "All",
-            Self::TxnID => "Transaction ID",
-            Self::AssetID => "Asset ID",
-            Self::Address => "Address",
+            Self::Transaction => "Transaction",
+            Self::Asset => "Asset",
+            Self::Account => "Account",
             Self::Block => "Block",
         }
     }
-
-    pub fn cycle_next(&self) -> Self {
-        match self {
-            Self::All => Self::TxnID,
-            Self::TxnID => Self::AssetID,
-            Self::AssetID => Self::Address,
-            Self::Address => Self::Block,
-            Self::Block => Self::All,
-        }
-    }
-
-    pub fn cycle_prev(&self) -> Self {
-        match self {
-            Self::All => Self::Block,
-            Self::TxnID => Self::All,
-            Self::AssetID => Self::TxnID,
-            Self::Address => Self::AssetID,
-            Self::Block => Self::Address,
-        }
-    }
-}
-
-/// State for popups
-#[derive(Debug, Clone, PartialEq)]
-pub enum PopupState {
-    None,
-    NetworkSelect(usize),                     // Index of the selected network
-    Search(String, SearchType),               // Current search query and type
-    Message(String),                          // A message to display to the user
-    SearchResults(Vec<(usize, Transaction)>), // Search results with original indices
 }
 
 /// The main application which holds the state and logic of the application.
@@ -89,7 +68,8 @@ pub struct App {
     pub show_block_details: bool,
     pub show_transaction_details: bool,
     pub popup_state: PopupState,
-    pub filtered_transactions: Vec<(usize, Transaction)>,
+    pub filtered_search_results: Vec<(usize, SearchResultItem)>,
+    pub viewing_search_result: bool,
     runtime: tokio::runtime::Runtime,
     client: AlgoClient,
 }
@@ -124,7 +104,8 @@ impl App {
             show_block_details: false,
             show_transaction_details: false,
             popup_state: PopupState::None,
-            filtered_transactions: Vec::new(),
+            filtered_search_results: Vec::new(),
+            viewing_search_result: false,
             runtime,
             client,
         }
@@ -165,6 +146,379 @@ impl App {
         Ok(())
     }
 
+    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
+        match self.popup_state.clone() {
+            PopupState::NetworkSelect(index) => match key_event.code {
+                KeyCode::Esc => {
+                    self.popup_state = PopupState::None;
+                    Ok(())
+                }
+                KeyCode::Up => {
+                    let new_index = if index == 0 { 2 } else { index - 1 };
+                    self.popup_state = PopupState::NetworkSelect(new_index);
+                    Ok(())
+                }
+                KeyCode::Down => {
+                    let new_index = if index == 2 { 0 } else { index + 1 };
+                    self.popup_state = PopupState::NetworkSelect(new_index);
+                    Ok(())
+                }
+                KeyCode::Enter => {
+                    let new_network = match index {
+                        0 => Network::MainNet,
+                        1 => Network::TestNet,
+                        2 => Network::LocalNet,
+                        _ => Network::MainNet,
+                    };
+                    self.switch_network(new_network);
+                    self.popup_state = PopupState::None;
+                    Ok(())
+                }
+                _ => Ok(()),
+            },
+            PopupState::SearchWithType(query, search_type) => match key_event.code {
+                KeyCode::Esc => {
+                    self.popup_state = PopupState::None;
+                    self.filtered_search_results.clear();
+                    Ok(())
+                }
+                KeyCode::Enter => {
+                    let query_clone = query.clone();
+                    self.popup_state = PopupState::None;
+                    self.search_transactions(&query_clone, search_type);
+                    Ok(())
+                }
+                KeyCode::Tab => {
+                    let new_search_type = match search_type {
+                        SearchType::Transaction => SearchType::Block,
+                        SearchType::Block => SearchType::Account,
+                        SearchType::Account => SearchType::Asset,
+                        SearchType::Asset => SearchType::Transaction,
+                    };
+                    self.popup_state = PopupState::SearchWithType(query, new_search_type);
+                    Ok(())
+                }
+                KeyCode::Char(c) => {
+                    let mut new_query = query.clone();
+                    new_query.push(c);
+                    self.popup_state = PopupState::SearchWithType(new_query, search_type);
+                    Ok(())
+                }
+                KeyCode::Backspace => {
+                    let mut new_query = query.clone();
+                    new_query.pop();
+                    self.popup_state = PopupState::SearchWithType(new_query, search_type);
+                    Ok(())
+                }
+                _ => Ok(()),
+            },
+            PopupState::Message(_) => {
+                if key_event.code == KeyCode::Esc {
+                    self.popup_state = PopupState::None;
+                }
+                Ok(())
+            }
+            PopupState::SearchResults(results) => match key_event.code {
+                KeyCode::Esc => {
+                    self.popup_state = PopupState::None;
+                    self.filtered_search_results.clear();
+                    self.viewing_search_result = false;
+                    Ok(())
+                }
+                KeyCode::Enter => {
+                    if !results.is_empty() {
+                        // Get the first (selected) result
+                        let (_, item) = &results[0];
+
+                        // Handle based on entity type
+                        match item {
+                            SearchResultItem::Transaction(txn) => {
+                                // Store transaction ID and set flag to view details
+                                self.selected_transaction_id = Some(txn.id.clone());
+                                self.viewing_search_result = true;
+                                self.popup_state = PopupState::None;
+                                self.show_transaction_details = true;
+                            }
+                            SearchResultItem::Block(block_info) => {
+                                // Display block info message
+                                self.popup_state = PopupState::Message(format!(
+                                    "Block #{}: {} - {} transactions",
+                                    block_info.id, block_info.timestamp, block_info.txn_count
+                                ));
+                            }
+                            SearchResultItem::Account(account_info) => {
+                                // Display account info message
+                                self.popup_state = PopupState::Message(format!(
+                                    "Account: {}\nBalance: {} microAlgos\nStatus: {}",
+                                    account_info.address, account_info.balance, account_info.status
+                                ));
+                            }
+                            SearchResultItem::Asset(asset_info) => {
+                                // Display asset info message
+                                self.popup_state = PopupState::Message(format!(
+                                    "Asset #{}: {} ({})\nCreator: {}\nTotal: {}",
+                                    asset_info.id,
+                                    asset_info.name,
+                                    asset_info.unit_name,
+                                    asset_info.creator,
+                                    asset_info.total
+                                ));
+                            }
+                        }
+                    }
+                    Ok(())
+                }
+                KeyCode::Up => {
+                    if results.len() > 1 {
+                        // Take the first item and move it to the end
+                        let mut updated_results = results.clone();
+                        let first = updated_results.remove(0);
+                        updated_results.push(first);
+                        self.popup_state = PopupState::SearchResults(updated_results);
+                    }
+                    Ok(())
+                }
+                KeyCode::Down => {
+                    if results.len() > 1 {
+                        // Take the last item and move it to the front
+                        let mut updated_results = results.clone();
+                        let last = updated_results.pop().unwrap();
+                        updated_results.insert(0, last);
+                        self.popup_state = PopupState::SearchResults(updated_results);
+                    }
+                    Ok(())
+                }
+                _ => Ok(()),
+            },
+            PopupState::None => {
+                if self.show_block_details || self.show_transaction_details {
+                    match key_event.code {
+                        KeyCode::Esc => {
+                            self.show_block_details = false;
+                            self.show_transaction_details = false;
+                            self.viewing_search_result = false;
+                            Ok(())
+                        }
+                        KeyCode::Char('c') => {
+                            if self.show_transaction_details {
+                                self.copy_transaction_id_to_clipboard();
+                            }
+                            Ok(())
+                        }
+                        _ => Ok(()),
+                    }
+                } else {
+                    match key_event.code {
+                        KeyCode::Char('q') => {
+                            self.exit = true;
+                            Ok(())
+                        }
+                        KeyCode::Char('r') => {
+                            self.initial_data_fetch();
+                            Ok(())
+                        }
+                        KeyCode::Char(' ') => {
+                            let mut show_live = self.show_live.lock().unwrap();
+                            *show_live = !*show_live;
+                            Ok(())
+                        }
+                        KeyCode::Char('f') => {
+                            self.popup_state =
+                                PopupState::SearchWithType(String::new(), SearchType::Transaction);
+                            Ok(())
+                        }
+                        KeyCode::Char('n') => {
+                            let current_index = match self.network {
+                                Network::MainNet => 0,
+                                Network::TestNet => 1,
+                                Network::LocalNet => 2,
+                            };
+                            self.popup_state = PopupState::NetworkSelect(current_index);
+                            Ok(())
+                        }
+                        KeyCode::Tab => {
+                            self.focus = match self.focus {
+                                Focus::Blocks => Focus::Transactions,
+                                Focus::Transactions => Focus::Sidebar,
+                                Focus::Sidebar => Focus::Blocks,
+                            };
+                            Ok(())
+                        }
+                        KeyCode::Up => {
+                            self.move_selection_up();
+                            Ok(())
+                        }
+                        KeyCode::Down => {
+                            self.move_selection_down();
+                            Ok(())
+                        }
+                        KeyCode::Enter => {
+                            self.show_details();
+                            Ok(())
+                        }
+                        _ => Ok(()),
+                    }
+                }
+            }
+        }
+    }
+
+    fn handle_mouse_input(&mut self, mouse: MouseEvent) -> Result<()> {
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let popup_state = self.popup_state.clone();
+                let has_popup = popup_state != PopupState::None;
+                let popup_open =
+                    self.show_block_details || self.show_transaction_details || has_popup;
+
+                if popup_open {
+                    if let PopupState::SearchResults(_results) = popup_state {
+                        // TODO: Handle mouse clicks on search results properly based on item type.
+                        // For now, disable the direct click action on results.
+                        // if !results.is_empty() {
+                        //     let (_, item) = &results[0];
+                        //     // Handle click based on item type...
+                        //     // This logic needs to be similar to the Enter key press handler
+                        //     return Ok(());
+                        // }
+                    } else if let PopupState::SearchWithType(query, current_type) = popup_state {
+                        // Check if click is on a search type button
+                        // These are positioned horizontally in the UI at selector_y = input_area.y + 4
+                        let row = mouse.row;
+                        let selector_y = 9; // Estimated y position for the search type buttons
+
+                        if row == selector_y {
+                            // Determine which button was clicked based on x coordinate
+                            let column = mouse.column;
+                            let button_width = 12; // Estimated width of each button
+                            let start_x = 15; // Estimated start x position of the first button
+
+                            if column >= start_x && column < start_x + (4 * button_width) {
+                                let button_index = (column - start_x) / button_width;
+                                let new_type = match button_index {
+                                    0 => SearchType::Transaction,
+                                    1 => SearchType::Block,
+                                    2 => SearchType::Account,
+                                    3 => SearchType::Asset,
+                                    _ => current_type,
+                                };
+
+                                self.popup_state = PopupState::SearchWithType(query, new_type);
+                                return Ok(());
+                            }
+                        }
+                    } else if self.show_transaction_details {
+                        // Check if click is on copy button
+                        // The button is positioned in the UI at:
+                        // y: inner_area.y + inner_area.height - button_height - 2
+                        // Height: 3
+                        // We'll use approximate values based on the UI
+                        let row = mouse.row;
+                        let button_y_range = (20, 23); // Estimated position of the button
+                        let button_x_range = (33, 47); // Estimated position of the button
+
+                        if row >= button_y_range.0
+                            && row <= button_y_range.1
+                            && mouse.column >= button_x_range.0
+                            && mouse.column <= button_x_range.1
+                        {
+                            self.copy_transaction_id_to_clipboard();
+                            return Ok(());
+                        }
+                    }
+                    return Ok(());
+                }
+
+                // Updated mouse click handler to use row-based calculation
+                let header_height = 3; // App header
+                let title_height = 3; // Section title
+
+                if mouse.row <= (header_height + title_height) {
+                    return Ok(()); // Ignore clicks in the header/title area
+                }
+
+                // Determine if click is in left or right panel
+                let column_percent = (mouse.column as f32 / 100.0) * 100.0;
+
+                if column_percent < 50.0 {
+                    // Left panel - Blocks
+                    self.focus = Focus::Blocks;
+
+                    // Calculate which block was clicked
+                    let blocks_area_row = mouse.row - header_height - title_height;
+                    let visible_index = blocks_area_row / BLOCK_HEIGHT;
+                    let scroll_offset = self.block_scroll as usize / BLOCK_HEIGHT as usize;
+                    let absolute_index = scroll_offset + visible_index as usize;
+
+                    let blocks = self.blocks.lock().unwrap();
+                    if absolute_index < blocks.len() {
+                        self.selected_block_index = Some(absolute_index);
+                        self.show_block_details = true;
+                    }
+                } else {
+                    // Right panel - Transactions
+                    self.focus = Focus::Transactions;
+
+                    // Calculate which transaction was clicked
+                    let txns_area_row = mouse.row - header_height - title_height;
+                    let visible_index = txns_area_row / TXN_HEIGHT;
+                    let scroll_offset = self.transaction_scroll as usize / TXN_HEIGHT as usize;
+                    let absolute_index = scroll_offset + visible_index as usize;
+
+                    let transactions = self.transactions.lock().unwrap();
+                    if absolute_index < transactions.len() {
+                        self.selected_transaction_index = Some(absolute_index);
+                        self.show_transaction_details = true;
+                    }
+                }
+            }
+            MouseEventKind::ScrollDown => self.handle_scroll_down(),
+            MouseEventKind::ScrollUp => self.handle_scroll_up(),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_scroll_down(&mut self) {
+        match self.focus {
+            Focus::Blocks => {
+                let blocks = self.blocks.lock().unwrap();
+                let block_height = 3;
+                let max_scroll = blocks.len().saturating_sub(1) as u16 * block_height;
+
+                self.block_scroll = self.block_scroll.saturating_add(block_height);
+                if self.block_scroll > max_scroll {
+                    self.block_scroll = max_scroll;
+                }
+            }
+            Focus::Transactions => {
+                let transactions = self.transactions.lock().unwrap();
+                let txn_height = 4;
+                let max_scroll = transactions.len().saturating_sub(1) as u16 * txn_height;
+
+                self.transaction_scroll = self.transaction_scroll.saturating_add(txn_height);
+                if self.transaction_scroll > max_scroll {
+                    self.transaction_scroll = max_scroll;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_scroll_up(&mut self) {
+        match self.focus {
+            Focus::Blocks => {
+                let block_height = 3;
+                self.block_scroll = self.block_scroll.saturating_sub(block_height);
+            }
+            Focus::Transactions => {
+                let txn_height = 4;
+                self.transaction_scroll = self.transaction_scroll.saturating_sub(txn_height);
+            }
+            _ => {}
+        }
+    }
+
     /// Sync the selected indexes with their corresponding IDs
     fn sync_selections(&mut self) {
         // Sync block selection
@@ -182,22 +536,24 @@ impl App {
             }
         }
 
-        // Sync transaction selection
-        if let Some(txn_id) = self.selected_transaction_id.clone() {
-            let transactions = self.transactions.lock().unwrap();
-            if let Some((index, _)) = transactions
-                .iter()
-                .enumerate()
-                .find(|(_, t)| t.id == txn_id)
-            {
-                self.selected_transaction_index = Some(index);
-            } else if !transactions.is_empty() {
-                // If the transaction with the ID is not found, select the first one
-                self.selected_transaction_index = Some(0);
-                self.selected_transaction_id = transactions.first().map(|t| t.id.clone());
-            } else {
-                self.selected_transaction_index = None;
-                self.selected_transaction_id = None;
+        // Sync transaction selection only if not viewing a search result
+        if !self.viewing_search_result {
+            if let Some(txn_id) = self.selected_transaction_id.clone() {
+                let transactions = self.transactions.lock().unwrap();
+                if let Some((index, _)) = transactions
+                    .iter()
+                    .enumerate()
+                    .find(|(_, t)| t.id == txn_id)
+                {
+                    self.selected_transaction_index = Some(index);
+                } else if !transactions.is_empty() {
+                    // If the transaction with the ID is not found, select the first one
+                    self.selected_transaction_index = Some(0);
+                    self.selected_transaction_id = transactions.first().map(|t| t.id.clone());
+                } else {
+                    self.selected_transaction_index = None;
+                    self.selected_transaction_id = None;
+                }
             }
         }
     }
@@ -337,306 +693,85 @@ impl App {
         });
     }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
-        match self.popup_state.clone() {
-            PopupState::NetworkSelect(index) => match key_event.code {
-                KeyCode::Esc => self.popup_state = PopupState::None,
-                KeyCode::Up => {
-                    let new_index = if index == 0 { 2 } else { index - 1 };
-                    self.popup_state = PopupState::NetworkSelect(new_index);
-                }
-                KeyCode::Down => {
-                    let new_index = if index == 2 { 0 } else { index + 1 };
-                    self.popup_state = PopupState::NetworkSelect(new_index);
-                }
-                KeyCode::Enter => {
-                    let new_network = match index {
-                        0 => Network::MainNet,
-                        1 => Network::TestNet,
-                        2 => Network::LocalNet,
-                        _ => Network::MainNet,
-                    };
-                    self.switch_network(new_network);
-                    self.popup_state = PopupState::None;
-                }
-                _ => {}
-            },
-            PopupState::Search(query, search_type) => match key_event.code {
-                KeyCode::Esc => {
-                    self.popup_state = PopupState::None;
-                    self.filtered_transactions.clear();
-                }
-                KeyCode::Enter => {
-                    let query_clone = query.clone();
-                    self.popup_state = PopupState::None;
-                    self.search_transactions(&query_clone, search_type);
-                }
-                KeyCode::Char(c) => {
-                    let mut new_query = query.clone();
-                    new_query.push(c);
-                    self.popup_state = PopupState::Search(new_query, search_type);
-                }
-                KeyCode::Backspace => {
-                    let mut new_query = query.clone();
-                    new_query.pop();
-                    self.popup_state = PopupState::Search(new_query, search_type);
-                }
-                KeyCode::Tab => {
-                    self.popup_state = PopupState::Search(query.clone(), search_type.cycle_next());
-                }
-                KeyCode::BackTab => {
-                    self.popup_state = PopupState::Search(query.clone(), search_type.cycle_prev());
-                }
-                _ => {}
-            },
-            PopupState::Message(_) => {
-                if key_event.code == KeyCode::Esc {
-                    self.popup_state = PopupState::None;
-                }
-            }
-            PopupState::SearchResults(results) => match key_event.code {
-                KeyCode::Esc => {
-                    self.popup_state = PopupState::None;
-                    self.filtered_transactions.clear();
-                }
-                KeyCode::Enter => {
-                    if !results.is_empty() {
-                        let (orig_index, _) = &results[0];
-                        self.selected_transaction_index = Some(*orig_index);
-                        self.popup_state = PopupState::None;
-                        self.show_transaction_details = true;
-                    }
-                }
-                _ => {}
-            },
-            PopupState::None => {
-                if self.show_block_details || self.show_transaction_details {
-                    match key_event.code {
-                        KeyCode::Esc => {
-                            self.show_block_details = false;
-                            self.show_transaction_details = false;
-                        }
-                        KeyCode::Char('c') => {
-                            if self.show_transaction_details {
-                                self.copy_transaction_id_to_clipboard();
-                            }
-                        }
-                        _ => {}
-                    }
-                } else {
-                    match key_event.code {
-                        KeyCode::Char('q') => self.exit(),
-                        KeyCode::Char('r') => self.refresh_data(),
-                        KeyCode::Char(' ') => self.toggle_show_live(),
-                        KeyCode::Char('f') => self.open_search(),
-                        KeyCode::Char('n') => self.open_network_selector(),
-                        KeyCode::Tab => self.cycle_focus(),
-                        KeyCode::Up => self.move_selection_up(),
-                        KeyCode::Down => self.move_selection_down(),
-                        KeyCode::Enter => self.show_details(),
-                        _ => {}
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn handle_mouse_input(&mut self, mouse: MouseEvent) -> Result<()> {
-        match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                let popup_state = self.popup_state.clone();
-                let has_popup = popup_state != PopupState::None;
-                let popup_open =
-                    self.show_block_details || self.show_transaction_details || has_popup;
-
-                if popup_open {
-                    if let PopupState::SearchResults(results) = popup_state {
-                        if !results.is_empty() {
-                            let (orig_index, _) = &results[0];
-                            self.selected_transaction_index = Some(*orig_index);
-                            self.popup_state = PopupState::None;
-                            self.show_transaction_details = true;
-                        }
-                    } else if self.show_transaction_details {
-                        // Check if click is on copy button
-                        // The button is positioned in the UI at:
-                        // y: inner_area.y + inner_area.height - button_height - 2
-                        // Height: 3
-                        // We'll use approximate values based on the UI
-                        let row = mouse.row;
-                        let button_y_range = (20, 23); // Estimated position of the button
-                        let button_x_range = (33, 47); // Estimated position of the button
-
-                        if row >= button_y_range.0
-                            && row <= button_y_range.1
-                            && mouse.column >= button_x_range.0
-                            && mouse.column <= button_x_range.1
-                        {
-                            self.copy_transaction_id_to_clipboard();
-                        }
-                    }
-                    return Ok(());
-                }
-
-                // Updated mouse click handler to use row-based calculation
-                let header_height = 3; // App header
-                let title_height = 3; // Section title
-
-                if mouse.row <= (header_height + title_height) {
-                    return Ok(()); // Ignore clicks in the header/title area
-                }
-
-                // Determine if click is in left or right panel
-                let column_percent = (mouse.column as f32 / 100.0) * 100.0;
-
-                if column_percent < 50.0 {
-                    // Left panel - Blocks
-                    self.focus = Focus::Blocks;
-
-                    // Calculate which block was clicked
-                    let blocks_area_row = mouse.row - header_height - title_height;
-                    let visible_index = blocks_area_row / BLOCK_HEIGHT;
-                    let scroll_offset = self.block_scroll as usize / BLOCK_HEIGHT as usize;
-                    let absolute_index = scroll_offset + visible_index as usize;
-
-                    let blocks = self.blocks.lock().unwrap();
-                    if absolute_index < blocks.len() {
-                        self.selected_block_index = Some(absolute_index);
-                        self.show_block_details = true;
-                    }
-                } else {
-                    // Right panel - Transactions
-                    self.focus = Focus::Transactions;
-
-                    // Calculate which transaction was clicked
-                    let txns_area_row = mouse.row - header_height - title_height;
-                    let visible_index = txns_area_row / TXN_HEIGHT;
-                    let scroll_offset = self.transaction_scroll as usize / TXN_HEIGHT as usize;
-                    let absolute_index = scroll_offset + visible_index as usize;
-
-                    let transactions = self.transactions.lock().unwrap();
-                    if absolute_index < transactions.len() {
-                        self.selected_transaction_index = Some(absolute_index);
-                        self.show_transaction_details = true;
-                    }
-                }
-            }
-            MouseEventKind::ScrollDown => self.handle_scroll_down(),
-            MouseEventKind::ScrollUp => self.handle_scroll_up(),
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn handle_scroll_down(&mut self) {
-        match self.focus {
-            Focus::Blocks => {
-                let blocks = self.blocks.lock().unwrap();
-                let block_height = 3;
-                let max_scroll = blocks.len().saturating_sub(1) as u16 * block_height;
-
-                self.block_scroll = self.block_scroll.saturating_add(block_height);
-                if self.block_scroll > max_scroll {
-                    self.block_scroll = max_scroll;
-                }
-            }
-            Focus::Transactions => {
-                let transactions = self.transactions.lock().unwrap();
-                let txn_height = 4;
-                let max_scroll = transactions.len().saturating_sub(1) as u16 * txn_height;
-
-                self.transaction_scroll = self.transaction_scroll.saturating_add(txn_height);
-                if self.transaction_scroll > max_scroll {
-                    self.transaction_scroll = max_scroll;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_scroll_up(&mut self) {
-        match self.focus {
-            Focus::Blocks => {
-                let block_height = 3;
-                self.block_scroll = self.block_scroll.saturating_sub(block_height);
-            }
-            Focus::Transactions => {
-                let txn_height = 4;
-                self.transaction_scroll = self.transaction_scroll.saturating_sub(txn_height);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn open_network_selector(&mut self) {
-        let current_index = match self.network {
-            Network::MainNet => 0,
-            Network::TestNet => 1,
-            Network::LocalNet => 2,
-        };
-        self.popup_state = PopupState::NetworkSelect(current_index);
-    }
-
-    pub fn open_search(&mut self) {
-        self.popup_state = PopupState::Search(String::new(), SearchType::All);
-    }
-
     fn search_transactions(&mut self, query: &str, search_type: SearchType) {
         if query.is_empty() {
             self.popup_state = PopupState::Message("Please enter a search term".to_string());
             return;
         }
 
-        let search_query = query.to_lowercase();
-        let transactions = self.transactions.lock().unwrap();
+        let search_query = query.trim();
 
-        let mut results = Vec::new();
-        for (i, txn) in transactions.iter().enumerate() {
-            match search_type {
-                SearchType::All => {
-                    if txn.id.to_lowercase().contains(&search_query)
-                        || txn.from.to_lowercase().contains(&search_query)
-                        || txn.to.to_lowercase().contains(&search_query)
-                        || (txn.asset_id.is_some()
-                            && txn.asset_id.unwrap().to_string().contains(&search_query))
-                        || txn.block.to_string().contains(&search_query)
-                    {
-                        results.push((i, txn.clone()));
+        // Show a loading message that explains we're searching the network
+        let search_type_str = match search_type {
+            SearchType::Transaction => "transactions",
+            SearchType::Asset => "assets",
+            SearchType::Account => "accounts",
+            SearchType::Block => "blocks",
+        };
+
+        self.popup_state = PopupState::Message(format!(
+            "Querying Algorand network APIs for {}...",
+            search_type_str
+        ));
+
+        // Clone the client and runtime handle for the async operation
+        let client = self.client.clone();
+        let runtime = self.runtime.handle().clone();
+        let query_clone = search_query.to_string();
+
+        // Create a channel to receive the search results from the async operation
+        let (tx, rx) = mpsc::channel::<Result<Vec<SearchResultItem>>>();
+
+        // Spawn a new thread to perform the search asynchronously
+        thread::spawn(move || {
+            runtime.block_on(async {
+                match client.search_by_query(&query_clone, search_type).await {
+                    Ok(items) => {
+                        // Send the search results back through the channel
+                        let _ = tx.send(Ok(items));
+                    }
+                    Err(e) => {
+                        // Send the error back through the channel
+                        let _ = tx.send(Err(e));
                     }
                 }
-                SearchType::TxnID => {
-                    if txn.id.to_lowercase().contains(&search_query) {
-                        results.push((i, txn.clone()));
-                    }
-                }
-                SearchType::AssetID => {
-                    if let Some(asset_id) = txn.asset_id {
-                        if asset_id.to_string().contains(&search_query) {
-                            results.push((i, txn.clone()));
-                        }
-                    }
-                }
-                SearchType::Address => {
-                    if txn.from.to_lowercase().contains(&search_query)
-                        || txn.to.to_lowercase().contains(&search_query)
-                    {
-                        results.push((i, txn.clone()));
-                    }
-                }
-                SearchType::Block => {
-                    if txn.block.to_string().contains(&search_query) {
-                        results.push((i, txn.clone()));
-                    }
+            });
+        });
+
+        // Wait for the search operation to complete (with a timeout)
+        match rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(Ok(items)) => {
+                if items.is_empty() {
+                    let search_type_str = match search_type {
+                        SearchType::Transaction => "transactions",
+                        SearchType::Asset => "assets",
+                        SearchType::Account => "accounts",
+                        SearchType::Block => "blocks",
+                    };
+
+                    self.popup_state = PopupState::Message(format!(
+                        "No matching data found in {}",
+                        search_type_str
+                    ));
+                } else {
+                    // Create result entries with index positions
+                    let results_with_indices: Vec<(usize, SearchResultItem)> =
+                        items.into_iter().enumerate().collect();
+
+                    self.filtered_search_results = results_with_indices.clone();
+                    self.popup_state = PopupState::SearchResults(results_with_indices);
                 }
             }
-        }
-
-        if results.is_empty() {
-            self.popup_state = PopupState::Message("No matching transactions found".to_string());
-        } else {
-            self.filtered_transactions = results.clone();
-            self.popup_state = PopupState::SearchResults(results);
+            Ok(Err(_)) => {
+                self.popup_state =
+                    PopupState::Message("Error querying the Algorand network".to_string());
+            }
+            Err(_) => {
+                self.popup_state = PopupState::Message(
+                    "Search timed out. Please check your network connection and try again."
+                        .to_string(),
+                );
+            }
         }
     }
 
@@ -658,27 +793,13 @@ impl App {
         self.transaction_scroll = 0;
         self.selected_block_index = None;
         self.selected_transaction_index = None;
-        self.filtered_transactions.clear();
+        self.selected_block_id = None;
+        self.selected_transaction_id = None;
+        self.filtered_search_results.clear();
+        self.viewing_search_result = false;
 
         // Fetch new data
         self.initial_data_fetch();
-    }
-
-    pub fn exit(&mut self) {
-        self.exit = true;
-    }
-
-    pub fn toggle_show_live(&mut self) {
-        let mut show_live = self.show_live.lock().unwrap();
-        *show_live = !*show_live;
-    }
-
-    pub fn cycle_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Blocks => Focus::Transactions,
-            Focus::Transactions => Focus::Sidebar,
-            Focus::Sidebar => Focus::Blocks,
-        };
     }
 
     pub fn move_selection_up(&mut self) {
@@ -800,21 +921,54 @@ impl App {
             }
             Focus::Transactions => {
                 if self.selected_transaction_index.is_some()
-                    || self.selected_transaction_id.is_some()
+                    || (self.selected_transaction_id.is_some() && !self.viewing_search_result)
                 {
                     self.show_transaction_details = true;
+                    self.viewing_search_result = false; // Ensure we're viewing from main list
                 }
             }
             _ => {}
         }
     }
 
-    pub fn refresh_data(&mut self) {
-        self.initial_data_fetch();
-    }
-
     fn copy_transaction_id_to_clipboard(&mut self) {
-        if let Some(index) = self.selected_transaction_index {
+        // First check if we have a transaction ID selected
+        if let Some(txn_id) = &self.selected_transaction_id {
+            // Get the transaction from the appropriate source
+            let transaction = if self.viewing_search_result {
+                // If viewing a search result, find it in filtered_search_results
+                self.filtered_search_results.iter().find_map(|(_, item)| {
+                    if let SearchResultItem::Transaction(t) = item {
+                        if t.id == *txn_id {
+                            Some(t.clone())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                // Otherwise get it from the main transaction list
+                let txns = self.transactions.lock().unwrap();
+                txns.iter().find(|t| t.id == *txn_id).cloned()
+            };
+
+            if let Some(txn) = transaction {
+                if let Ok(mut clipboard) = Clipboard::new() {
+                    if clipboard.set_text(&txn.id).is_err() {
+                        self.popup_state =
+                            PopupState::Message("Failed to copy to clipboard".to_string());
+                    } else {
+                        self.popup_state =
+                            PopupState::Message("Transaction ID copied to clipboard".to_string());
+                    }
+                } else {
+                    self.popup_state = PopupState::Message("Clipboard not available".to_string());
+                }
+            }
+        } else if let Some(index) = self.selected_transaction_index {
+            // Fallback to old behavior using index (only for main transaction list)
             let transactions = self.transactions.lock().unwrap();
             if let Some(txn) = transactions.get(index) {
                 if let Ok(mut clipboard) = Clipboard::new() {

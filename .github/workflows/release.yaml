@@ -85,7 +85,7 @@ jobs:
                   # Use curl to download and test the binary
                   curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/lazylora-${{ matrix.target }}.tar.gz -o lazylora.tar.gz
                   tar xzf lazylora.tar.gz
-                  ./lazylora --version
+                  ./lazylora version
 
             - name: Test installation on Windows
               if: matrix.os == 'windows-latest'
@@ -96,4 +96,4 @@ jobs:
                   # Use PowerShell to download and test the binary
                   Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${VERSION}/lazylora-${{ matrix.target }}.zip" -OutFile "lazylora.zip"
                   Expand-Archive -Path "lazylora.zip" -DestinationPath "."
-                  .\lazylora.exe --version
+                  .\lazylora.exe version
