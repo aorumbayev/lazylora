@@ -23,15 +23,17 @@ curl -fsSL https://raw.githubusercontent.com/aorumbayev/lazylora/main/install.sh
 iwr -useb https://raw.githubusercontent.com/aorumbayev/lazylora/main/install.ps1 | iex
 ```
 
-> [!NOTE] ensure you have [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170) installed.
+> NOTE: ensure you have [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170) installed.
 
 ## Features
 
-- Browse latest blocks and transactions
-- Search transactions by address, transaction ID, or asset ID
-- View detailed transaction information
-- Live updates of new blocks and transactions
-- Support for MainNet, TestNet, and LocalNet
+qq
+
+-   Browse latest blocks and transactions
+-   Search transactions by address, transaction ID, or asset ID
+-   View detailed transaction information
+-   Live updates of new blocks and transactions
+-   Support for MainNet, TestNet, and LocalNet
 
 ## Usage
 
@@ -48,14 +50,14 @@ lazylora update --install
 
 ## Key Bindings
 
-- `q`: Quit the application
-- `r`: Refresh data
-- `f`: Search transactions
-- `n`: Switch network
-- `Space`: Toggle live updates
-- `Tab`: Switch between blocks and transactions
-- `Enter`: View selected item details
-- `Esc`: Close popup or details view
+-   `q`: Quit the application
+-   `r`: Refresh data
+-   `f`: Search transactions
+-   `n`: Switch network
+-   `Space`: Toggle live updates
+-   `Tab`: Switch between blocks and transactions
+-   `Enter`: View selected item details
+-   `Esc`: Close popup or details view
 
 ## Building from Source
 

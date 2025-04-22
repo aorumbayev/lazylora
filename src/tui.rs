@@ -10,7 +10,6 @@ use ratatui::{
     },
 };
 
-/// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 /// Initialize the terminal
