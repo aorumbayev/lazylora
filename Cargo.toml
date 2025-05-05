@@ -10,12 +10,12 @@ repository = "https://github.com/aorumbayev/lazylora"
 [dependencies]
 crossterm = "0.29.0"
 ratatui = "0.29.0"
-color-eyre = "0.6.3"
+color-eyre = "0.6.4"
 tokio = { version = "1.44.2", features = ["full"] }
 reqwest = { version = "0.12.15", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = "0.4.40"
+chrono = "0.4.41"
 arboard = "3.3.0"
 clap = { version = "4.5.9", features = ["derive"] }
 semver = "1.0"
