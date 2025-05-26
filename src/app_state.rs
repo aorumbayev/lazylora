@@ -3,13 +3,61 @@ use color_eyre::Result;
 use crossterm::event::{
     self, Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::fs;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 use tokio::time::interval;
 
 use crate::algorand::{AlgoBlock, AlgoClient, Network, SearchResultItem, Transaction};
 use crate::ui;
+
+// Configuration structure for persistence
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppConfig {
+    network: Network,
+    show_live: bool,
+    // Add more settings as needed
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            network: Network::MainNet,
+            show_live: true,
+        }
+    }
+}
+
+impl AppConfig {
+    fn config_path() -> Result<PathBuf> {
+        let mut path = dirs::config_dir()
+            .ok_or_else(|| color_eyre::eyre::eyre!("Could not find config directory"))?;
+        path.push("lazylora");
+        fs::create_dir_all(&path)?;
+        path.push("config.json");
+        Ok(path)
+    }
+
+    fn load() -> Self {
+        Self::config_path()
+            .and_then(|path| {
+                let content = fs::read_to_string(&path)?;
+                let config: AppConfig = serde_json::from_str(&content)?;
+                Ok(config)
+            })
+            .unwrap_or_default()
+    }
+
+    fn save(&self) -> Result<()> {
+        let path = Self::config_path()?;
+        let content = serde_json::to_string_pretty(self)?;
+        fs::write(path, content)?;
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum AppMessage {
@@ -18,6 +66,7 @@ pub enum AppMessage {
     SearchCompleted(Result<Vec<SearchResultItem>, String>),
     NetworkError(String),
     NetworkConnected,
+    NetworkSwitchComplete,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -90,14 +139,21 @@ impl App {
         let (live_updates_tx, _live_updates_rx) = watch::channel(true);
         let (network_tx, _network_rx) = watch::channel(Network::MainNet);
 
-        let network = Network::MainNet;
+        // Load configuration
+        let config = AppConfig::load();
+        let network = config.network;
+        let show_live = config.show_live;
         let client = AlgoClient::new(network);
+
+        // Set initial state from config
+        let _ = live_updates_tx.send(show_live);
+        let _ = network_tx.send(network);
 
         Ok(Self {
             network,
             blocks: Vec::new(),
             transactions: Vec::new(),
-            show_live: true,
+            show_live,
             focus: Focus::Blocks,
             exit: false,
             block_scroll: 0,
@@ -192,6 +248,9 @@ impl App {
                     self.show_live = false;
                 }
                 AppMessage::NetworkConnected => {}
+                AppMessage::NetworkSwitchComplete => {
+                    self.popup_state = PopupState::Message("Network switch completed".to_string());
+                }
             }
         }
     }
@@ -515,6 +574,7 @@ impl App {
                         KeyCode::Char(' ') => {
                             self.show_live = !self.show_live;
                             let _ = self.live_updates_tx.send(self.show_live);
+                            self.save_config();
                             Ok(())
                         }
                         KeyCode::Char('f') => {
@@ -695,11 +755,21 @@ impl App {
     }
 
     async fn switch_network(&mut self, network: Network) {
+        // Show immediate feedback
+        self.popup_state = PopupState::Message(format!(
+            "Switching to {}... Clearing data and reconnecting.",
+            network.as_str()
+        ));
+
         self.network = network;
         self.client = AlgoClient::new(network);
 
         let _ = self.network_tx.send(network);
 
+        // Save configuration
+        self.save_config();
+
+        // Clear all existing data
         self.blocks.clear();
         self.transactions.clear();
         self.block_scroll = 0;
@@ -711,7 +781,29 @@ impl App {
         self.filtered_search_results.clear();
         self.viewing_search_result = false;
 
+        // Start initial data fetch
         self.initial_data_fetch().await;
+
+        // Show success message briefly
+        tokio::spawn({
+            let message_tx = self.message_tx.clone();
+            async move {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let success_message = AppMessage::NetworkSwitchComplete;
+                let _ = message_tx.send(success_message);
+            }
+        });
+    }
+
+    fn save_config(&self) {
+        let config = AppConfig {
+            network: self.network,
+            show_live: self.show_live,
+        };
+        if let Err(e) = config.save() {
+            // Log error but don't crash the application
+            eprintln!("Failed to save configuration: {}", e);
+        }
     }
 
     pub fn move_selection_up(&mut self) {

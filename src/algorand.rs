@@ -2,9 +2,10 @@ use crate::app_state::SearchType;
 use color_eyre::Result;
 use ratatui::style::Color;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::enum_variant_names)]
 pub enum Network {
     MainNet,
@@ -406,13 +407,9 @@ impl AlgoClient {
             }
             Ok(resp) => {
                 let status = resp.status();
-                if status.as_u16() != 404 {
-                    // Log non-404 errors silently, continue with search
-                }
+                if status.as_u16() != 404 {}
             }
-            Err(_) => {
-                // Log error silently, continue with search
-            }
+            Err(_) => {}
         }
 
         let search_url = format!(
@@ -613,12 +610,8 @@ impl AlgoClient {
             Ok(Some(account)) => {
                 return Ok(Some(account));
             }
-            Ok(None) => {
-                // Try algod as fallback
-            }
-            Err(_) => {
-                // Try algod as fallback
-            }
+            Ok(None) => {}
+            Err(_) => {}
         }
 
         let algod_result = self.search_address_via_algod(address).await;

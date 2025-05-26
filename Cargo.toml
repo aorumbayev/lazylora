@@ -12,14 +12,15 @@ repository = "https://github.com/aorumbayev/lazylora"
 [dependencies]
 crossterm = "0.29.0"
 ratatui = "0.29.0"
-color-eyre = "0.6.3"
-tokio = { version = "1.44.2", features = ["full"] }
+color-eyre = "0.6.4"
+tokio = { version = "1.45.1", features = ["full"] }
 reqwest = { version = "0.12.15", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = "0.4.40"
+chrono = "0.4.41"
 arboard = "3.3.0"
-clap = { version = "4.5.9", features = ["derive"] }
+clap = { version = "4.5.38", features = ["derive"] }
+dirs = "5.0"
 semver = "1.0"
 self_update = { version = "0.42.0", features = [
     "archive-tar",
@@ -27,7 +28,7 @@ self_update = { version = "0.42.0", features = [
     "compression-flate2",
     "rustls",
 ] }
-git2 = { version = "0.20.1", optional = true }
+git2 = { version = "0.20.2", optional = true }
 
 [profile.release]
 opt-level = 3
