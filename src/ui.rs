@@ -5,18 +5,67 @@ use ratatui::{
     symbols::{border, scrollbar},
     text::{Line, Span},
     widgets::{
-        Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Scrollbar,
+        Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Scrollbar,
         ScrollbarOrientation, Table, Wrap,
     },
 };
 
-use crate::algorand::{AlgoClient, SearchResultItem, TxnType};
+use crate::algorand::{AlgoClient, Network, SearchResultItem, TxnType};
 use crate::app_state::{App, Focus, PopupState, SearchType};
 
 const BLOCK_HEIGHT: u16 = 3;
 const TXN_HEIGHT: u16 = 4;
 const HEADER_HEIGHT: u16 = 3;
 const TITLE_HEIGHT: u16 = 3;
+
+const PRIMARY_COLOR: Color = Color::Cyan;
+const SECONDARY_COLOR: Color = Color::Blue;
+const SUCCESS_COLOR: Color = Color::Green;
+const WARNING_COLOR: Color = Color::Yellow;
+#[allow(dead_code)]
+const ERROR_COLOR: Color = Color::Red;
+const MUTED_COLOR: Color = Color::Gray;
+const ACCENT_COLOR: Color = Color::Magenta;
+
+const BORDER_STYLE: Style = Style::new().fg(PRIMARY_COLOR);
+const FOCUSED_BORDER_STYLE: Style = Style::new().fg(PRIMARY_COLOR);
+const TITLE_STYLE: Style = Style::new().add_modifier(Modifier::BOLD);
+const SELECTED_STYLE: Style = Style::new().bg(Color::DarkGray);
+const HIGHLIGHT_STYLE: Style = Style::new()
+    .bg(Color::DarkGray)
+    .add_modifier(Modifier::BOLD);
+
+fn create_border_block(title: &str, focused: bool) -> Block {
+    Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {} ", title))
+        .title_style(TITLE_STYLE)
+        .border_set(border::ROUNDED)
+        .border_style(if focused {
+            FOCUSED_BORDER_STYLE
+        } else {
+            BORDER_STYLE
+        })
+}
+
+fn create_popup_block(title: &str) -> Block {
+    Block::default()
+        .title(format!(" {} ", title))
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(BORDER_STYLE)
+}
+
+fn centered_popup_area(parent: Rect, width: u16, height: u16) -> Rect {
+    let popup_width = width.min(parent.width.saturating_sub(4));
+    let popup_height = height.min(parent.height.saturating_sub(4));
+
+    let popup_x = parent.x + (parent.width.saturating_sub(popup_width)) / 2;
+    let popup_y = parent.y + (parent.height.saturating_sub(popup_height)) / 2;
+
+    Rect::new(popup_x, popup_y, popup_width, popup_height)
+}
 
 pub fn render(app: &App, frame: &mut Frame) {
     let size = frame.area();
@@ -35,7 +84,7 @@ pub fn render(app: &App, frame: &mut Frame) {
 
     match &app.popup_state {
         PopupState::NetworkSelect(selected_index) => {
-            render_network_selector(frame, size, *selected_index);
+            render_network_selector(frame, size, *selected_index, app.network);
         }
         PopupState::SearchWithType(query, search_type) => {
             render_search_with_type_popup(frame, size, query, *search_type);
@@ -57,11 +106,7 @@ pub fn render(app: &App, frame: &mut Frame) {
 }
 
 fn render_header(app: &App, frame: &mut Frame, area: Rect) {
-    let header_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan));
-
+    let header_block = create_border_block("", false);
     frame.render_widget(header_block.clone(), area);
 
     if area.height <= 2 {
@@ -89,8 +134,12 @@ fn render_header(app: &App, frame: &mut Frame, area: Rect) {
 
     if area.width > 40 {
         let network_text = format!("Network: {}", app.network.as_str());
+        let network_style = Style::default()
+            .fg(SUCCESS_COLOR)
+            .add_modifier(Modifier::BOLD);
+
         let network_label = Paragraph::new(network_text)
-            .style(Style::default().fg(Color::Cyan))
+            .style(network_style)
             .alignment(Alignment::Right);
 
         let network_area = Rect::new(area.right() - 20, area.y + 1, 18, 1);
@@ -104,24 +153,23 @@ fn render_main_content(app: &App, frame: &mut Frame, area: Rect) {
         .constraints([Constraint::Length(TITLE_HEIGHT), Constraint::Min(10)])
         .split(area);
 
-    let title_block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan));
-
+    let title_block = create_border_block("", false);
     frame.render_widget(title_block.clone(), chunks[0]);
 
-    let title = Paragraph::new("Explore").style(Style::default().add_modifier(Modifier::BOLD));
+    let title = Paragraph::new("Explore").style(TITLE_STYLE);
     let title_area = Rect::new(chunks[0].x + 2, chunks[0].y + 1, 10, 1);
     frame.render_widget(title, title_area);
 
     let show_live = app.show_live;
     let checkbox_text = format!("[{}] Show live", if show_live { "✓" } else { " " });
-    let checkbox = Paragraph::new(checkbox_text).style(Style::default().fg(if show_live {
-        Color::Green
+    let checkbox_style = if show_live {
+        Style::default()
+            .fg(SUCCESS_COLOR)
+            .add_modifier(Modifier::BOLD)
     } else {
-        Color::Gray
-    }));
+        Style::default().fg(MUTED_COLOR)
+    };
+    let checkbox = Paragraph::new(checkbox_text).style(checkbox_style);
 
     let checkbox_area = Rect::new(chunks[0].right() - 15, chunks[0].y + 1, 15, 1);
     frame.render_widget(checkbox, checkbox_area);
@@ -137,18 +185,7 @@ fn render_main_content(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
     let is_focused = app.focus == Focus::Blocks;
-    let style = if is_focused {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default()
-    };
-
-    let blocks_block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Latest Blocks ")
-        .title_style(Style::default().add_modifier(Modifier::BOLD))
-        .border_set(border::ROUNDED)
-        .border_style(style);
+    let blocks_block = create_border_block("Latest Blocks", is_focused);
 
     frame.render_widget(blocks_block.clone(), area);
 
@@ -157,7 +194,7 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
 
     if blocks.is_empty() {
         let no_data_message = Paragraph::new("No blocks available")
-            .style(Style::default().fg(Color::Gray))
+            .style(Style::default().fg(MUTED_COLOR))
             .alignment(Alignment::Center);
         frame.render_widget(no_data_message, inner_area);
         return;
@@ -168,33 +205,31 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
         .enumerate()
         .map(|(i, block)| {
             let is_selected = app.selected_block_index == Some(i);
+            let selection_indicator = if is_selected { "▶" } else { "⬚" };
+
             ListItem::new(vec![
                 Line::from(vec![
-                    if is_selected {
-                        "▶ ".into()
-                    } else {
-                        "⬚ ".into()
-                    },
+                    Span::raw(format!("{} ", selection_indicator)),
                     Span::styled(
                         block.id.to_string(),
                         Style::default()
-                            .fg(Color::Cyan)
+                            .fg(PRIMARY_COLOR)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("               "),
                     Span::styled(
                         format!("{} txns", block.txn_count),
-                        Style::default().fg(Color::Green),
+                        Style::default().fg(SUCCESS_COLOR),
                     ),
                 ]),
                 Line::from(vec![
                     Span::raw("  "), // Indent to align with content above
-                    Span::styled(&block.timestamp, Style::default().fg(Color::Gray)),
+                    Span::styled(&block.timestamp, Style::default().fg(MUTED_COLOR)),
                 ]),
                 Line::from(""),
             ])
             .style(if is_selected {
-                Style::default().bg(Color::DarkGray)
+                SELECTED_STYLE
             } else {
                 Style::default()
             })
@@ -203,15 +238,9 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
 
     let items_per_page = inner_area.height as usize / BLOCK_HEIGHT as usize;
 
-    let mut list_state = ratatui::widgets::ListState::default();
+    let mut list_state = ListState::default();
     if let Some(selected_index) = app.selected_block_index {
         list_state.select(Some(selected_index));
-
-        let block_scroll_usize = app.block_scroll as usize / BLOCK_HEIGHT as usize;
-        let visible_start = block_scroll_usize;
-        let visible_end = visible_start + items_per_page;
-
-        if selected_index < visible_start || selected_index >= visible_end {}
     }
 
     let block_scroll_usize = app.block_scroll as usize / BLOCK_HEIGHT as usize;
@@ -221,11 +250,7 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
 
     let block_list = List::new(visible_items)
         .block(Block::default())
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        );
+        .highlight_style(HIGHLIGHT_STYLE);
 
     let mut modified_state = list_state.clone();
     if let Some(selected) = list_state.selected() {
@@ -251,20 +276,8 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     let is_focused = app.focus == Focus::Transactions;
-    let style = if is_focused {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default()
-    };
-
-    let title = " Latest Transactions ";
-
-    let txn_block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .title_style(Style::default().add_modifier(Modifier::BOLD))
-        .border_set(border::ROUNDED)
-        .border_style(style);
+    let title = "Latest Transactions";
+    let txn_block = create_border_block(title, is_focused);
 
     frame.render_widget(txn_block.clone(), area);
     let inner_area = txn_block.inner(area);
@@ -279,7 +292,7 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     if transactions_to_display.is_empty() {
         let message = "No transactions available";
         let no_data_message = Paragraph::new(message)
-            .style(Style::default().fg(Color::Gray))
+            .style(Style::default().fg(MUTED_COLOR))
             .alignment(Alignment::Center);
         frame.render_widget(no_data_message, inner_area);
         return;
@@ -291,18 +304,15 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
             let is_selected = app.selected_transaction_index == Some(*orig_idx);
             let txn_type_str = txn.txn_type.as_str();
             let entity_type_style = Style::default().fg(txn.txn_type.color());
+            let selection_indicator = if is_selected { "▶" } else { "→" };
 
             ListItem::new(vec![
                 Line::from(vec![
-                    if is_selected {
-                        "▶ ".into()
-                    } else {
-                        "→ ".into()
-                    },
+                    Span::raw(format!("{} ", selection_indicator)),
                     Span::styled(
                         txn.id.clone(),
                         Style::default()
-                            .fg(Color::Blue)
+                            .fg(SECONDARY_COLOR)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw("          "),
@@ -310,18 +320,18 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
                 ]),
                 Line::from(vec![
                     Span::raw("  "),
-                    Span::styled("From: ", Style::default().fg(Color::Gray)),
-                    Span::styled(txn.from.clone(), Style::default().fg(Color::Yellow)),
+                    Span::styled("From: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(txn.from.clone(), Style::default().fg(WARNING_COLOR)),
                 ]),
                 Line::from(vec![
                     Span::raw("  "),
-                    Span::styled("To:   ", Style::default().fg(Color::Gray)),
-                    Span::styled(txn.to.clone(), Style::default().fg(Color::Cyan)),
+                    Span::styled("To:   ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(txn.to.clone(), Style::default().fg(PRIMARY_COLOR)),
                 ]),
                 Line::from(""),
             ])
             .style(if is_selected {
-                Style::default().bg(Color::DarkGray)
+                SELECTED_STYLE
             } else {
                 Style::default()
             })
@@ -330,7 +340,7 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
 
     let items_per_page = inner_area.height as usize / TXN_HEIGHT as usize;
 
-    let mut list_state = ratatui::widgets::ListState::default();
+    let mut list_state = ListState::default();
     if let Some(selected_index) = app.selected_transaction_index {
         if let Some(display_index) = transactions_to_display
             .iter()
@@ -352,11 +362,7 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
 
     let txn_list = List::new(visible_items)
         .block(Block::default())
-        .highlight_style(
-            Style::default()
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        );
+        .highlight_style(HIGHLIGHT_STYLE);
 
     let mut modified_state = list_state.clone();
     if let Some(selected_display_index) = list_state.selected() {
@@ -396,7 +402,7 @@ fn render_scrollbar(
             .track_symbol(None)
             .begin_symbol(None)
             .end_symbol(None)
-            .style(Style::default().fg(Color::Gray))
+            .style(Style::default().fg(MUTED_COLOR))
             .track_style(Style::default().fg(Color::DarkGray));
 
         let content_length = total_items * item_height;
@@ -414,15 +420,9 @@ fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
     if let Some(index) = app.selected_block_index {
         let blocks = &app.blocks;
         if let Some(block_data) = blocks.get(index) {
-            let popup_area = centered_popup_area(area, 60, 15);
+            let popup_area = centered_popup_area(area, 65, 16);
 
-            let popup_block = Block::default()
-                .title(" Block Details ")
-                .title_alignment(Alignment::Center)
-                .borders(Borders::ALL)
-                .border_set(border::ROUNDED)
-                .border_style(Style::default().fg(Color::Cyan));
-
+            let popup_block = create_popup_block("Block Details");
             frame.render_widget(Clear, popup_area);
             frame.render_widget(popup_block.clone(), popup_area);
 
@@ -430,51 +430,56 @@ fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
 
             let rows = vec![
                 Row::new(vec![
-                    Cell::from("Block ID:").style(Style::default().fg(Color::Yellow)),
-                    Cell::from(format!("{}", block_data.id)),
+                    Cell::from("Block ID:").style(
+                        Style::default()
+                            .fg(WARNING_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Cell::from(format!("{}", block_data.id))
+                        .style(Style::default().fg(PRIMARY_COLOR)),
                 ]),
                 Row::new(vec![
-                    Cell::from("Transactions:").style(Style::default().fg(Color::Yellow)),
-                    Cell::from(format!("{}", block_data.txn_count)),
+                    Cell::from("Transactions:").style(
+                        Style::default()
+                            .fg(WARNING_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Cell::from(format!("{}", block_data.txn_count))
+                        .style(Style::default().fg(SUCCESS_COLOR)),
                 ]),
                 Row::new(vec![
-                    Cell::from("Timestamp:").style(Style::default().fg(Color::Yellow)),
-                    Cell::from(block_data.timestamp.clone()),
+                    Cell::from("Timestamp:").style(
+                        Style::default()
+                            .fg(WARNING_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Cell::from(block_data.timestamp.clone())
+                        .style(Style::default().fg(MUTED_COLOR)),
                 ]),
             ];
 
-            let table = Table::new(rows, [Constraint::Length(15), Constraint::Min(40)])
+            let table = Table::new(rows, [Constraint::Length(18), Constraint::Min(40)])
                 .block(Block::default())
-                .column_spacing(1)
-                .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
+                .column_spacing(2)
+                .row_highlight_style(HIGHLIGHT_STYLE);
 
             frame.render_widget(table, inner_area);
 
-            let text = "Press Esc to close";
-            let text_area = Rect::new(
-                popup_area.x + (popup_area.width - text.len() as u16) / 2,
+            let close_text = "Press Esc to close";
+            let close_area = Rect::new(
+                popup_area.x + (popup_area.width - close_text.len() as u16) / 2,
                 popup_area.y + popup_area.height - 2,
-                text.len() as u16,
+                close_text.len() as u16,
                 1,
             );
 
-            let close_msg = Paragraph::new(text)
-                .style(Style::default().fg(Color::Gray))
+            let close_msg = Paragraph::new(close_text)
+                .style(Style::default().fg(MUTED_COLOR))
                 .alignment(Alignment::Center);
 
-            frame.render_widget(close_msg, text_area);
+            frame.render_widget(close_msg, close_area);
         }
     }
-}
-
-fn centered_popup_area(parent: Rect, width: u16, height: u16) -> Rect {
-    let popup_width = width.min(parent.width.saturating_sub(4));
-    let popup_height = height.min(parent.height.saturating_sub(4));
-
-    let popup_x = parent.x + (parent.width.saturating_sub(popup_width)) / 2;
-    let popup_y = parent.y + (parent.height.saturating_sub(popup_height)) / 2;
-
-    Rect::new(popup_x, popup_y, popup_width, popup_height)
 }
 
 fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
@@ -495,15 +500,9 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
     };
 
     if let Some(txn) = transaction_opt {
-        let popup_area = centered_popup_area(area, 76, 25);
+        let popup_area = centered_popup_area(area, 80, 28);
 
-        let popup_block = Block::default()
-            .title(" Transaction Details ")
-            .title_alignment(Alignment::Center)
-            .borders(Borders::ALL)
-            .border_set(border::ROUNDED)
-            .border_style(Style::default().fg(Color::Cyan));
-
+        let popup_block = create_popup_block("Transaction Details");
         frame.render_widget(Clear, popup_area);
         frame.render_widget(popup_block.clone(), popup_area);
 
@@ -545,36 +544,44 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             .into_iter()
             .map(|(label, value)| {
                 Row::new(vec![
-                    Cell::from(label).style(Style::default().fg(Color::Yellow)),
-                    Cell::from(value), // Using Cell::from directly for text wrapping
+                    Cell::from(label).style(
+                        Style::default()
+                            .fg(WARNING_COLOR)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Cell::from(value).style(Style::default().fg(PRIMARY_COLOR)),
                 ])
             })
             .collect();
 
-        let table = Table::new(rows, [Constraint::Length(15), Constraint::Min(40)])
+        let table = Table::new(rows, [Constraint::Length(18), Constraint::Min(50)])
             .block(Block::default())
-            .column_spacing(1)
-            .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
+            .column_spacing(2)
+            .row_highlight_style(HIGHLIGHT_STYLE);
 
         frame.render_widget(table, inner_area);
 
         let button_text = "[C] Copy TXN ID";
         let button_block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
+            .border_style(BORDER_STYLE)
             .border_set(border::ROUNDED);
 
         let button_width = button_text.len() as u16 + 4;
         let button_height = 3;
         let button_x = inner_area.x + (inner_area.width - button_width) / 2;
-        let button_y = inner_area.y + inner_area.height - button_height - 2;
+        let button_y = inner_area.y + inner_area.height - button_height - 3;
 
         let button_area = Rect::new(button_x, button_y, button_width, button_height);
 
         frame.render_widget(button_block, button_area);
 
         let button_content = Paragraph::new(button_text)
-            .style(Style::default().fg(Color::White))
+            .style(
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )
             .alignment(Alignment::Center);
 
         let button_inner_area = Rect::new(
@@ -586,82 +593,109 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
 
         frame.render_widget(button_content, button_inner_area);
 
-        let text = "Press Esc to close";
-        let text_area = Rect::new(
-            popup_area.x + (popup_area.width - text.len() as u16) / 2,
+        let close_text = "Press Esc to close";
+        let close_area = Rect::new(
+            popup_area.x + (popup_area.width - close_text.len() as u16) / 2,
             popup_area.y + popup_area.height - 1,
-            text.len() as u16,
+            close_text.len() as u16,
             1,
         );
 
-        let close_msg = Paragraph::new(text)
-            .style(Style::default().fg(Color::Gray))
+        let close_msg = Paragraph::new(close_text)
+            .style(Style::default().fg(MUTED_COLOR))
             .alignment(Alignment::Center);
 
-        frame.render_widget(close_msg, text_area);
+        frame.render_widget(close_msg, close_area);
     }
 }
 
 fn render_footer(_app: &App, frame: &mut Frame, area: Rect) {
     let footer_text = "q:Quit  r:Refresh  f:Search  n:Network  Space:Live  Tab:Focus";
     let footer = Paragraph::new(footer_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
     frame.render_widget(footer, area);
 }
 
-fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize) {
-    let popup_area = centered_popup_area(area, 30, 12);
+fn render_network_selector(
+    frame: &mut Frame,
+    area: Rect,
+    selected_index: usize,
+    current_network: Network,
+) {
+    let popup_area = centered_popup_area(area, 35, 14);
 
-    let popup_block = Block::default()
-        .title(" Select Network (Esc:Cancel) ")
-        .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan));
-
+    let popup_block = create_popup_block("Select Network (Esc:Cancel)");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
     let inner_area = popup_block.inner(popup_area);
 
     let networks = ["MainNet", "TestNet", "LocalNet"];
+    let network_types = [Network::MainNet, Network::TestNet, Network::LocalNet];
+
     let rows: Vec<Row> = networks
         .iter()
         .enumerate()
         .map(|(i, net)| {
-            let style = if i == selected_index {
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
+            let is_selected = i == selected_index;
+            let is_current = network_types[i] == current_network;
+
+            let indicator = if is_current && is_selected {
+                "◉ " // Both current and selected
+            } else if is_current {
+                "● " // Current network
+            } else if is_selected {
+                "▶ " // Selected in UI
             } else {
-                Style::default()
+                "  " // Neither
             };
 
-            Row::new(vec![if i == selected_index { "> " } else { "  " }, *net]).style(style)
+            let style = if is_selected {
+                Style::default()
+                    .fg(PRIMARY_COLOR)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_current {
+                Style::default()
+                    .fg(SUCCESS_COLOR)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(MUTED_COLOR)
+            };
+
+            let network_text = if is_current {
+                format!("{} (current)", net)
+            } else {
+                net.to_string()
+            };
+
+            Row::new(vec![
+                Cell::from(indicator).style(style),
+                Cell::from(network_text).style(style),
+            ])
         })
         .collect();
 
-    let table = Table::new(rows, [Constraint::Length(2), Constraint::Min(10)])
+    let table = Table::new(rows, [Constraint::Length(3), Constraint::Min(15)])
         .block(Block::default())
         .column_spacing(1);
 
     frame.render_widget(table, inner_area);
 
     let help_text = "↑↓:Move Enter:Select";
-    let text_area = Rect::new(
-        inner_area.x, // Start at the inner area's left edge
-        inner_area.y + inner_area.height.saturating_sub(1), // Position on the last line of inner_area
-        inner_area.width,                                   // Use the inner area's width
+    let help_area = Rect::new(
+        inner_area.x,
+        inner_area.y + inner_area.height.saturating_sub(1),
+        inner_area.width,
         1,
     );
 
     let help_msg = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
-    frame.render_widget(help_msg, text_area);
+    frame.render_widget(help_msg, help_area);
 }
 
 fn render_search_with_type_popup(
@@ -670,15 +704,9 @@ fn render_search_with_type_popup(
     query: &str,
     search_type: SearchType,
 ) {
-    let popup_area = centered_popup_area(area, 60, 18); // Made taller to fit suggestions
+    let popup_area = centered_popup_area(area, 65, 20);
 
-    let popup_block = Block::default()
-        .title(" Search Algorand Network ")
-        .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan));
-
+    let popup_block = create_popup_block("Search Algorand Network");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
@@ -687,7 +715,7 @@ fn render_search_with_type_popup(
     let input_block = Block::default()
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Blue))
+        .border_style(BORDER_STYLE)
         .title(" Enter search term ")
         .title_alignment(Alignment::Left);
 
@@ -708,7 +736,7 @@ fn render_search_with_type_popup(
 
     let selector_y = input_area.y + 4;
     let selector_height = 1;
-    let selector_width = inner_area.width / 5; // 4 options, but give extra space
+    let selector_width = inner_area.width / 5;
     let spacing = 2;
 
     let search_types = [
@@ -723,7 +751,10 @@ fn render_search_with_type_popup(
     for t in &search_types {
         let is_selected = *t == search_type;
         let button_style = if is_selected {
-            Style::default().bg(Color::Blue).fg(Color::White)
+            Style::default()
+                .bg(PRIMARY_COLOR)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().bg(Color::DarkGray).fg(Color::White)
         };
@@ -739,28 +770,28 @@ fn render_search_with_type_popup(
         x_offset += selector_width + spacing;
     }
 
-    let suggestions_y = selector_y + 2;
-    let suggestions_area = Rect::new(inner_area.x + 2, suggestions_y, inner_area.width - 4, 3);
+    let suggestions_y = selector_y + 3;
+    let suggestions_area = Rect::new(inner_area.x + 2, suggestions_y, inner_area.width - 4, 4);
 
     let suggestion = AlgoClient::get_search_suggestions(query, search_type);
 
     let suggestion_color = if suggestion.contains("Valid") {
-        Color::Green
+        SUCCESS_COLOR
     } else if suggestion.contains("too short")
         || suggestion.contains("too long")
         || suggestion.contains("invalid")
     {
-        Color::Yellow
+        WARNING_COLOR
     } else if suggestion.contains("Enter") {
-        Color::Gray
+        MUTED_COLOR
     } else {
-        Color::Cyan
+        PRIMARY_COLOR
     };
 
     let suggestions_block = Block::default()
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Gray))
+        .border_style(Style::default().fg(MUTED_COLOR))
         .title(" Suggestions ")
         .title_alignment(Alignment::Left);
 
@@ -778,22 +809,22 @@ fn render_search_with_type_popup(
     let help_text1 = "Search directly queries the Algorand network";
     let help_text2 = "Use Tab to switch between search types";
 
-    let help_area1 = Rect::new(inner_area.x + 2, suggestions_y + 4, inner_area.width - 4, 1);
-    let help_area2 = Rect::new(inner_area.x + 2, suggestions_y + 5, inner_area.width - 4, 1);
+    let help_area1 = Rect::new(inner_area.x + 2, suggestions_y + 5, inner_area.width - 4, 1);
+    let help_area2 = Rect::new(inner_area.x + 2, suggestions_y + 6, inner_area.width - 4, 1);
 
     let help_msg1 = Paragraph::new(help_text1)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
     let help_msg2 = Paragraph::new(help_text2)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
     frame.render_widget(help_msg1, help_area1);
     frame.render_widget(help_msg2, help_area2);
 
     let control_text = "Tab: Change Type  Enter: Search  Esc: Cancel";
-    let text_area = Rect::new(
+    let control_area = Rect::new(
         popup_area.x + (popup_area.width - control_text.len() as u16) / 2,
         popup_area.y + popup_area.height - 2,
         control_text.len() as u16,
@@ -801,22 +832,16 @@ fn render_search_with_type_popup(
     );
 
     let control_msg = Paragraph::new(control_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
-    frame.render_widget(control_msg, text_area);
+    frame.render_widget(control_msg, control_area);
 }
 
 fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, SearchResultItem)]) {
-    let popup_area = centered_popup_area(area, 76, 20);
+    let popup_area = centered_popup_area(area, 80, 22);
 
-    let popup_block = Block::default()
-        .title(" Search Results ")
-        .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan));
-
+    let popup_block = create_popup_block("Search Results");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
@@ -825,6 +850,7 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
     let mut list_items = Vec::new();
     for (i, (_idx, item)) in results.iter().enumerate() {
         let is_selected = i == 0;
+        let selection_indicator = if is_selected { "▶" } else { "⬚" };
 
         let list_item = match item {
             SearchResultItem::Transaction(txn) => {
@@ -845,7 +871,7 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
                 let id_span = Span::styled(
                     txn.id.clone(),
                     Style::default()
-                        .fg(Color::Blue)
+                        .fg(SECONDARY_COLOR)
                         .add_modifier(Modifier::BOLD),
                 );
                 let type_span = Span::styled(
@@ -854,24 +880,24 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
                 );
 
                 let line1 = Line::from(vec![
-                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    Span::raw(format!("{} ", selection_indicator)),
                     id_span,
                     "  ".into(),
                     type_span,
                 ]);
                 let line2 = Line::from(vec![
-                    Span::styled("  From: ", Style::default().fg(Color::Gray)),
-                    Span::styled(txn.from.clone(), Style::default().fg(Color::Yellow)),
+                    Span::styled("  From: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(txn.from.clone(), Style::default().fg(WARNING_COLOR)),
                 ]);
                 let line3 = Line::from(vec![
-                    Span::styled("  To:   ", Style::default().fg(Color::Gray)),
-                    Span::styled(txn.to.clone(), Style::default().fg(Color::Cyan)),
+                    Span::styled("  To:   ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(txn.to.clone(), Style::default().fg(PRIMARY_COLOR)),
                 ]);
                 let line4 = Line::from(vec![
                     "  ".into(),
-                    Span::styled(txn.timestamp.clone(), Style::default().fg(Color::Gray)),
+                    Span::styled(txn.timestamp.clone(), Style::default().fg(MUTED_COLOR)),
                     "  ".into(),
-                    Span::styled(amount_text, Style::default().fg(Color::Green)),
+                    Span::styled(amount_text, Style::default().fg(SUCCESS_COLOR)),
                 ]);
                 vec![line1, line2, line3, line4, Line::from("")]
             }
@@ -879,31 +905,31 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
                 let id_span = Span::styled(
                     format!("Block # {}", block.id),
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(PRIMARY_COLOR)
                         .add_modifier(Modifier::BOLD),
                 );
                 let type_span = Span::styled("[Block]", Style::default().fg(Color::White));
 
                 let line1 = Line::from(vec![
-                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    Span::raw(format!("{} ", selection_indicator)),
                     id_span,
                     "  ".into(),
                     type_span,
                 ]);
                 let line2 = Line::from(vec![
-                    Span::styled("  Time: ", Style::default().fg(Color::Gray)),
-                    Span::styled(block.timestamp.clone(), Style::default().fg(Color::Yellow)),
+                    Span::styled("  Time: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(block.timestamp.clone(), Style::default().fg(WARNING_COLOR)),
                 ]);
                 let line3 = Line::from(vec![
-                    Span::styled("  Txns: ", Style::default().fg(Color::Gray)),
+                    Span::styled("  Txns: ", Style::default().fg(MUTED_COLOR)),
                     Span::styled(
                         format!("{}", block.txn_count),
-                        Style::default().fg(Color::Green),
+                        Style::default().fg(SUCCESS_COLOR),
                     ),
                 ]);
                 let line4 = Line::from(vec![
-                    Span::styled("  Proposer: ", Style::default().fg(Color::Gray)),
-                    Span::styled(block.proposer.clone(), Style::default().fg(Color::Magenta)),
+                    Span::styled("  Proposer: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(block.proposer.clone(), Style::default().fg(ACCENT_COLOR)),
                 ]);
                 vec![line1, line2, line3, line4, Line::from("")]
             }
@@ -911,31 +937,31 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
                 let id_span = Span::styled(
                     account.address.clone(),
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(WARNING_COLOR)
                         .add_modifier(Modifier::BOLD),
                 );
-                let type_span = Span::styled("[Account]", Style::default().fg(Color::Yellow));
+                let type_span = Span::styled("[Account]", Style::default().fg(WARNING_COLOR));
                 let balance_text = format!("{:.6} Algos", account.balance as f64 / 1_000_000.0);
 
                 let line1 = Line::from(vec![
-                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    Span::raw(format!("{} ", selection_indicator)),
                     id_span,
                     "  ".into(),
                     type_span,
                 ]);
                 let line2 = Line::from(vec![
-                    Span::styled("  Balance: ", Style::default().fg(Color::Gray)),
-                    Span::styled(balance_text, Style::default().fg(Color::Green)),
+                    Span::styled("  Balance: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(balance_text, Style::default().fg(SUCCESS_COLOR)),
                 ]);
                 let line3 = Line::from(vec![
-                    Span::styled("  Status: ", Style::default().fg(Color::Gray)),
-                    Span::styled(account.status.clone(), Style::default().fg(Color::Cyan)),
+                    Span::styled("  Status: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(account.status.clone(), Style::default().fg(PRIMARY_COLOR)),
                 ]);
                 let line4 = Line::from(vec![
-                    Span::styled("  Assets: ", Style::default().fg(Color::Gray)),
+                    Span::styled("  Assets: ", Style::default().fg(MUTED_COLOR)),
                     Span::styled(
                         format!("{}", account.assets_count),
-                        Style::default().fg(Color::Magenta),
+                        Style::default().fg(ACCENT_COLOR),
                     ),
                 ]);
                 vec![line1, line2, line3, line4, Line::from("")]
@@ -944,10 +970,10 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
                 let id_span = Span::styled(
                     format!("Asset # {}", asset.id),
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(SUCCESS_COLOR)
                         .add_modifier(Modifier::BOLD),
                 );
-                let type_span = Span::styled("[Asset]", Style::default().fg(Color::Green));
+                let type_span = Span::styled("[Asset]", Style::default().fg(SUCCESS_COLOR));
                 let name = if asset.name.is_empty() {
                     "<unnamed>".to_string()
                 } else {
@@ -961,32 +987,32 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
                 let total_supply = format!("{} (decimals: {})", asset.total, asset.decimals);
 
                 let line1 = Line::from(vec![
-                    if is_selected { "▶ " } else { "⬚ " }.into(),
+                    Span::raw(format!("{} ", selection_indicator)),
                     id_span,
                     "  ".into(),
                     type_span,
                 ]);
                 let line2 = Line::from(vec![
-                    Span::styled("  Name: ", Style::default().fg(Color::Gray)),
+                    Span::styled("  Name: ", Style::default().fg(MUTED_COLOR)),
                     Span::styled(
                         format!("{}{}", name, unit),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(PRIMARY_COLOR),
                     ),
                 ]);
                 let line3 = Line::from(vec![
-                    Span::styled("  Creator: ", Style::default().fg(Color::Gray)),
-                    Span::styled(asset.creator.clone(), Style::default().fg(Color::Yellow)),
+                    Span::styled("  Creator: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(asset.creator.clone(), Style::default().fg(WARNING_COLOR)),
                 ]);
                 let line4 = Line::from(vec![
-                    Span::styled("  Total: ", Style::default().fg(Color::Gray)),
-                    Span::styled(total_supply, Style::default().fg(Color::Magenta)),
+                    Span::styled("  Total: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(total_supply, Style::default().fg(ACCENT_COLOR)),
                 ]);
                 vec![line1, line2, line3, line4, Line::from("")]
             }
         };
 
         list_items.push(ListItem::new(list_item).style(if is_selected {
-            Style::default().bg(Color::DarkGray)
+            SELECTED_STYLE
         } else {
             Style::default()
         }));
@@ -994,12 +1020,12 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
 
     let txn_list = List::new(list_items)
         .block(Block::default())
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        .highlight_style(HIGHLIGHT_STYLE);
 
     frame.render_widget(txn_list, inner_area);
 
     let help_text = "↑↓: Navigate  Enter: Select  Esc: Cancel";
-    let text_area = Rect::new(
+    let help_area = Rect::new(
         popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
         popup_area.y + popup_area.height - 2,
         help_text.len() as u16,
@@ -1007,10 +1033,10 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
     );
 
     let help_msg = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
-    frame.render_widget(help_msg, text_area);
+    frame.render_widget(help_msg, help_area);
 }
 
 fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
@@ -1022,18 +1048,11 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
         .unwrap_or(message.chars().count()) as u16;
 
     let popup_width = 40.max(longest_line + 6).min(area.width * 8 / 10);
-
     let popup_height = 6.max(message_lines + 4);
 
     let popup_area = centered_popup_area(area, popup_width, popup_height);
 
-    let popup_block = Block::default()
-        .title(" Message ")
-        .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::Cyan));
-
+    let popup_block = create_popup_block("Message");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
@@ -1068,7 +1087,7 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
     frame.render_widget(separator_widget, separator_area);
 
     let help_text = "Press Esc to continue";
-    let text_area = Rect::new(
+    let help_area = Rect::new(
         popup_area.x,
         popup_area.y + popup_area.height - 2,
         popup_area.width,
@@ -1076,8 +1095,8 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
     );
 
     let help_msg = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::Gray))
+        .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
-    frame.render_widget(help_msg, text_area);
+    frame.render_widget(help_msg, help_area);
 }
