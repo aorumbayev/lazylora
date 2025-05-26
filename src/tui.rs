@@ -1,4 +1,4 @@
-use std::io::{self, Stdout, stdout};
+use std::io::{self, Stdout};
 
 use ratatui::{
     Terminal,
@@ -10,16 +10,16 @@ use ratatui::{
     },
 };
 
-/// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
-/// Initialize the terminal
 pub fn init() -> io::Result<Tui> {
-    execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
     enable_raw_mode()?;
+    execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
 
     set_panic_hook();
-    Terminal::new(CrosstermBackend::new(stdout()))
+
+    let backend = CrosstermBackend::new(std::io::stdout());
+    Terminal::new(backend)
 }
 
 fn set_panic_hook() {
@@ -30,8 +30,7 @@ fn set_panic_hook() {
     }));
 }
 
-/// Restore the terminal to its original state
 pub fn restore() -> io::Result<()> {
-    execute!(stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
+    execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
     disable_raw_mode()
 }

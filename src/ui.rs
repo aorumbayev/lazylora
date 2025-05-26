@@ -10,7 +10,7 @@ use ratatui::{
     },
 };
 
-use crate::algorand::{SearchResultItem, TxnType};
+use crate::algorand::{AlgoClient, SearchResultItem, TxnType};
 use crate::app_state::{App, Focus, PopupState, SearchType};
 
 const BLOCK_HEIGHT: u16 = 3;
@@ -18,7 +18,6 @@ const TXN_HEIGHT: u16 = 4;
 const HEADER_HEIGHT: u16 = 3;
 const TITLE_HEIGHT: u16 = 3;
 
-/// Render the entire application UI
 pub fn render(app: &App, frame: &mut Frame) {
     let size = frame.area();
 
@@ -116,7 +115,7 @@ fn render_main_content(app: &App, frame: &mut Frame, area: Rect) {
     let title_area = Rect::new(chunks[0].x + 2, chunks[0].y + 1, 10, 1);
     frame.render_widget(title, title_area);
 
-    let show_live = *app.show_live.lock().unwrap();
+    let show_live = app.show_live;
     let checkbox_text = format!("[{}] Show live", if show_live { "✓" } else { " " });
     let checkbox = Paragraph::new(checkbox_text).style(Style::default().fg(if show_live {
         Color::Green
@@ -154,7 +153,7 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(blocks_block.clone(), area);
 
     let inner_area = blocks_block.inner(area);
-    let blocks = app.blocks.lock().unwrap();
+    let blocks = &app.blocks;
 
     if blocks.is_empty() {
         let no_data_message = Paragraph::new("No blocks available")
@@ -164,7 +163,6 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    // Convert blocks to list items
     let block_items: Vec<ListItem> = blocks
         .iter()
         .enumerate()
@@ -172,7 +170,6 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
             let is_selected = app.selected_block_index == Some(i);
             ListItem::new(vec![
                 Line::from(vec![
-                    // Add consistent icon for all rows, but different based on selection
                     if is_selected {
                         "▶ ".into()
                     } else {
@@ -204,33 +201,24 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
         })
         .collect();
 
-    // Calculate how many items can be displayed
     let items_per_page = inner_area.height as usize / BLOCK_HEIGHT as usize;
 
-    // Create a stateful list
     let mut list_state = ratatui::widgets::ListState::default();
     if let Some(selected_index) = app.selected_block_index {
         list_state.select(Some(selected_index));
 
-        // Just check if selected item is visible; app.block_scroll is immutable here
         let block_scroll_usize = app.block_scroll as usize / BLOCK_HEIGHT as usize;
         let visible_start = block_scroll_usize;
         let visible_end = visible_start + items_per_page;
 
-        if selected_index < visible_start || selected_index >= visible_end {
-            // Selected item is not in visible area
-            // We can't modify app.block_scroll here because it's a reference
-            // The scroll adjustment should happen in the app logic instead
-        }
+        if selected_index < visible_start || selected_index >= visible_end {}
     }
 
-    // Determine visible range of items
     let block_scroll_usize = app.block_scroll as usize / BLOCK_HEIGHT as usize;
     let start_index = block_scroll_usize.min(blocks.len().saturating_sub(1));
     let end_index = (start_index + items_per_page).min(blocks.len());
     let visible_items = block_items[start_index..end_index].to_vec();
 
-    // Create and render the list - no highlight_symbol as we're adding it manually
     let block_list = List::new(visible_items)
         .block(Block::default())
         .highlight_style(
@@ -239,7 +227,6 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    // Render list with state
     let mut modified_state = list_state.clone();
     if let Some(selected) = list_state.selected() {
         if selected >= start_index && selected < end_index {
@@ -251,7 +238,6 @@ fn render_blocks(app: &App, frame: &mut Frame, area: Rect) {
 
     frame.render_stateful_widget(block_list, inner_area, &mut modified_state);
 
-    // Render scrollbar
     render_scrollbar(
         frame,
         inner_area,
@@ -271,7 +257,6 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         Style::default()
     };
 
-    // Always show "Latest Transactions" title
     let title = " Latest Transactions ";
 
     let txn_block = Block::default()
@@ -284,8 +269,7 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(txn_block.clone(), area);
     let inner_area = txn_block.inner(area);
 
-    // Always use app.transactions
-    let transactions = app.transactions.lock().unwrap();
+    let transactions = &app.transactions;
     let transactions_to_display: Vec<_> = transactions
         .iter()
         .enumerate()
@@ -293,7 +277,6 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         .collect();
 
     if transactions_to_display.is_empty() {
-        // Always show "No transactions available" if empty
         let message = "No transactions available";
         let no_data_message = Paragraph::new(message)
             .style(Style::default().fg(Color::Gray))
@@ -302,7 +285,6 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    // Convert transactions to list items
     let txn_items: Vec<ListItem> = transactions_to_display
         .iter()
         .map(|(orig_idx, txn)| {
@@ -346,13 +328,10 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         })
         .collect();
 
-    // Calculate how many items can be displayed
     let items_per_page = inner_area.height as usize / TXN_HEIGHT as usize;
 
-    // Create a stateful list
     let mut list_state = ratatui::widgets::ListState::default();
     if let Some(selected_index) = app.selected_transaction_index {
-        // Find the position of the selected transaction in the current display list
         if let Some(display_index) = transactions_to_display
             .iter()
             .position(|(idx, _)| *idx == selected_index)
@@ -361,7 +340,6 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         }
     }
 
-    // Determine visible range of items based on scroll position
     let txn_scroll_usize = app.transaction_scroll as usize / TXN_HEIGHT as usize;
     let start_index = txn_scroll_usize.min(txn_items.len().saturating_sub(1));
     let end_index = (start_index + items_per_page).min(txn_items.len());
@@ -372,7 +350,6 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         Vec::new()
     };
 
-    // Create and render the list
     let txn_list = List::new(visible_items)
         .block(Block::default())
         .highlight_style(
@@ -381,7 +358,6 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    // Render list with state, adjusting selected index based on visible range
     let mut modified_state = list_state.clone();
     if let Some(selected_display_index) = list_state.selected() {
         if selected_display_index >= start_index && selected_display_index < end_index {
@@ -393,7 +369,6 @@ fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
 
     frame.render_stateful_widget(txn_list, inner_area, &mut modified_state);
 
-    // Render scrollbar
     render_scrollbar(
         frame,
         inner_area,
@@ -415,7 +390,6 @@ fn render_scrollbar(
     scroll_position: usize,
 ) {
     if is_focused && total_items > items_per_page {
-        // Use ratatui's built-in scrollbar widget
         let scrollbar = Scrollbar::default()
             .orientation(ScrollbarOrientation::VerticalRight)
             .symbols(scrollbar::VERTICAL)
@@ -425,28 +399,23 @@ fn render_scrollbar(
             .style(Style::default().fg(Color::Gray))
             .track_style(Style::default().fg(Color::DarkGray));
 
-        // Calculate proper scroll position and content length
         let content_length = total_items * item_height;
 
-        // Create stateful scrollbar
         let mut scrollbar_state = ratatui::widgets::ScrollbarState::default()
             .content_length(content_length)
             .viewport_content_length(items_per_page * item_height)
             .position(scroll_position);
 
-        // Render the scrollbar
         frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
     }
 }
 
-/// Render block details popup
 fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
     if let Some(index) = app.selected_block_index {
-        let blocks = app.blocks.lock().unwrap();
+        let blocks = &app.blocks;
         if let Some(block_data) = blocks.get(index) {
             let popup_area = centered_popup_area(area, 60, 15);
 
-            // Create an outer block with title for the popup
             let popup_block = Block::default()
                 .title(" Block Details ")
                 .title_alignment(Alignment::Center)
@@ -454,13 +423,11 @@ fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
                 .border_set(border::ROUNDED)
                 .border_style(Style::default().fg(Color::Cyan));
 
-            // Render the popup background
             frame.render_widget(Clear, popup_area);
             frame.render_widget(popup_block.clone(), popup_area);
 
             let inner_area = popup_block.inner(popup_area);
 
-            // Create table rows
             let rows = vec![
                 Row::new(vec![
                     Cell::from("Block ID:").style(Style::default().fg(Color::Yellow)),
@@ -476,17 +443,13 @@ fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
                 ]),
             ];
 
-            // Create table with proper constraints
-            let table = Table::new(
-                rows,
-                [Constraint::Percentage(30), Constraint::Percentage(70)],
-            )
-            .block(Block::default())
-            .column_spacing(1);
+            let table = Table::new(rows, [Constraint::Length(15), Constraint::Min(40)])
+                .block(Block::default())
+                .column_spacing(1)
+                .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
             frame.render_widget(table, inner_area);
 
-            // Add the close message at the bottom
             let text = "Press Esc to close";
             let text_area = Rect::new(
                 popup_area.x + (popup_area.width - text.len() as u16) / 2,
@@ -504,24 +467,18 @@ fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
     }
 }
 
-/// Helper function to create a centered popup area
 fn centered_popup_area(parent: Rect, width: u16, height: u16) -> Rect {
-    // Ensure popup doesn't exceed terminal boundaries
     let popup_width = width.min(parent.width.saturating_sub(4));
     let popup_height = height.min(parent.height.saturating_sub(4));
 
-    // Center the popup
     let popup_x = parent.x + (parent.width.saturating_sub(popup_width)) / 2;
     let popup_y = parent.y + (parent.height.saturating_sub(popup_height)) / 2;
 
     Rect::new(popup_x, popup_y, popup_width, popup_height)
 }
 
-/// Render transaction details popup
 fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
-    // Determine the source of the transaction data
     let transaction_opt = if app.viewing_search_result {
-        // Find the transaction in filtered_search_results
         app.selected_transaction_id.as_ref().and_then(|txn_id| {
             app.filtered_search_results
                 .iter()
@@ -531,18 +488,15 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
                 })
         })
     } else {
-        // Find the transaction in the main transactions list
         app.selected_transaction_index.and_then(|index| {
-            let transactions = app.transactions.lock().unwrap();
+            let transactions = &app.transactions;
             transactions.get(index).cloned()
         })
     };
 
     if let Some(txn) = transaction_opt {
-        // Increase popup size to fit more information
         let popup_area = centered_popup_area(area, 76, 25);
 
-        // Create an outer block with title for the popup
         let popup_block = Block::default()
             .title(" Transaction Details ")
             .title_alignment(Alignment::Center)
@@ -550,16 +504,13 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             .border_set(border::ROUNDED)
             .border_style(Style::default().fg(Color::Cyan));
 
-        // Render the popup background
         frame.render_widget(Clear, popup_area);
         frame.render_widget(popup_block.clone(), popup_area);
 
         let inner_area = popup_block.inner(popup_area);
 
-        // Format amount based on entity type
         let formatted_amount = match txn.txn_type {
             TxnType::Payment => {
-                // Convert microAlgos to Algos (1 Algo = 1,000,000 microAlgos)
                 format!("{:.6} Algos", txn.amount as f64 / 1_000_000.0)
             }
             TxnType::AssetTransfer => {
@@ -572,10 +523,8 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             _ => format!("{}", txn.amount),
         };
 
-        // Format fee from microAlgos to Algos
         let formatted_fee = format!("{:.6} Algos", txn.fee as f64 / 1_000_000.0);
 
-        // Build the transaction details
         let mut details = vec![
             ("Transaction ID:", txn.id.clone()),
             ("Type:", txn.txn_type.as_str().to_string()),
@@ -588,12 +537,10 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             ("Note:", txn.note.clone()),
         ];
 
-        // Add asset ID if it's an asset transfer
         if let Some(asset_id) = txn.asset_id {
             details.push(("Asset ID:", format!("{}", asset_id)));
         }
 
-        // Create table rows
         let rows: Vec<Row> = details
             .into_iter()
             .map(|(label, value)| {
@@ -604,7 +551,6 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             })
             .collect();
 
-        // Create table with proper constraints
         let table = Table::new(rows, [Constraint::Length(15), Constraint::Min(40)])
             .block(Block::default())
             .column_spacing(1)
@@ -612,7 +558,6 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
 
         frame.render_widget(table, inner_area);
 
-        // Add copy button
         let button_text = "[C] Copy TXN ID";
         let button_block = Block::default()
             .borders(Borders::ALL)
@@ -641,7 +586,6 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
 
         frame.render_widget(button_content, button_inner_area);
 
-        // Add the close message at the bottom
         let text = "Press Esc to close";
         let text_area = Rect::new(
             popup_area.x + (popup_area.width - text.len() as u16) / 2,
@@ -667,11 +611,9 @@ fn render_footer(_app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(footer, area);
 }
 
-/// Render network selector
 fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize) {
     let popup_area = centered_popup_area(area, 30, 12);
 
-    // Create an outer block with title for the popup
     let popup_block = Block::default()
         .title(" Select Network (Esc:Cancel) ")
         .title_alignment(Alignment::Center)
@@ -679,7 +621,6 @@ fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize)
         .border_set(border::ROUNDED)
         .border_style(Style::default().fg(Color::Cyan));
 
-    // Render the popup background
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
@@ -708,7 +649,6 @@ fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize)
 
     frame.render_widget(table, inner_area);
 
-    // Add the help message at the bottom, positioned INSIDE the inner area
     let help_text = "↑↓:Move Enter:Select";
     let text_area = Rect::new(
         inner_area.x, // Start at the inner area's left edge
@@ -724,16 +664,14 @@ fn render_network_selector(frame: &mut Frame, area: Rect, selected_index: usize)
     frame.render_widget(help_msg, text_area);
 }
 
-/// Render search with type popup
 fn render_search_with_type_popup(
     frame: &mut Frame,
     area: Rect,
     query: &str,
     search_type: SearchType,
 ) {
-    let popup_area = centered_popup_area(area, 60, 15); // Make it taller to fit search type selectors
+    let popup_area = centered_popup_area(area, 60, 18); // Made taller to fit suggestions
 
-    // Create an outer block with title for the popup
     let popup_block = Block::default()
         .title(" Search Algorand Network ")
         .title_alignment(Alignment::Center)
@@ -741,13 +679,11 @@ fn render_search_with_type_popup(
         .border_set(border::ROUNDED)
         .border_style(Style::default().fg(Color::Cyan));
 
-    // Render the popup background
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
     let inner_area = popup_block.inner(popup_area);
 
-    // Create a text input widget with a border
     let input_block = Block::default()
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
@@ -755,19 +691,14 @@ fn render_search_with_type_popup(
         .title(" Enter search term ")
         .title_alignment(Alignment::Left);
 
-    // Calculate the input area position and dimensions
     let input_area = Rect::new(inner_area.x + 2, inner_area.y + 2, inner_area.width - 4, 3);
 
-    // Render the input block
     frame.render_widget(input_block.clone(), input_area);
 
-    // Calculate inner area of the input block for the actual text
     let text_input_area = input_block.inner(input_area);
 
-    // Add cursor at the end of input
     let input_text = format!("{}{}", query, "▏");
 
-    // Create the text input widget
     let input = Paragraph::new(input_text)
         .style(Style::default())
         .alignment(Alignment::Left)
@@ -775,13 +706,11 @@ fn render_search_with_type_popup(
 
     frame.render_widget(input, text_input_area);
 
-    // Search type selectors
     let selector_y = input_area.y + 4;
     let selector_height = 1;
     let selector_width = inner_area.width / 5; // 4 options, but give extra space
     let spacing = 2;
 
-    // Create and render search type selector buttons - removed "ALL" option
     let search_types = [
         SearchType::Transaction,
         SearchType::Block,
@@ -810,12 +739,47 @@ fn render_search_with_type_popup(
         x_offset += selector_width + spacing;
     }
 
-    // Add help text after the selector buttons
+    let suggestions_y = selector_y + 2;
+    let suggestions_area = Rect::new(inner_area.x + 2, suggestions_y, inner_area.width - 4, 3);
+
+    let suggestion = AlgoClient::get_search_suggestions(query, search_type);
+
+    let suggestion_color = if suggestion.contains("Valid") {
+        Color::Green
+    } else if suggestion.contains("too short")
+        || suggestion.contains("too long")
+        || suggestion.contains("invalid")
+    {
+        Color::Yellow
+    } else if suggestion.contains("Enter") {
+        Color::Gray
+    } else {
+        Color::Cyan
+    };
+
+    let suggestions_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(Color::Gray))
+        .title(" Suggestions ")
+        .title_alignment(Alignment::Left);
+
+    frame.render_widget(suggestions_block.clone(), suggestions_area);
+
+    let suggestions_inner = suggestions_block.inner(suggestions_area);
+
+    let suggestion_text = Paragraph::new(suggestion)
+        .style(Style::default().fg(suggestion_color))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    frame.render_widget(suggestion_text, suggestions_inner);
+
     let help_text1 = "Search directly queries the Algorand network";
     let help_text2 = "Use Tab to switch between search types";
 
-    let help_area1 = Rect::new(inner_area.x + 2, selector_y + 2, inner_area.width - 4, 1);
-    let help_area2 = Rect::new(inner_area.x + 2, selector_y + 3, inner_area.width - 4, 1);
+    let help_area1 = Rect::new(inner_area.x + 2, suggestions_y + 4, inner_area.width - 4, 1);
+    let help_area2 = Rect::new(inner_area.x + 2, suggestions_y + 5, inner_area.width - 4, 1);
 
     let help_msg1 = Paragraph::new(help_text1)
         .style(Style::default().fg(Color::Gray))
@@ -828,7 +792,6 @@ fn render_search_with_type_popup(
     frame.render_widget(help_msg1, help_area1);
     frame.render_widget(help_msg2, help_area2);
 
-    // Add the control help message at the bottom
     let control_text = "Tab: Change Type  Enter: Search  Esc: Cancel";
     let text_area = Rect::new(
         popup_area.x + (popup_area.width - control_text.len() as u16) / 2,
@@ -844,11 +807,9 @@ fn render_search_with_type_popup(
     frame.render_widget(control_msg, text_area);
 }
 
-/// Render search results popup
 fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, SearchResultItem)]) {
     let popup_area = centered_popup_area(area, 76, 20);
 
-    // Create an outer block with title for the popup
     let popup_block = Block::default()
         .title(" Search Results ")
         .title_alignment(Alignment::Center)
@@ -856,7 +817,6 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
         .border_set(border::ROUNDED)
         .border_style(Style::default().fg(Color::Cyan));
 
-    // Render the popup background
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
@@ -866,7 +826,6 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
     for (i, (_idx, item)) in results.iter().enumerate() {
         let is_selected = i == 0;
 
-        // Match on the SearchResultItem type to create the list item content
         let list_item = match item {
             SearchResultItem::Transaction(txn) => {
                 let amount_text = match txn.txn_type {
@@ -1033,14 +992,12 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
         }));
     }
 
-    // Create a list with wrapping enabled
     let txn_list = List::new(list_items)
         .block(Block::default())
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     frame.render_widget(txn_list, inner_area);
 
-    // Add the help message at the bottom
     let help_text = "↑↓: Navigate  Enter: Select  Esc: Cancel";
     let text_area = Rect::new(
         popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
@@ -1056,9 +1013,7 @@ fn render_search_results(frame: &mut Frame, area: Rect, results: &[(usize, Searc
     frame.render_widget(help_msg, text_area);
 }
 
-/// Render a message popup
 fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
-    // Calculate appropriate popup size based on message content
     let message_lines = message.lines().count().max(1) as u16;
     let longest_line = message
         .lines()
@@ -1066,14 +1021,12 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
         .max()
         .unwrap_or(message.chars().count()) as u16;
 
-    // Ensure width is at least 40 and at most 80% of screen width
     let popup_width = 40.max(longest_line + 6).min(area.width * 8 / 10);
-    // Ensure height accommodates message + borders + help text
+
     let popup_height = 6.max(message_lines + 4);
 
     let popup_area = centered_popup_area(area, popup_width, popup_height);
 
-    // Create an outer block with title for the popup
     let popup_block = Block::default()
         .title(" Message ")
         .title_alignment(Alignment::Center)
@@ -1081,13 +1034,11 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
         .border_set(border::ROUNDED)
         .border_style(Style::default().fg(Color::Cyan));
 
-    // Render the popup background
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
     let inner_area = popup_block.inner(popup_area);
 
-    // Create message area that doesn't include the bottom line reserved for help text
     let message_area = Rect::new(
         inner_area.x,
         inner_area.y,
@@ -1102,7 +1053,6 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
 
     frame.render_widget(prompt, message_area);
 
-    // Add the help message at the bottom with visual separation
     let separator = "─".repeat(popup_area.width.saturating_sub(2) as usize);
     let separator_area = Rect::new(
         popup_area.x + 1,
@@ -1117,7 +1067,6 @@ fn render_message_popup(frame: &mut Frame, area: Rect, message: &str) {
 
     frame.render_widget(separator_widget, separator_area);
 
-    // Add the help message below the separator
     let help_text = "Press Esc to continue";
     let text_area = Rect::new(
         popup_area.x,

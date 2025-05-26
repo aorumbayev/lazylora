@@ -4,7 +4,6 @@ use ratatui::style::Color;
 use reqwest::Client;
 use serde_json::Value;
 
-// Network types
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(clippy::enum_variant_names)]
 pub enum Network {
@@ -34,12 +33,11 @@ impl Network {
         match self {
             Self::MainNet => "https://mainnet-api.algonode.cloud",
             Self::TestNet => "https://testnet-api.algonode.cloud",
-            Self::LocalNet => "http://localhost:8080",
+            Self::LocalNet => "http://localhost:4001",
         }
     }
 }
 
-// API Client
 #[derive(Debug, Clone)]
 pub struct AlgoClient {
     network: Network,
@@ -54,60 +52,48 @@ impl AlgoClient {
         }
     }
 
-    // Add method to check if network is available
-    pub async fn is_network_available(&self) -> bool {
-        // For LocalNet, we should check connectivity to both algod and indexer
-        let algod_url = format!("{}/health", self.network.algod_url());
-        let indexer_url = format!("{}/health", self.network.indexer_url());
+    fn build_algod_request(&self, url: &str) -> reqwest::RequestBuilder {
+        let mut request = self.client.get(url).header("accept", "application/json");
 
-        // First check algod
-        let algod_result = self
-            .client
-            .get(&algod_url)
-            .timeout(std::time::Duration::from_secs(2))
-            .send()
-            .await;
-
-        let indexer_result = self
-            .client
-            .get(&indexer_url)
-            .timeout(std::time::Duration::from_secs(2))
-            .send()
-            .await;
-
-        // LocalNet requires both services to be available
         if self.network == Network::LocalNet {
-            algod_result.is_ok() && indexer_result.is_ok()
-        } else {
-            // MainNet and TestNet are assumed to be always available
-            // But we could add additional checking here if needed
-            true
+            request = request.header(
+                "X-Algo-API-Token",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            );
         }
+
+        request
     }
 
-    // Add a new method to get specific error message about connection
+    fn build_indexer_request(&self, url: &str) -> reqwest::RequestBuilder {
+        let mut request = self.client.get(url).header("accept", "application/json");
+
+        if self.network == Network::LocalNet {
+            request = request.header(
+                "X-Indexer-API-Token",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            );
+        }
+
+        request
+    }
+
     pub async fn get_network_status(&self) -> Result<(), String> {
-        // For LocalNet, we should check connectivity to both algod and indexer
         let algod_url = format!("{}/health", self.network.algod_url());
         let indexer_url = format!("{}/health", self.network.indexer_url());
 
-        // First check algod
         let algod_result = self
-            .client
-            .get(&algod_url)
+            .build_algod_request(&algod_url)
             .timeout(std::time::Duration::from_secs(2))
             .send()
             .await;
 
-        // Then check indexer
         let indexer_result = self
-            .client
-            .get(&indexer_url)
+            .build_indexer_request(&indexer_url)
             .timeout(std::time::Duration::from_secs(2))
             .send()
             .await;
 
-        // Check algod connection first
         if let Err(e) = algod_result {
             return Err(format!(
                 "Unable to connect to algod at {}. Error: {}",
@@ -116,7 +102,6 @@ impl AlgoClient {
             ));
         }
 
-        // Check indexer connection for LocalNet
         if self.network == Network::LocalNet && indexer_result.is_err() {
             return Err(format!(
                 "Unable to connect to indexer at {}. Algod is running but indexer is not available.",
@@ -124,7 +109,6 @@ impl AlgoClient {
             ));
         }
 
-        // All good
         Ok(())
     }
 
@@ -132,9 +116,7 @@ impl AlgoClient {
     pub async fn get_transaction_by_id(&self, txid: &str) -> Result<Option<Transaction>> {
         let url = format!("{}/v2/transactions/{}", self.network.indexer_url(), txid);
         let response = self
-            .client
-            .get(&url)
-            .header("accept", "application/json")
+            .build_indexer_request(&url)
             .send()
             .await
             .map_err(|_| color_eyre::eyre::eyre!("Failed to fetch transaction"))?;
@@ -158,7 +140,6 @@ impl AlgoClient {
         let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
         let to = extract_receiver(txn_json, &txn_type);
 
-        // Extract additional transaction details
         let timestamp = txn_json["round-time"]
             .as_u64()
             .map(format_timestamp)
@@ -177,7 +158,6 @@ impl AlgoClient {
                     .unwrap_or_else(|| "None".to_string())
             });
 
-        // Extract amount based on transaction type
         let (amount, asset_id) = match txn_type {
             TxnType::Payment => {
                 let amount = txn_json["payment-transaction"]["amount"]
@@ -211,12 +191,7 @@ impl AlgoClient {
 
     pub async fn get_latest_blocks(&self, limit: usize) -> Result<Vec<AlgoBlock>> {
         let status_url = format!("{}/v2/status", self.network.algod_url());
-        let status_response = self
-            .client
-            .get(&status_url)
-            .header("accept", "application/json")
-            .send()
-            .await?;
+        let status_response = self.build_algod_request(&status_url).send().await?;
 
         let status: Value = status_response.json().await?;
         let latest_round = status["last-round"].as_u64().unwrap_or(0);
@@ -235,13 +210,7 @@ impl AlgoClient {
             let round = latest_round - i as u64;
             let block_url = format!("{}/v2/blocks/{}", self.network.algod_url(), round);
 
-            let response = match self
-                .client
-                .get(&block_url)
-                .header("accept", "application/json")
-                .send()
-                .await
-            {
+            let response = match self.build_algod_request(&block_url).send().await {
                 Ok(resp) if resp.status().is_success() => resp,
                 _ => continue,
             };
@@ -268,13 +237,7 @@ impl AlgoClient {
 
     pub async fn get_latest_transactions(&self, limit: usize) -> Result<Vec<Transaction>> {
         let status_url = format!("{}/v2/status", self.network.algod_url());
-        let status_response = match self
-            .client
-            .get(&status_url)
-            .header("accept", "application/json")
-            .send()
-            .await
-        {
+        let status_response = match self.build_algod_request(&status_url).send().await {
             Ok(resp) if resp.status().is_success() => resp,
             _ => return Ok(Vec::new()),
         };
@@ -298,13 +261,7 @@ impl AlgoClient {
             latest_round
         );
 
-        let response = match self
-            .client
-            .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await
-        {
+        let response = match self.build_indexer_request(&url).send().await {
             Ok(resp) if resp.status().is_success() => resp,
             _ => return Ok(Vec::new()),
         };
@@ -324,7 +281,6 @@ impl AlgoClient {
             let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
             let to = extract_receiver(txn_json, &txn_type);
 
-            // Extract additional transaction details
             let timestamp = txn_json["round-time"]
                 .as_u64()
                 .map(format_timestamp)
@@ -343,7 +299,6 @@ impl AlgoClient {
                         .unwrap_or_else(|| "None".to_string())
                 });
 
-            // Extract amount based on transaction type
             let (amount, asset_id) = match txn_type {
                 TxnType::Payment => {
                     let amount = txn_json["payment-transaction"]["amount"]
@@ -379,280 +334,397 @@ impl AlgoClient {
         Ok(transactions)
     }
 
-    /// Search for blocks, assets, accounts, and transactions based on the input query
     pub async fn search_by_query(
         &self,
         query: &str,
         search_type: SearchType,
     ) -> Result<Vec<SearchResultItem>> {
-        // Execute the appropriate search based on search type
         let results = match search_type {
             SearchType::Transaction => {
                 let txns = self.search_transaction(query).await?;
-                // Wrap Transaction in SearchResultItem::Transaction
                 txns.into_iter()
                     .map(SearchResultItem::Transaction)
                     .collect()
             }
-            SearchType::Account => {
-                self.search_address(query)
-                    .await?
-                    .map(SearchResultItem::Account) // Wrap AccountInfo
-                    .map_or_else(
-                        || Ok::<_, color_eyre::Report>(vec![]),
-                        |item| Ok(vec![item]),
-                    )?
-            }
-            SearchType::Block => {
-                self.search_block(query)
-                    .await?
-                    .map(SearchResultItem::Block) // Wrap BlockInfo
-                    .map_or_else(
-                        || Ok::<_, color_eyre::Report>(vec![]),
-                        |item| Ok(vec![item]),
-                    )?
-            }
-            SearchType::Asset => {
-                self.search_asset(query)
-                    .await?
-                    .map(SearchResultItem::Asset) // Wrap AssetInfo
-                    .map_or_else(
-                        || Ok::<_, color_eyre::Report>(vec![]),
-                        |item| Ok(vec![item]),
-                    )?
-            }
+            SearchType::Account => match self.search_address(query).await {
+                Ok(Some(account)) => {
+                    vec![SearchResultItem::Account(account)]
+                }
+                Ok(None) => {
+                    vec![]
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            },
+            SearchType::Block => match self.search_block(query).await? {
+                Some(block) => vec![SearchResultItem::Block(block)],
+                None => {
+                    return Err(color_eyre::eyre::eyre!(
+                        "Block '{}' not found. Please enter a valid block number.",
+                        query
+                    ));
+                }
+            },
+            SearchType::Asset => match self.search_asset(query).await? {
+                Some(asset) => vec![SearchResultItem::Asset(asset)],
+                None => {
+                    return Err(color_eyre::eyre::eyre!(
+                        "Asset '{}' not found. Please enter a valid asset ID.",
+                        query
+                    ));
+                }
+            },
         };
 
         Ok(results)
     }
 
-    // Search for a specific transaction by ID
     async fn search_transaction(&self, txid: &str) -> Result<Vec<Transaction>> {
-        // Direct transaction lookup without any format validation
+        if txid.is_empty() {
+            return Err(color_eyre::eyre::eyre!("Transaction ID cannot be empty"));
+        }
+
+        if txid.len() < 40 || txid.len() > 60 {
+            return Err(color_eyre::eyre::eyre!(
+                "Invalid transaction ID format. Transaction IDs are typically 52 characters long."
+            ));
+        }
+
         let url = format!("{}/v2/transactions/{}", self.network.indexer_url(), txid);
 
-        match self
-            .client
-            .get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await
-        {
-            Ok(response) if response.status().is_success() => {
-                if let Ok(json) = response.json::<Value>().await {
+        let response = self.build_indexer_request(&url).send().await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(json) = resp.json::<Value>().await {
                     if let Some(txn_json) = json.get("transaction") {
-                        let id = txn_json["id"].as_str().unwrap_or("unknown").to_string();
-                        let txn_type = determine_transaction_type(txn_json);
-                        let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
-                        let to = extract_receiver(txn_json, &txn_type);
-
-                        let timestamp = txn_json["round-time"]
-                            .as_u64()
-                            .map(format_timestamp)
-                            .unwrap_or_else(|| "Unknown".to_string());
-
-                        let block = txn_json["confirmed-round"].as_u64().unwrap_or(0);
-                        let fee = txn_json["fee"].as_u64().unwrap_or(0);
-
-                        let note = txn_json["note"]
-                            .as_str()
-                            .map(|n| n.to_string())
-                            .unwrap_or_else(|| {
-                                txn_json["note"]
-                                    .as_array()
-                                    .map(|bytes| format!("{:?}", bytes))
-                                    .unwrap_or_else(|| "None".to_string())
-                            });
-
-                        let (amount, asset_id) = match txn_type {
-                            TxnType::Payment => {
-                                let amount = txn_json["payment-transaction"]["amount"]
-                                    .as_u64()
-                                    .unwrap_or(0);
-                                (amount, None)
-                            }
-                            TxnType::AssetTransfer => {
-                                let amount = txn_json["asset-transfer-transaction"]["amount"]
-                                    .as_u64()
-                                    .unwrap_or(0);
-                                let asset_id =
-                                    txn_json["asset-transfer-transaction"]["asset-id"].as_u64();
-                                (amount, asset_id)
-                            }
-                            _ => (0, None),
-                        };
-
-                        return Ok(vec![Transaction {
-                            id,
-                            txn_type,
-                            from,
-                            to,
-                            timestamp,
-                            block,
-                            fee,
-                            note,
-                            amount,
-                            asset_id,
-                        }]);
+                        let transaction = self.parse_transaction(txn_json)?;
+                        return Ok(vec![transaction]);
                     }
                 }
             }
-            _ => {}
+            Ok(resp) => {
+                let status = resp.status();
+                if status.as_u16() != 404 {
+                    // Log non-404 errors silently, continue with search
+                }
+            }
+            Err(_) => {
+                // Log error silently, continue with search
+            }
         }
 
-        // Secondary search for transactions
         let search_url = format!(
-            "{}/v2/transactions?tx-id={}&limit=10",
+            "{}/v2/transactions?txid={}&limit=10",
             self.network.indexer_url(),
             txid
         );
 
         let search_results = self.fetch_transactions_from_url(&search_url).await?;
 
+        if search_results.is_empty() {
+            return Err(color_eyre::eyre::eyre!(
+                "Transaction '{}' not found. Please verify the transaction ID is correct and exists on the {} network.",
+                txid,
+                self.network.as_str()
+            ));
+        }
+
         Ok(search_results)
     }
 
-    // Search for a block
+    fn parse_transaction(&self, txn_json: &Value) -> Result<Transaction> {
+        let id = txn_json["id"].as_str().unwrap_or("unknown").to_string();
+        let txn_type = determine_transaction_type(txn_json);
+        let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
+        let to = extract_receiver(txn_json, &txn_type);
+
+        let timestamp = txn_json["round-time"]
+            .as_u64()
+            .map(format_timestamp)
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let block = txn_json["confirmed-round"].as_u64().unwrap_or(0);
+        let fee = txn_json["fee"].as_u64().unwrap_or(0);
+
+        let note = txn_json["note"]
+            .as_str()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| {
+                txn_json["note"]
+                    .as_array()
+                    .map(|bytes| format!("{:?}", bytes))
+                    .unwrap_or_else(|| "None".to_string())
+            });
+
+        let (amount, asset_id) = match txn_type {
+            TxnType::Payment => {
+                let amount = txn_json["payment-transaction"]["amount"]
+                    .as_u64()
+                    .unwrap_or(0);
+                (amount, None)
+            }
+            TxnType::AssetTransfer => {
+                let amount = txn_json["asset-transfer-transaction"]["amount"]
+                    .as_u64()
+                    .unwrap_or(0);
+                let asset_id = txn_json["asset-transfer-transaction"]["asset-id"].as_u64();
+                (amount, asset_id)
+            }
+            _ => (0, None),
+        };
+
+        Ok(Transaction {
+            id,
+            txn_type,
+            from,
+            to,
+            timestamp,
+            block,
+            fee,
+            note,
+            amount,
+            asset_id,
+        })
+    }
+
     async fn search_block(&self, round_str: &str) -> Result<Option<BlockInfo>> {
-        if let Ok(round) = round_str.parse::<u64>() {
-            // Check if the block exists
-            let block_url = format!("{}/v2/blocks/{}", self.network.algod_url(), round);
+        let round = round_str.parse::<u64>().map_err(|_| {
+            color_eyre::eyre::eyre!(
+                "Invalid block number '{}'. Please enter a valid positive integer.",
+                round_str
+            )
+        })?;
 
-            match self
-                .client
-                .get(&block_url)
-                .header("accept", "application/json")
-                .send()
+        let block_url = format!("{}/v2/blocks/{}", self.network.algod_url(), round);
+
+        let response = self.build_algod_request(&block_url).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
                 .await
-            {
-                Ok(response) if response.status().is_success() => {
-                    // Get block info
-                    let block_data: Value = response.json().await.unwrap_or_default();
-                    let block_val = block_data.get("block").unwrap_or(&block_data);
-                    let txn_count = count_transactions(block_val);
-                    let timestamp_secs = block_val["ts"].as_u64().unwrap_or(0);
-                    let formatted_time = format_timestamp(timestamp_secs);
-                    let proposer = block_val["cert"]["prop"]["addr"]
-                        .as_str()
-                        .unwrap_or("unknown")
-                        .to_string();
-                    let seed = block_val["seed"].as_str().unwrap_or("unknown").to_string();
+                .unwrap_or_else(|_| "Unknown error".to_string());
 
-                    // Create BlockInfo
-                    Ok(Some(BlockInfo {
-                        id: round,
-                        timestamp: formatted_time,
-                        txn_count,
-                        proposer,
-                        seed,
-                    }))
-                }
-                _ => Ok(None),
+            if status.as_u16() == 404 {
+                return Ok(None);
+            } else {
+                return Err(color_eyre::eyre::eyre!(
+                    "Failed to fetch block #{}: HTTP {} - {}",
+                    round,
+                    status,
+                    error_text
+                ));
             }
-        } else {
-            Ok(None)
         }
+
+        let block_data: Value = response.json().await?;
+        let block_val = block_data.get("block").unwrap_or(&block_data);
+
+        let txn_count = count_transactions(block_val);
+        let timestamp_secs = block_val["ts"].as_u64().unwrap_or(0);
+        let formatted_time = format_timestamp(timestamp_secs);
+
+        let proposer = block_val["cert"]["prop"]["addr"]
+            .as_str()
+            .or_else(|| block_val["proposer"].as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let seed = block_val["seed"].as_str().unwrap_or("unknown").to_string();
+
+        Ok(Some(BlockInfo {
+            id: round,
+            timestamp: formatted_time,
+            txn_count,
+            proposer,
+            seed,
+        }))
     }
 
-    // Search for an asset
     async fn search_asset(&self, asset_id_str: &str) -> Result<Option<AssetInfo>> {
-        if let Ok(asset_id) = asset_id_str.parse::<u64>() {
-            // Check if the asset exists
-            let asset_url = format!("{}/v2/assets/{}", self.network.indexer_url(), asset_id);
+        let asset_id = asset_id_str.parse::<u64>().map_err(|_| {
+            color_eyre::eyre::eyre!(
+                "Invalid asset ID '{}'. Please enter a valid positive integer.",
+                asset_id_str
+            )
+        })?;
 
-            match self
-                .client
-                .get(&asset_url)
-                .header("accept", "application/json")
-                .send()
+        let asset_url = format!("{}/v2/assets/{}", self.network.indexer_url(), asset_id);
+
+        let response = self.build_indexer_request(&asset_url).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
                 .await
-            {
-                Ok(response) if response.status().is_success() => {
-                    // Get asset info
-                    let asset_data: Value = response.json().await.unwrap_or_default();
-                    let params = &asset_data["asset"]["params"];
+                .unwrap_or_else(|_| "Unknown error".to_string());
 
-                    let name = params["name"].as_str().unwrap_or("").to_string();
-                    let unit_name = params["unit-name"].as_str().unwrap_or("").to_string();
-                    let creator = params["creator"].as_str().unwrap_or("unknown").to_string();
-                    let total = params["total"].as_u64().unwrap_or(0);
-                    let decimals = params["decimals"].as_u64().unwrap_or(0);
-                    let url = params["url"].as_str().unwrap_or("").to_string();
-
-                    // Create AssetInfo
-                    Ok(Some(AssetInfo {
-                        id: asset_id,
-                        name,
-                        unit_name,
-                        creator,
-                        total,
-                        decimals,
-                        url,
-                    }))
-                }
-                _ => Ok(None),
+            if status.as_u16() == 404 {
+                return Ok(None);
+            } else {
+                return Err(color_eyre::eyre::eyre!(
+                    "Failed to fetch asset #{}: HTTP {} - {}",
+                    asset_id,
+                    status,
+                    error_text
+                ));
             }
-        } else {
-            Ok(None)
+        }
+
+        let asset_data: Value = response.json().await?;
+        let params = &asset_data["asset"]["params"];
+
+        let name = params["name"].as_str().unwrap_or("").to_string();
+        let unit_name = params["unit-name"].as_str().unwrap_or("").to_string();
+        let creator = params["creator"].as_str().unwrap_or("unknown").to_string();
+        let total = params["total"].as_u64().unwrap_or(0);
+        let decimals = params["decimals"].as_u64().unwrap_or(0);
+        let url = params["url"].as_str().unwrap_or("").to_string();
+
+        Ok(Some(AssetInfo {
+            id: asset_id,
+            name,
+            unit_name,
+            creator,
+            total,
+            decimals,
+            url,
+        }))
+    }
+
+    async fn search_address(&self, address: &str) -> Result<Option<AccountInfo>> {
+        if address.len() != 58
+            || !address
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        {
+            return Err(color_eyre::eyre::eyre!(
+                "Invalid Algorand address format. Address must be 58 characters long and contain only uppercase letters and numbers."
+            ));
+        }
+
+        let indexer_result = self.search_address_via_indexer(address).await;
+
+        match indexer_result {
+            Ok(Some(account)) => {
+                return Ok(Some(account));
+            }
+            Ok(None) => {
+                // Try algod as fallback
+            }
+            Err(_) => {
+                // Try algod as fallback
+            }
+        }
+
+        let algod_result = self.search_address_via_algod(address).await;
+
+        match algod_result {
+            Ok(Some(account)) => Ok(Some(account)),
+            Ok(None) => Err(color_eyre::eyre::eyre!(
+                "Account '{}' not found. Please verify the address is correct and the account exists on the {} network.",
+                address,
+                self.network.as_str()
+            )),
+            Err(e) => Err(color_eyre::eyre::eyre!(
+                "Failed to fetch account information for '{}': {}",
+                address,
+                e
+            )),
         }
     }
 
-    // Search for an account
-    async fn search_address(&self, address: &str) -> Result<Option<AccountInfo>> {
-        // Direct account lookup
+    async fn search_address_via_indexer(&self, address: &str) -> Result<Option<AccountInfo>> {
         let account_url = format!("{}/v2/accounts/{}", self.network.indexer_url(), address);
 
-        match self
-            .client
-            .get(&account_url)
-            .header("accept", "application/json")
-            .send()
-            .await
-        {
-            Ok(response) if response.status().is_success() => {
-                // Get account info
-                let account_data: Value = response.json().await.unwrap_or_default();
-                let account = &account_data["account"];
+        let response = self.build_indexer_request(&account_url).send().await?;
 
-                let balance = account["amount"].as_u64().unwrap_or(0);
-                let pending_rewards = account["pending-rewards"].as_u64().unwrap_or(0);
-                let reward_base = account["reward-base"].as_u64().unwrap_or(0);
-                let status = account["status"].as_str().unwrap_or("unknown").to_string();
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
 
-                // Extract assets count
-                let assets_count = account["assets"]
-                    .as_array()
-                    .map_or(0, |assets| assets.len());
-
-                // Extract created assets count
-                let created_assets_count = account["created-assets"]
-                    .as_array()
-                    .map_or(0, |assets| assets.len());
-
-                // Create AccountInfo
-                Ok(Some(AccountInfo {
-                    address: address.to_string(),
-                    balance,
-                    pending_rewards,
-                    reward_base,
+            if status.as_u16() == 404 {
+                return Ok(None);
+            } else {
+                return Err(color_eyre::eyre::eyre!(
+                    "Indexer request failed with status {}: {}",
                     status,
-                    assets_count,
-                    created_assets_count,
-                }))
+                    error_text
+                ));
             }
-            _ => Ok(None),
+        }
+
+        let account_data: Value = response.json().await?;
+
+        if let Some(account) = account_data.get("account") {
+            Ok(Some(self.parse_account_info(account, address)))
+        } else {
+            Err(color_eyre::eyre::eyre!("Invalid indexer response format"))
         }
     }
 
-    // Helper function to fetch transactions from a URL
+    async fn search_address_via_algod(&self, address: &str) -> Result<Option<AccountInfo>> {
+        let account_url = format!("{}/v2/accounts/{}", self.network.algod_url(), address);
+
+        let response = self.build_algod_request(&account_url).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+
+            if status.as_u16() == 404 {
+                return Ok(None);
+            } else {
+                return Err(color_eyre::eyre::eyre!(
+                    "Algod request failed with status {}: {}",
+                    status,
+                    error_text
+                ));
+            }
+        }
+
+        let account_data: Value = response.json().await?;
+
+        Ok(Some(self.parse_account_info(&account_data, address)))
+    }
+
+    fn parse_account_info(&self, account: &Value, address: &str) -> AccountInfo {
+        let balance = account["amount"].as_u64().unwrap_or(0);
+        let pending_rewards = account["pending-rewards"].as_u64().unwrap_or(0);
+        let reward_base = account["reward-base"].as_u64().unwrap_or(0);
+        let status = account["status"].as_str().unwrap_or("unknown").to_string();
+
+        let assets_count = account["assets"]
+            .as_array()
+            .map_or(0, |assets| assets.len());
+
+        let created_assets_count = account["created-assets"]
+            .as_array()
+            .map_or(0, |assets| assets.len());
+
+        AccountInfo {
+            address: address.to_string(),
+            balance,
+            pending_rewards,
+            reward_base,
+            status,
+            assets_count,
+            created_assets_count,
+        }
+    }
+
     async fn fetch_transactions_from_url(&self, url: &str) -> Result<Vec<Transaction>> {
-        let response = match self
-            .client
-            .get(url)
-            .header("accept", "application/json")
-            .send()
-            .await
-        {
+        let response = match self.build_indexer_request(url).send().await {
             Ok(resp) if resp.status().is_success() => resp,
             _ => return Ok(Vec::new()),
         };
@@ -672,7 +744,6 @@ impl AlgoClient {
             let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
             let to = extract_receiver(txn_json, &txn_type);
 
-            // Extract additional transaction details
             let timestamp = txn_json["round-time"]
                 .as_u64()
                 .map(format_timestamp)
@@ -691,7 +762,6 @@ impl AlgoClient {
                         .unwrap_or_else(|| "None".to_string())
                 });
 
-            // Extract amount based on transaction type
             let (amount, asset_id) = match txn_type {
                 TxnType::Payment => {
                     let amount = txn_json["payment-transaction"]["amount"]
@@ -724,6 +794,72 @@ impl AlgoClient {
         }
 
         Ok(transactions)
+    }
+
+    pub fn get_search_suggestions(query: &str, search_type: SearchType) -> String {
+        let trimmed = query.trim();
+
+        match search_type {
+            SearchType::Account => {
+                if trimmed.is_empty() {
+                    "Enter an Algorand address (58 characters, uppercase letters and numbers)"
+                        .to_string()
+                } else if trimmed.len() < 58 {
+                    format!(
+                        "Address too short ({} chars). Algorand addresses are 58 characters long.",
+                        trimmed.len()
+                    )
+                } else if trimmed.len() > 58 {
+                    format!(
+                        "Address too long ({} chars). Algorand addresses are 58 characters long.",
+                        trimmed.len()
+                    )
+                } else if !trimmed
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+                {
+                    "Address contains invalid characters. Use only uppercase letters and numbers."
+                        .to_string()
+                } else {
+                    "Valid address format. Press Enter to search.".to_string()
+                }
+            }
+            SearchType::Transaction => {
+                if trimmed.is_empty() {
+                    "Enter a transaction ID (typically 52 characters)".to_string()
+                } else if trimmed.len() < 40 {
+                    format!(
+                        "Transaction ID too short ({} chars). Most transaction IDs are 52 characters.",
+                        trimmed.len()
+                    )
+                } else if trimmed.len() > 60 {
+                    format!(
+                        "Transaction ID too long ({} chars). Most transaction IDs are 52 characters.",
+                        trimmed.len()
+                    )
+                } else {
+                    "Valid transaction ID format. Press Enter to search.".to_string()
+                }
+            }
+            SearchType::Block => {
+                if trimmed.is_empty() {
+                    "Enter a block number (positive integer)".to_string()
+                } else if trimmed.parse::<u64>().is_err() {
+                    "Block number must be a positive integer".to_string()
+                } else {
+                    "Valid block number. Press Enter to search.".to_string()
+                }
+            }
+            SearchType::Asset => {
+                if trimmed.is_empty() {
+                    "Enter an asset ID (positive integer)".to_string()
+                } else if trimmed.parse::<u64>().is_err() {
+                    "Asset ID must be a positive integer".to_string()
+                } else {
+                    "Valid asset ID. Press Enter to search.".to_string()
+                }
+            }
+        }
     }
 }
 
@@ -814,7 +950,6 @@ fn count_transactions(block: &Value) -> u16 {
     0
 }
 
-/// Basic block information
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlgoBlock {
     pub id: u64,
@@ -822,7 +957,6 @@ pub struct AlgoBlock {
     pub timestamp: String,
 }
 
-/// Transaction type
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TxnType {
     Payment,
@@ -866,7 +1000,6 @@ impl TxnType {
     }
 }
 
-/// Basic transaction information
 #[derive(Debug, Clone, PartialEq)]
 pub struct Transaction {
     pub id: String,
@@ -881,7 +1014,6 @@ pub struct Transaction {
     pub asset_id: Option<u64>,
 }
 
-/// Detailed Block Information
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockInfo {
     pub id: u64,
@@ -891,7 +1023,6 @@ pub struct BlockInfo {
     pub seed: String,
 }
 
-/// Detailed Account Information
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccountInfo {
     pub address: String,
@@ -903,7 +1034,6 @@ pub struct AccountInfo {
     pub created_assets_count: usize, // Number of assets created by the account
 }
 
-/// Detailed Asset Information
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssetInfo {
     pub id: u64,
@@ -915,11 +1045,68 @@ pub struct AssetInfo {
     pub url: String,   // Optional URL for metadata
 }
 
-/// Enum to hold different types of search results
 #[derive(Debug, Clone, PartialEq)]
 pub enum SearchResultItem {
     Transaction(Transaction),
     Block(BlockInfo),
     Account(AccountInfo),
     Asset(AssetInfo),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_suggestions() {
+        assert!(
+            AlgoClient::get_search_suggestions("", SearchType::Account)
+                .contains("Enter an Algorand address")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("ABC", SearchType::Account).contains("too short")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions(
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                SearchType::Account
+            )
+            .contains("Valid address format")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("", SearchType::Transaction)
+                .contains("Enter a transaction ID")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("ABC", SearchType::Transaction)
+                .contains("too short")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("", SearchType::Block)
+                .contains("Enter a block number")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("123456", SearchType::Block)
+                .contains("Valid block number")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("abc", SearchType::Block)
+                .contains("must be a positive integer")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("", SearchType::Asset).contains("Enter an asset ID")
+        );
+
+        assert!(
+            AlgoClient::get_search_suggestions("123", SearchType::Asset).contains("Valid asset ID")
+        );
+    }
 }
