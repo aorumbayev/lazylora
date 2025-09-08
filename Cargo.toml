@@ -13,13 +13,13 @@ repository = "https://github.com/aorumbayev/lazylora"
 crossterm = "0.29.0"
 ratatui = "0.29.0"
 color-eyre = "0.6.5"
-tokio = { version = "1.45.1", features = ["full"] }
-reqwest = { version = "0.12.18", features = ["json", "blocking"] }
+tokio = { version = "1.47.1", features = ["full"] }
+reqwest = { version = "0.12.23", features = ["json", "blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = "0.4.41"
-arboard = "3.3.0"
-clap = { version = "4.5.39", features = ["derive"] }
+chrono = "0.4.42"
+arboard = "3.6.1"
+clap = { version = "4.5.47", features = ["derive"] }
 dirs = "5.0"
 semver = "1.0"
 self_update = { version = "0.42.0", features = [
