@@ -19,7 +19,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4.42"
 arboard = "3.6.1"
-clap = { version = "4.5.47", features = ["derive"] }
+clap = { version = "4.5.48", features = ["derive"] }
 dirs = "5.0"
 semver = "1.0"
 self_update = { version = "0.42.0", features = [
