@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"                        TYP   6MO...JM   OCD...FA                               "
+"                        ──────────┬──────────┬───                               "
+"                                  │          │                                  "
+"                          AXF     ●──────────▶    300000                        "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

@@ -1,0 +1,16 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"             TYP   SEN...4A   REC...TU                      "
+"             ──────────┬──────────┬───                      "
+"                       │          │                         "
+"               PAY     ●──────────▶    5.00A                "
+"               AXF     ◀──────────●    1000000              "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "

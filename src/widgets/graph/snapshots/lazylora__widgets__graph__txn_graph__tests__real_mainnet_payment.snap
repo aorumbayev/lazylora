@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"                       TYP   M3I...XM   KIZ...BQ                                "
+"                       ──────────┬──────────┬───                                "
+"                                 │          │                                   "
+"                         PAY     ●──────────▶    236.07A                        "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

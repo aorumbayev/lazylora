@@ -324,74 +324,126 @@ mod tests {
     }
 
     #[test]
-    fn test_txn_flow_diagram_new() {
+    fn test_txn_flow_diagram_configurations() {
         let txn = create_test_payment();
-        let diagram = TxnFlowDiagram::new(&txn);
-        assert_eq!(diagram.box_width, 16);
-    }
 
-    #[test]
-    fn test_txn_flow_diagram_with_box_width() {
-        let txn = create_test_payment();
-        let diagram = TxnFlowDiagram::new(&txn).with_box_width(20);
-        assert_eq!(diagram.box_width, 20);
-    }
-
-    #[test]
-    fn test_txn_flow_diagram_to_lines() {
-        let txn = create_test_payment();
+        // Test default configuration
         let diagram = TxnFlowDiagram::new(&txn);
+        assert_eq!(diagram.box_width, 16, "default box width");
+
+        // Test custom configuration
+        let diagram_custom = TxnFlowDiagram::new(&txn).with_box_width(20);
+        assert_eq!(diagram_custom.box_width, 20, "custom box width");
+
+        // Test line generation
         let lines = diagram.to_lines();
-        assert_eq!(lines.len(), 5);
+        assert_eq!(lines.len(), 5, "diagram has 5 lines");
     }
 
     #[test]
-    fn test_txn_flow_diagram_sender_label_payment() {
-        let txn = create_test_payment();
-        let diagram = TxnFlowDiagram::new(&txn);
-        assert_eq!(diagram.sender_label(), "SENDER");
+    fn test_txn_flow_diagram_labels_by_type() {
+        struct TestCase {
+            name: &'static str,
+            txn_type: TxnType,
+            to_field: &'static str,
+            expected_sender: &'static str,
+            expected_receiver: &'static str,
+        }
+
+        let cases = [
+            TestCase {
+                name: "payment",
+                txn_type: TxnType::Payment,
+                to_field: "RECEIVER",
+                expected_sender: "SENDER",
+                expected_receiver: "RECEIVER",
+            },
+            TestCase {
+                name: "app call with id",
+                txn_type: TxnType::AppCall,
+                to_field: "12345",
+                expected_sender: "CALLER",
+                expected_receiver: "APP #12345",
+            },
+            TestCase {
+                name: "app creation",
+                txn_type: TxnType::AppCall,
+                to_field: "unknown",
+                expected_sender: "CALLER",
+                expected_receiver: "NEW APP",
+            },
+        ];
+
+        for case in &cases {
+            let mut txn = create_test_payment();
+            txn.txn_type = case.txn_type;
+            txn.to = case.to_field.to_string();
+
+            let diagram = TxnFlowDiagram::new(&txn);
+            assert_eq!(
+                diagram.sender_label(),
+                case.expected_sender,
+                "{}: sender",
+                case.name
+            );
+            assert_eq!(
+                diagram.receiver_label(),
+                case.expected_receiver,
+                "{}: receiver",
+                case.name
+            );
+        }
     }
 
     #[test]
-    fn test_txn_flow_diagram_sender_label_app_call() {
-        let mut txn = create_test_payment();
-        txn.txn_type = TxnType::AppCall;
-        let diagram = TxnFlowDiagram::new(&txn);
-        assert_eq!(diagram.sender_label(), "CALLER");
-    }
+    fn test_txn_flow_diagram_transfer_descriptions() {
+        struct TestCase {
+            name: &'static str,
+            txn_type: TxnType,
+            amount: u64,
+            asset_id: Option<u64>,
+            expected_contains: &'static str,
+        }
 
-    #[test]
-    fn test_txn_flow_diagram_receiver_label_payment() {
-        let txn = create_test_payment();
-        let diagram = TxnFlowDiagram::new(&txn);
-        assert_eq!(diagram.receiver_label(), "RECEIVER");
-    }
+        let cases = [
+            TestCase {
+                name: "payment",
+                txn_type: TxnType::Payment,
+                amount: 5_000_000,
+                asset_id: None,
+                expected_contains: "ALGO",
+            },
+            TestCase {
+                name: "asset transfer with id",
+                txn_type: TxnType::AssetTransfer,
+                amount: 1000,
+                asset_id: Some(31566704),
+                expected_contains: "ASA",
+            },
+            TestCase {
+                name: "asset transfer without id",
+                txn_type: TxnType::AssetTransfer,
+                amount: 500,
+                asset_id: None,
+                expected_contains: "ASA",
+            },
+        ];
 
-    #[test]
-    fn test_txn_flow_diagram_receiver_label_app_call() {
-        let mut txn = create_test_payment();
-        txn.txn_type = TxnType::AppCall;
-        txn.to = "12345".to_string();
-        let diagram = TxnFlowDiagram::new(&txn);
-        assert_eq!(diagram.receiver_label(), "APP #12345");
-    }
+        for case in &cases {
+            let mut txn = create_test_payment();
+            txn.txn_type = case.txn_type;
+            txn.amount = case.amount;
+            txn.asset_id = case.asset_id;
 
-    #[test]
-    fn test_txn_flow_diagram_transfer_description_payment() {
-        let txn = create_test_payment();
-        let diagram = TxnFlowDiagram::new(&txn);
-        let desc = diagram.transfer_description();
-        assert!(desc.contains("ALGO"));
-    }
-
-    #[test]
-    fn test_txn_flow_diagram_transfer_description_asset() {
-        let mut txn = create_test_payment();
-        txn.txn_type = TxnType::AssetTransfer;
-        txn.amount = 1000;
-        txn.asset_id = Some(31566704);
-        let diagram = TxnFlowDiagram::new(&txn);
-        let desc = diagram.transfer_description();
-        assert!(desc.contains("ASA"));
+            let diagram = TxnFlowDiagram::new(&txn);
+            let desc = diagram.transfer_description();
+            assert!(
+                desc.contains(case.expected_contains),
+                "{}: expected '{}' in '{}'",
+                case.name,
+                case.expected_contains,
+                desc
+            );
+        }
     }
 }

@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"                   TYP   E4A...HY   ZJU...QQ                          "
+"                   ──────────┬──────────┬───                          "
+"                             │          │                             "
+"                     AFZ     ●──────────▶    freeze                   "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "

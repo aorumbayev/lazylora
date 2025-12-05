@@ -1,0 +1,5 @@
+# Cargo aliases for lazylora development
+# Install nextest first: cargo install cargo-nextest (or: cargo binstall cargo-nextest)
+
+[alias]
+t = "nextest run"

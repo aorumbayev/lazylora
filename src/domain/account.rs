@@ -47,7 +47,7 @@ impl AccountInfo {
     ///
     /// A new `AccountInfo` instance.
     #[must_use]
-    #[allow(dead_code)] // Part of AccountInfo public API
+    #[allow(dead_code)]
     pub fn new(
         address: String,
         balance: u64,
@@ -74,7 +74,7 @@ impl AccountInfo {
     ///
     /// The balance in Algos as a floating point number.
     #[must_use]
-    #[allow(dead_code)] // Part of AccountInfo public API
+    #[allow(dead_code)]
     pub fn balance_in_algos(&self) -> f64 {
         self.balance as f64 / 1_000_000.0
     }
@@ -85,9 +85,6 @@ impl AccountInfo {
 // ============================================================================
 
 /// Detailed account information for popup display.
-///
-/// Contains comprehensive account data including participation info,
-/// asset holdings, and application state.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AccountDetails {
     /// The Algorand address (58 characters).
@@ -137,7 +134,7 @@ impl AccountDetails {
     ///
     /// The balance in Algos as a floating point number.
     #[must_use]
-    #[allow(dead_code)] // Part of AccountDetails public API
+    #[allow(dead_code)]
     pub fn balance_in_algos(&self) -> f64 {
         self.balance as f64 / 1_000_000.0
     }
@@ -148,7 +145,7 @@ impl AccountDetails {
     ///
     /// The minimum balance in Algos as a floating point number.
     #[must_use]
-    #[allow(dead_code)] // Part of AccountDetails public API
+    #[allow(dead_code)]
     pub fn min_balance_in_algos(&self) -> f64 {
         self.min_balance as f64 / 1_000_000.0
     }
@@ -159,7 +156,7 @@ impl AccountDetails {
     ///
     /// `true` if the account status is "Online", `false` otherwise.
     #[must_use]
-    #[allow(dead_code)] // Part of AccountDetails public API
+    #[allow(dead_code)]
     pub fn is_online(&self) -> bool {
         self.status == "Online"
     }
@@ -170,7 +167,7 @@ impl AccountDetails {
     ///
     /// `true` if the account has an authorized address, `false` otherwise.
     #[must_use]
-    #[allow(dead_code)] // Part of AccountDetails public API
+    #[allow(dead_code)]
     pub fn is_rekeyed(&self) -> bool {
         self.auth_addr.is_some()
     }
@@ -210,7 +207,7 @@ impl ParticipationInfo {
     ///
     /// `true` if current_round is within the valid range.
     #[must_use]
-    #[allow(dead_code)] // Part of ParticipationInfo public API
+    #[allow(dead_code)]
     pub fn is_valid_at(&self, current_round: u64) -> bool {
         current_round >= self.vote_first && current_round <= self.vote_last
     }
@@ -225,7 +222,7 @@ impl ParticipationInfo {
     ///
     /// The number of rounds until expiration, or 0 if already expired.
     #[must_use]
-    #[allow(dead_code)] // Part of ParticipationInfo public API
+    #[allow(dead_code)]
     pub fn rounds_remaining(&self, current_round: u64) -> u64 {
         self.vote_last.saturating_sub(current_round)
     }
@@ -261,7 +258,7 @@ impl AccountAssetHolding {
     ///
     /// A new `AccountAssetHolding` instance.
     #[must_use]
-    #[allow(dead_code)] // Part of AccountAssetHolding public API
+    #[allow(dead_code)]
     pub fn new(asset_id: u64, amount: u64, is_frozen: bool) -> Self {
         Self {
             asset_id,
@@ -301,7 +298,7 @@ impl CreatedAssetInfo {
     ///
     /// A new `CreatedAssetInfo` instance.
     #[must_use]
-    #[allow(dead_code)] // Part of CreatedAssetInfo public API
+    #[allow(dead_code)]
     pub fn new(asset_id: u64, name: String, unit_name: String) -> Self {
         Self {
             asset_id,
@@ -341,7 +338,7 @@ impl AppLocalState {
     ///
     /// A new `AppLocalState` instance.
     #[must_use]
-    #[allow(dead_code)] // Part of AppLocalState public API
+    #[allow(dead_code)]
     pub fn new(app_id: u64, schema_num_uint: u64, schema_num_byte_slice: u64) -> Self {
         Self {
             app_id,
@@ -356,7 +353,7 @@ impl AppLocalState {
     ///
     /// The sum of uint and byte slice entries.
     #[must_use]
-    #[allow(dead_code)] // Part of AppLocalState public API
+    #[allow(dead_code)]
     pub fn total_entries(&self) -> u64 {
         self.schema_num_uint + self.schema_num_byte_slice
     }
@@ -386,7 +383,7 @@ impl CreatedAppInfo {
     ///
     /// A new `CreatedAppInfo` instance.
     #[must_use]
-    #[allow(dead_code)] // Part of CreatedAppInfo public API
+    #[allow(dead_code)]
     pub fn new(app_id: u64) -> Self {
         Self { app_id }
     }
@@ -400,67 +397,55 @@ impl CreatedAppInfo {
 mod tests {
     use super::*;
 
+    /// Consolidated test for AccountInfo and balance calculations.
+    /// Per commandments: avoid test proliferation for identical patterns.
     #[test]
-    fn test_account_info_new() {
+    fn test_account_info_behavior() {
         let info = AccountInfo::new(
             "TESTADDRESS".to_string(),
-            1_000_000,
+            5_500_000, // 5.5 Algos
             100,
             50,
             "Online".to_string(),
             5,
             2,
         );
+
+        // Construction
         assert_eq!(info.address, "TESTADDRESS");
-        assert_eq!(info.balance, 1_000_000);
+        assert_eq!(info.balance, 5_500_000);
         assert_eq!(info.assets_count, 5);
         assert_eq!(info.created_assets_count, 2);
-    }
 
-    #[test]
-    fn test_account_info_balance_in_algos() {
-        let info = AccountInfo::new(
-            "TEST".to_string(),
-            5_500_000, // 5.5 Algos
-            0,
-            0,
-            "Offline".to_string(),
-            0,
-            0,
-        );
+        // Balance conversion
         assert!((info.balance_in_algos() - 5.5).abs() < f64::EPSILON);
     }
 
+    /// Consolidated test for AccountDetails predicates.
     #[test]
-    fn test_account_details_default() {
-        let details = AccountDetails::default();
+    fn test_account_details_predicates() {
+        let mut details = AccountDetails::default();
+
+        // Default state
         assert_eq!(details.address, "");
         assert_eq!(details.balance, 0);
         assert!(!details.is_online());
         assert!(!details.is_rekeyed());
-    }
 
-    #[test]
-    fn test_account_details_is_online() {
-        let mut details = AccountDetails::default();
+        // Online status changes
+        details.status = "Online".to_string();
+        assert!(details.is_online());
         details.status = "Offline".to_string();
         assert!(!details.is_online());
 
-        details.status = "Online".to_string();
-        assert!(details.is_online());
-    }
-
-    #[test]
-    fn test_account_details_is_rekeyed() {
-        let mut details = AccountDetails::default();
-        assert!(!details.is_rekeyed());
-
+        // Rekey detection
         details.auth_addr = Some("AUTHADDR".to_string());
         assert!(details.is_rekeyed());
     }
 
+    /// Consolidated test for ParticipationInfo validity and remaining rounds.
     #[test]
-    fn test_participation_info_is_valid_at() {
+    fn test_participation_info_validity() {
         let part = ParticipationInfo {
             vote_first: 100,
             vote_last: 200,
@@ -470,56 +455,48 @@ mod tests {
             state_proof_key: None,
         };
 
-        assert!(!part.is_valid_at(50));
-        assert!(part.is_valid_at(100));
-        assert!(part.is_valid_at(150));
-        assert!(part.is_valid_at(200));
-        assert!(!part.is_valid_at(201));
+        // Table-driven validity checks
+        let validity_cases = [
+            (50_u64, false, "before range"),
+            (100, true, "at start"),
+            (150, true, "in range"),
+            (200, true, "at end"),
+            (201, false, "after range"),
+        ];
+
+        for (round, expected, desc) in validity_cases {
+            assert_eq!(part.is_valid_at(round), expected, "{desc}");
+        }
+
+        // Rounds remaining
+        let remaining_cases = [(150_u64, 50_u64), (200, 0), (250, 0)];
+        for (round, expected) in remaining_cases {
+            assert_eq!(part.rounds_remaining(round), expected, "round {round}");
+        }
     }
 
+    /// Consolidated test for simple struct constructors.
+    /// Per commandments: these are trivial, test them together.
     #[test]
-    fn test_participation_info_rounds_remaining() {
-        let part = ParticipationInfo {
-            vote_first: 100,
-            vote_last: 200,
-            vote_key_dilution: 10,
-            selection_key: "key".to_string(),
-            vote_key: "key".to_string(),
-            state_proof_key: None,
-        };
-
-        assert_eq!(part.rounds_remaining(150), 50);
-        assert_eq!(part.rounds_remaining(200), 0);
-        assert_eq!(part.rounds_remaining(250), 0);
-    }
-
-    #[test]
-    fn test_account_asset_holding_new() {
+    fn test_simple_struct_constructors() {
+        // AccountAssetHolding
         let holding = AccountAssetHolding::new(12345, 1000, true);
         assert_eq!(holding.asset_id, 12345);
         assert_eq!(holding.amount, 1000);
         assert!(holding.is_frozen);
-    }
 
-    #[test]
-    fn test_created_asset_info_new() {
+        // CreatedAssetInfo
         let asset = CreatedAssetInfo::new(12345, "MyToken".to_string(), "MTK".to_string());
         assert_eq!(asset.asset_id, 12345);
         assert_eq!(asset.name, "MyToken");
         assert_eq!(asset.unit_name, "MTK");
-    }
 
-    #[test]
-    fn test_app_local_state_new() {
+        // AppLocalState
         let state = AppLocalState::new(12345, 5, 3);
         assert_eq!(state.app_id, 12345);
-        assert_eq!(state.schema_num_uint, 5);
-        assert_eq!(state.schema_num_byte_slice, 3);
         assert_eq!(state.total_entries(), 8);
-    }
 
-    #[test]
-    fn test_created_app_info_new() {
+        // CreatedAppInfo
         let app = CreatedAppInfo::new(12345);
         assert_eq!(app.app_id, 12345);
     }

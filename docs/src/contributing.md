@@ -15,7 +15,21 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ```bash
 git clone https://github.com/YOUR_USERNAME/lazylora.git
 cd lazylora
+
+# Install cargo-nextest for faster test runs (one-time setup)
+cargo install cargo-nextest
+# Or faster with binstall: cargo binstall cargo-nextest
+
 cargo build
+```
+
+## Running Tests
+
+```bash
+cargo t --all-features          # Run all tests (uses nextest)
+cargo t <test_name>             # Run specific test
+cargo clippy --all-features     # Lint
+cargo fmt -- --check            # Check formatting
 ```
 
 ## Guidelines

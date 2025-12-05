@@ -899,64 +899,93 @@ impl Transaction {
 mod tests {
     use super::*;
 
+    /// Tests TxnType string representation and color mapping.
     #[test]
-    fn test_txn_type_as_str() {
-        assert_eq!(TxnType::Payment.as_str(), "Payment");
-        assert_eq!(TxnType::AppCall.as_str(), "App Call");
-        assert_eq!(TxnType::AssetTransfer.as_str(), "Asset Transfer");
-        assert_eq!(TxnType::Unknown.as_str(), "Unknown");
+    fn test_txn_type_properties() {
+        let test_cases = [
+            (TxnType::Payment, "Payment", Color::Green),
+            (TxnType::AppCall, "App Call", Color::Blue),
+            (TxnType::AssetTransfer, "Asset Transfer", Color::Yellow),
+            (TxnType::AssetConfig, "Asset Config", Color::Cyan),
+            (TxnType::AssetFreeze, "Asset Freeze", Color::Magenta),
+            (TxnType::KeyReg, "Key Registration", Color::Red),
+            (TxnType::StateProof, "State Proof", Color::Gray),
+            (TxnType::Heartbeat, "Heartbeat", Color::White),
+            (TxnType::Unknown, "Unknown", Color::DarkGray),
+        ];
+
+        for (txn_type, expected_str, expected_color) in test_cases {
+            assert_eq!(
+                txn_type.as_str(),
+                expected_str,
+                "{:?}.as_str() mismatch",
+                txn_type
+            );
+            assert_eq!(
+                txn_type.color(),
+                expected_color,
+                "{:?}.color() mismatch",
+                txn_type
+            );
+        }
     }
 
+    /// Tests OnComplete string conversion in both directions.
     #[test]
-    fn test_txn_type_color() {
-        assert_eq!(TxnType::Payment.color(), Color::Green);
-        assert_eq!(TxnType::AppCall.color(), Color::Blue);
-        assert_eq!(TxnType::Unknown.color(), Color::DarkGray);
+    fn test_on_complete_conversions() {
+        // Test as_str
+        let as_str_cases = [
+            (OnComplete::NoOp, "NoOp"),
+            (OnComplete::OptIn, "OptIn"),
+            (OnComplete::CloseOut, "CloseOut"),
+            (OnComplete::ClearState, "ClearState"),
+            (OnComplete::UpdateApplication, "Update"),
+            (OnComplete::DeleteApplication, "Delete"),
+        ];
+
+        for (variant, expected) in as_str_cases {
+            assert_eq!(
+                variant.as_str(),
+                expected,
+                "{:?}.as_str() mismatch",
+                variant
+            );
+        }
+
+        // Test from_str (including aliases and unknown)
+        let from_str_cases = [
+            ("noop", OnComplete::NoOp),
+            ("optin", OnComplete::OptIn),
+            ("closeout", OnComplete::CloseOut),
+            ("clearstate", OnComplete::ClearState),
+            ("updateapplication", OnComplete::UpdateApplication),
+            ("update", OnComplete::UpdateApplication),
+            ("deleteapplication", OnComplete::DeleteApplication),
+            ("delete", OnComplete::DeleteApplication),
+            ("unknown", OnComplete::NoOp), // Unknown defaults to NoOp
+            ("NOOP", OnComplete::NoOp),    // Case insensitive
+        ];
+
+        for (input, expected) in from_str_cases {
+            assert_eq!(
+                OnComplete::from_str(input),
+                expected,
+                "OnComplete::from_str({:?}) mismatch",
+                input
+            );
+        }
     }
 
+    /// Tests TransactionDetails default and predicates.
     #[test]
-    fn test_on_complete_as_str() {
-        assert_eq!(OnComplete::NoOp.as_str(), "NoOp");
-        assert_eq!(OnComplete::OptIn.as_str(), "OptIn");
-        assert_eq!(OnComplete::CloseOut.as_str(), "CloseOut");
-        assert_eq!(OnComplete::ClearState.as_str(), "ClearState");
-        assert_eq!(OnComplete::UpdateApplication.as_str(), "Update");
-        assert_eq!(OnComplete::DeleteApplication.as_str(), "Delete");
-    }
-
-    #[test]
-    fn test_on_complete_from_str() {
-        assert_eq!(OnComplete::from_str("noop"), OnComplete::NoOp);
-        assert_eq!(OnComplete::from_str("optin"), OnComplete::OptIn);
-        assert_eq!(OnComplete::from_str("closeout"), OnComplete::CloseOut);
-        assert_eq!(OnComplete::from_str("clearstate"), OnComplete::ClearState);
-        assert_eq!(
-            OnComplete::from_str("updateapplication"),
-            OnComplete::UpdateApplication
-        );
-        assert_eq!(
-            OnComplete::from_str("update"),
-            OnComplete::UpdateApplication
-        );
-        assert_eq!(
-            OnComplete::from_str("deleteapplication"),
-            OnComplete::DeleteApplication
-        );
-        assert_eq!(
-            OnComplete::from_str("delete"),
-            OnComplete::DeleteApplication
-        );
-        assert_eq!(OnComplete::from_str("unknown"), OnComplete::NoOp);
-    }
-
-    #[test]
-    fn test_transaction_details_default() {
+    fn test_transaction_details_behavior() {
         let details = TransactionDetails::default();
         assert_eq!(details, TransactionDetails::None);
         assert!(!details.is_creation());
         assert!(details.created_id().is_none());
     }
 
+    /// Tests timestamp formatting for edge cases.
     #[test]
     fn test_format_timestamp() {
         assert_eq!(format_timestamp(0), "Timestamp not available");
@@ -965,6 +994,7 @@ mod tests {
         assert!(result.contains("2023")); // Should be a date in 2023
     }
 
+    /// Tests Transaction parsing from JSON with various transaction types.
     #[test]
     fn test_transaction_from_json_payment() {
         let json = serde_json::json!({
@@ -997,6 +1027,7 @@ mod tests {
         }
     }
 
+    /// Tests Transaction parsing handles missing/empty JSON gracefully.
     #[test]
     fn test_transaction_from_json_defaults() {
         let json = serde_json::json!({});

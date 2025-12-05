@@ -45,7 +45,7 @@ impl AssetInfo {
     ///
     /// A new `AssetInfo` instance.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetInfo public API
+    #[allow(dead_code)]
     pub fn new(
         id: u64,
         name: String,
@@ -72,7 +72,7 @@ impl AssetInfo {
     ///
     /// The total supply as a formatted floating point number.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetInfo public API
+    #[allow(dead_code)]
     pub fn formatted_total(&self) -> f64 {
         if self.decimals == 0 {
             self.total as f64
@@ -87,7 +87,7 @@ impl AssetInfo {
     ///
     /// A string in the format "Name (UNIT)" or just "Name" if no unit name.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetInfo public API
+    #[allow(dead_code)]
     pub fn display_name(&self) -> String {
         if self.unit_name.is_empty() {
             self.name.clone()
@@ -102,9 +102,6 @@ impl AssetInfo {
 // ============================================================================
 
 /// Detailed asset information for popup display.
-///
-/// Contains comprehensive asset data including management addresses
-/// and configuration parameters.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AssetDetails {
     /// The asset ID.
@@ -146,7 +143,7 @@ impl AssetDetails {
     ///
     /// The total supply as a formatted floating point number.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetDetails public API
+    #[allow(dead_code)]
     pub fn formatted_total(&self) -> f64 {
         if self.decimals == 0 {
             self.total as f64
@@ -161,7 +158,7 @@ impl AssetDetails {
     ///
     /// A string in the format "Name (UNIT)" or just "Name" if no unit name.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetDetails public API
+    #[allow(dead_code)]
     pub fn display_name(&self) -> String {
         if self.unit_name.is_empty() {
             self.name.clone()
@@ -176,7 +173,7 @@ impl AssetDetails {
     ///
     /// `true` if a manager address is set.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetDetails public API
+    #[allow(dead_code)]
     pub fn has_manager(&self) -> bool {
         self.manager.is_some()
     }
@@ -187,7 +184,7 @@ impl AssetDetails {
     ///
     /// `true` if a clawback address is set.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetDetails public API
+    #[allow(dead_code)]
     pub fn has_clawback(&self) -> bool {
         self.clawback.is_some()
     }
@@ -198,7 +195,7 @@ impl AssetDetails {
     ///
     /// `true` if a freeze address is set.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetDetails public API
+    #[allow(dead_code)]
     pub fn has_freeze(&self) -> bool {
         self.freeze.is_some()
     }
@@ -211,7 +208,7 @@ impl AssetDetails {
     ///
     /// `true` if no manager address is set.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetDetails public API
+    #[allow(dead_code)]
     pub fn is_immutable(&self) -> bool {
         self.manager.is_none()
     }
@@ -222,7 +219,7 @@ impl AssetDetails {
     ///
     /// An `AssetInfo` containing the basic fields.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetDetails public API
+    #[allow(dead_code)]
     pub fn to_basic_info(&self) -> AssetInfo {
         AssetInfo {
             id: self.id,
@@ -244,7 +241,7 @@ impl AssetDetails {
 ///
 /// This struct is used when parsing asset creation or modification transactions.
 #[derive(Debug, Clone, PartialEq, Default)]
-#[allow(dead_code)] // Part of AssetParams public API
+#[allow(dead_code)]
 pub struct AssetParams {
     /// Total supply in base units.
     pub total: Option<u64>,
@@ -279,7 +276,7 @@ impl AssetParams {
     ///
     /// `true` if this looks like asset creation params.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetParams public API
+    #[allow(dead_code)]
     pub fn is_creation(&self) -> bool {
         self.total.is_some()
     }
@@ -290,7 +287,7 @@ impl AssetParams {
     ///
     /// `true` if any management address is present.
     #[must_use]
-    #[allow(dead_code)] // Part of AssetParams public API
+    #[allow(dead_code)]
     pub fn has_any_address(&self) -> bool {
         self.manager.is_some()
             || self.reserve.is_some()

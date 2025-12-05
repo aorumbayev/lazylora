@@ -1,0 +1,14 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"         TYP   FRE...AA   FRO...TU                "
+"         ──────────┬──────────┬───                "
+"                   │          │                   "
+"           AFZ     ●──────────▶    freeze         "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "

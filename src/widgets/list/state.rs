@@ -44,7 +44,7 @@ impl BlockListState {
     ///
     /// A new `BlockListState` with default values
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListState public API
+    #[allow(dead_code)]
     pub const fn new() -> Self {
         Self {
             selected_index: None,
@@ -62,7 +62,7 @@ impl BlockListState {
     ///
     /// A new `BlockListState` with the specified selection
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListState public API
+    #[allow(dead_code)]
     pub const fn with_selection(index: usize) -> Self {
         Self {
             selected_index: Some(index),
@@ -75,7 +75,7 @@ impl BlockListState {
     /// # Arguments
     ///
     /// * `index` - The index to select, or `None` to clear selection
-    #[allow(dead_code)] // Part of BlockListState public API
+    #[allow(dead_code)]
     pub fn select(&mut self, index: Option<usize>) {
         self.selected_index = index;
     }
@@ -86,7 +86,7 @@ impl BlockListState {
     ///
     /// The currently selected index, or `None` if nothing is selected
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListState public API
+    #[allow(dead_code)]
     pub const fn selected(&self) -> Option<usize> {
         self.selected_index
     }
@@ -126,7 +126,7 @@ impl TransactionListState {
     ///
     /// A new `TransactionListState` with default values
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListState public API
+    #[allow(dead_code)]
     pub const fn new() -> Self {
         Self {
             selected_index: None,
@@ -144,7 +144,7 @@ impl TransactionListState {
     ///
     /// A new `TransactionListState` with the specified selection
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListState public API
+    #[allow(dead_code)]
     pub const fn with_selection(index: usize) -> Self {
         Self {
             selected_index: Some(index),
@@ -157,7 +157,7 @@ impl TransactionListState {
     /// # Arguments
     ///
     /// * `index` - The index to select, or `None` to clear selection
-    #[allow(dead_code)] // Part of TransactionListState public API
+    #[allow(dead_code)]
     pub fn select(&mut self, index: Option<usize>) {
         self.selected_index = index;
     }
@@ -168,7 +168,7 @@ impl TransactionListState {
     ///
     /// The currently selected index, or `None` if nothing is selected
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListState public API
+    #[allow(dead_code)]
     pub const fn selected(&self) -> Option<usize> {
         self.selected_index
     }

@@ -46,7 +46,7 @@ pub struct AddressDisplay {
 
 impl AddressDisplay {
     /// Default maximum length for address truncation.
-    #[allow(dead_code)] // Part of AddressDisplay public API
+    #[allow(dead_code)]
     pub const DEFAULT_MAX_LEN: usize = 20;
 
     /// Create a new address display.
@@ -59,7 +59,7 @@ impl AddressDisplay {
     ///
     /// A new `AddressDisplay` with default settings
     #[must_use]
-    #[allow(dead_code)] // Part of AddressDisplay public API
+    #[allow(dead_code)]
     pub fn new(address: &str) -> Self {
         Self {
             address: address.to_string(),
@@ -79,7 +79,7 @@ impl AddressDisplay {
     ///
     /// Self with the label set
     #[must_use]
-    #[allow(dead_code)] // Part of AddressDisplay public API
+    #[allow(dead_code)]
     pub fn with_label(mut self, label: &str) -> Self {
         self.label = Some(label.to_string());
         self
@@ -95,7 +95,7 @@ impl AddressDisplay {
     ///
     /// Self with the new truncation length
     #[must_use]
-    #[allow(dead_code)] // Part of AddressDisplay public API
+    #[allow(dead_code)]
     pub const fn truncate(mut self, max_len: usize) -> Self {
         self.max_len = max_len;
         self
@@ -111,7 +111,7 @@ impl AddressDisplay {
     ///
     /// Self with the new color
     #[must_use]
-    #[allow(dead_code)] // Part of AddressDisplay public API
+    #[allow(dead_code)]
     pub const fn with_color(mut self, color: Color) -> Self {
         self.color = color;
         self
@@ -175,50 +175,132 @@ impl Widget for AddressDisplay {
 mod tests {
     use super::*;
 
+    /// Tests AddressDisplay behavior across all configurations.
+    ///
+    /// Validates: truncation, labels, colors, and content rendering.
     #[test]
-    fn test_address_display_basic() {
-        let display = AddressDisplay::new("ABCDEFGHIJKLMNOP");
-        let line = display.to_line();
-        assert_eq!(line.spans.len(), 1);
-    }
+    fn test_address_display_behavior() {
+        struct TestCase {
+            name: &'static str,
+            address: &'static str,
+            label: Option<&'static str>,
+            max_len: Option<usize>,
+            color: Option<Color>,
+            // Expected behavior
+            expect_spans: usize,
+            expect_truncated: bool,
+            expect_content_contains: Option<&'static str>,
+            expect_content_equals: Option<&'static str>,
+        }
 
-    #[test]
-    fn test_address_display_with_label() {
-        let display =
-            AddressDisplay::new("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-                .with_label("From")
-                .truncate(15);
-        let line = display.to_line();
-        assert_eq!(line.spans.len(), 2);
-    }
+        let test_cases = [
+            TestCase {
+                name: "basic address without label",
+                address: "ABCDEFGHIJKLMNOP",
+                label: None,
+                max_len: None,
+                color: None,
+                expect_spans: 1,
+                expect_truncated: false,
+                expect_content_contains: None,
+                expect_content_equals: None,
+            },
+            TestCase {
+                name: "address with label produces two spans",
+                address: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                label: Some("From"),
+                max_len: Some(15),
+                color: None,
+                expect_spans: 2,
+                expect_truncated: true,
+                expect_content_contains: Some("From:"),
+                expect_content_equals: None,
+            },
+            TestCase {
+                name: "long address is truncated with ellipsis",
+                address: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                label: None,
+                max_len: Some(20),
+                color: None,
+                expect_spans: 1,
+                expect_truncated: true,
+                expect_content_contains: Some("..."),
+                expect_content_equals: None,
+            },
+            TestCase {
+                name: "custom color preserves content",
+                address: "TESTADDR",
+                label: None,
+                max_len: None,
+                color: Some(Color::Yellow),
+                expect_spans: 1,
+                expect_truncated: false,
+                expect_content_contains: Some("TESTADDR"),
+                expect_content_equals: None,
+            },
+            TestCase {
+                name: "short address not truncated",
+                address: "SHORT",
+                label: None,
+                max_len: Some(20),
+                color: None,
+                expect_spans: 1,
+                expect_truncated: false,
+                expect_content_contains: None,
+                expect_content_equals: Some("SHORT"),
+            },
+        ];
 
-    #[test]
-    fn test_address_display_truncation() {
-        let long_addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        let display = AddressDisplay::new(long_addr).truncate(20);
-        let line = display.to_line();
+        for tc in test_cases {
+            let mut display = AddressDisplay::new(tc.address);
+            if let Some(label) = tc.label {
+                display = display.with_label(label);
+            }
+            if let Some(max_len) = tc.max_len {
+                display = display.truncate(max_len);
+            }
+            if let Some(color) = tc.color {
+                display = display.with_color(color);
+            }
 
-        // The truncated address should contain "..."
-        let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(content.contains("..."));
-        assert!(content.len() <= 20);
-    }
+            let line = display.to_line();
+            let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
 
-    #[test]
-    fn test_address_display_with_color() {
-        let display = AddressDisplay::new("TESTADDR").with_color(Color::Yellow);
-        let line = display.to_line();
-        assert!(!line.spans.is_empty());
-    }
+            assert_eq!(
+                line.spans.len(),
+                tc.expect_spans,
+                "{}: expected {} spans, got {}",
+                tc.name,
+                tc.expect_spans,
+                line.spans.len()
+            );
 
-    #[test]
-    fn test_address_display_short_address() {
-        let short_addr = "SHORT";
-        let display = AddressDisplay::new(short_addr).truncate(20);
-        let line = display.to_line();
+            if tc.expect_truncated {
+                assert!(
+                    content.contains("..."),
+                    "{}: expected truncation ellipsis",
+                    tc.name
+                );
+            } else {
+                assert!(
+                    !content.contains("..."),
+                    "{}: unexpected truncation ellipsis",
+                    tc.name
+                );
+            }
 
-        let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert_eq!(content, "SHORT");
-        assert!(!content.contains("..."));
+            if let Some(expected) = tc.expect_content_contains {
+                assert!(
+                    content.contains(expected),
+                    "{}: expected content to contain '{}'",
+                    tc.name,
+                    expected
+                );
+            }
+
+            if let Some(expected) = tc.expect_content_equals {
+                assert_eq!(content, expected, "{}: content mismatch", tc.name);
+            }
+        }
     }
 }

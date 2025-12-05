@@ -1,7 +1,4 @@
 //! Transaction visual card widget.
-//!
-//! Provides a comprehensive card view of transaction details including
-//! header, type badge, flow diagram, and type-specific details.
 
 use ratatui::{
     buffer::Buffer,

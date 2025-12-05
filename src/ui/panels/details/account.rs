@@ -17,10 +17,9 @@ use crate::theme::{
 use crate::ui::helpers::create_popup_block;
 use crate::ui::layout::centered_popup_area;
 
-/// Renders the account details popup with comprehensive account information.
+/// Renders the account details popup.
 ///
-/// Displays account balances, participation status, asset holdings, and
-/// optional NFD (Non-Fungible Domain) information if available.
+/// Shows balances, participation status, assets, and NFD info.
 ///
 /// # Arguments
 ///

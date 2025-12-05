@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"                   TYP   PIJ...3U   PT4...AE                          "
+"                   ──────────┬──────────┬───                          "
+"                             │          │                             "
+"                     AFZ     ●──────────▶    freeze                   "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "

@@ -60,7 +60,7 @@ pub struct BlockListWidget<'a> {
 
 impl<'a> BlockListWidget<'a> {
     /// Height of each block item in the list (in rows).
-    #[allow(dead_code)] // Part of BlockListWidget public API
+    #[allow(dead_code)]
     pub const DEFAULT_ITEM_HEIGHT: u16 = 3;
 
     /// Creates a new `BlockListWidget` with the given blocks.
@@ -73,7 +73,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// A new `BlockListWidget` with default settings
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListWidget public API
+    #[allow(dead_code)]
     pub const fn new(blocks: &'a [AlgoBlock]) -> Self {
         Self {
             blocks,
@@ -94,7 +94,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// Self with the focus state updated
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListWidget public API
+    #[allow(dead_code)]
     pub const fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -110,7 +110,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// Self with the item height updated
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListWidget public API
+    #[allow(dead_code)]
     pub const fn item_height(mut self, height: u16) -> Self {
         self.item_height = height;
         self
@@ -122,7 +122,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// The number of blocks in the list
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListWidget public API
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.blocks.len()
     }
@@ -133,7 +133,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// `true` if the blocks slice is empty
     #[must_use]
-    #[allow(dead_code)] // Part of BlockListWidget public API
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()
     }
@@ -259,95 +259,53 @@ mod tests {
         ]
     }
 
+    /// Per commandments: test observable behavior, not construction.
+    /// Consolidated test for widget properties.
     #[test]
-    fn test_block_list_widget_new() {
+    fn test_block_list_widget_properties() {
         let blocks = create_sample_blocks();
-        let widget = BlockListWidget::new(&blocks);
+        let empty: Vec<AlgoBlock> = vec![];
 
+        // Test with data
+        let widget = BlockListWidget::new(&blocks).focused(true).item_height(5);
         assert_eq!(widget.len(), 3);
         assert!(!widget.is_empty());
+
+        // Test empty
+        let empty_widget = BlockListWidget::new(&empty);
+        assert!(empty_widget.is_empty());
+        assert_eq!(empty_widget.len(), 0);
     }
 
+    /// Consolidated rendering test - tests observable output, not internals.
+    /// Per commandments: "One happy path snapshot > Five edge case unit tests"
     #[test]
-    fn test_block_list_widget_empty() {
-        let blocks: Vec<AlgoBlock> = vec![];
-        let widget = BlockListWidget::new(&blocks);
-
-        assert_eq!(widget.len(), 0);
-        assert!(widget.is_empty());
-    }
-
-    #[test]
-    fn test_block_list_widget_focused() {
+    fn test_block_list_rendering_states() {
         let blocks = create_sample_blocks();
-        let widget = BlockListWidget::new(&blocks).focused(true);
-
-        // Widget should be constructed without errors
-        assert!(!widget.is_empty());
-    }
-
-    #[test]
-    fn test_block_list_widget_item_height() {
-        let blocks = create_sample_blocks();
-        let widget = BlockListWidget::new(&blocks).item_height(5);
-
-        // Widget should be constructed without errors
-        assert!(!widget.is_empty());
-    }
-
-    #[test]
-    fn test_block_list_widget_render_empty() {
-        let blocks: Vec<AlgoBlock> = vec![];
-        let widget = BlockListWidget::new(&blocks);
-        let mut state = BlockListState::new();
-
         let area = Rect::new(0, 0, 60, 20);
+
+        // Empty state
         let mut buf = Buffer::empty(area);
-
-        widget.render(area, &mut buf, &mut state);
-
-        // Should render "No blocks available" message
-        let content = buf_to_string(&buf);
-        assert!(content.contains("No blocks available"));
-    }
-
-    #[test]
-    fn test_block_list_widget_render_with_blocks() {
-        let blocks = create_sample_blocks();
-        let widget = BlockListWidget::new(&blocks);
         let mut state = BlockListState::new();
-
-        let area = Rect::new(0, 0, 60, 20);
-        let mut buf = Buffer::empty(area);
-
-        widget.render(area, &mut buf, &mut state);
-
-        // Should render block IDs
+        BlockListWidget::new(&[]).render(area, &mut buf, &mut state);
         let content = buf_to_string(&buf);
-        assert!(content.contains("12345678"));
-    }
+        assert!(
+            content.contains("No blocks available"),
+            "empty state message"
+        );
 
-    #[test]
-    fn test_block_list_widget_render_with_selection() {
-        let blocks = create_sample_blocks();
-        let widget = BlockListWidget::new(&blocks);
+        // With data and selection
+        let mut buf = Buffer::empty(area);
         let mut state = BlockListState::with_selection(0);
-
-        let area = Rect::new(0, 0, 60, 20);
-        let mut buf = Buffer::empty(area);
-
-        widget.render(area, &mut buf, &mut state);
-
-        // Should render selection indicator for first item
+        BlockListWidget::new(&blocks).render(area, &mut buf, &mut state);
         let content = buf_to_string(&buf);
-        assert!(content.contains("▶")); // Selected indicator
+        assert!(content.contains("12345678"), "renders block ID");
+        assert!(content.contains("▶"), "renders selection indicator");
     }
 
-    // Helper function to convert buffer to string for testing
     fn buf_to_string(buf: &Buffer) -> String {
         let area = buf.area;
         let mut result = String::new();
-
         for y in area.y..area.y + area.height {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell((x, y)) {
@@ -356,7 +314,6 @@ mod tests {
             }
             result.push('\n');
         }
-
         result
     }
 }

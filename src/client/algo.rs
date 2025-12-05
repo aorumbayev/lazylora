@@ -18,6 +18,8 @@
 use color_eyre::Result;
 use reqwest::Client;
 use serde_json::Value;
+use std::time::Duration;
+use tokio::task::JoinSet;
 
 use crate::domain::{
     AccountAssetHolding, AccountDetails, AccountInfo, AlgoBlock, AlgoError, AppLocalState,
@@ -57,10 +59,15 @@ impl AlgoClient {
     /// ```
     #[must_use]
     pub fn new(network: Network) -> Self {
-        Self {
-            network,
-            client: Client::new(),
-        }
+        // Configure HTTP client with connection pooling for better performance
+        let client = Client::builder()
+            .pool_max_idle_per_host(4)
+            .pool_idle_timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to build HTTP client");
+
+        Self { network, client }
     }
 
     fn build_algod_request(&self, url: &str) -> reqwest::RequestBuilder {
@@ -118,17 +125,15 @@ impl AlgoClient {
         let algod_url = format!("{}/health", self.network.algod_url());
         let indexer_url = format!("{}/health", self.network.indexer_url());
 
-        let algod_result = self
-            .build_algod_request(&algod_url)
-            .timeout(std::time::Duration::from_secs(2))
-            .send()
-            .await;
-
-        let indexer_result = self
-            .build_indexer_request(&indexer_url)
-            .timeout(std::time::Duration::from_secs(2))
-            .send()
-            .await;
+        // Check algod and indexer in parallel
+        let (algod_result, indexer_result) = tokio::join!(
+            self.build_algod_request(&algod_url)
+                .timeout(Duration::from_secs(2))
+                .send(),
+            self.build_indexer_request(&indexer_url)
+                .timeout(Duration::from_secs(2))
+                .send()
+        );
 
         if let Err(e) = algod_result {
             return Err(format!(
@@ -190,44 +195,44 @@ impl AlgoClient {
         let status_response = self.build_algod_request(&status_url).send().await?;
 
         let status: Value = status_response.json().await?;
-        let latest_round = status["last-round"].as_u64().unwrap_or(0);
+        let latest_round = status["last-round"]
+            .as_u64()
+            .expect("algod status response should contain 'last-round'");
 
         if latest_round == 0 {
             return Ok(Vec::new());
         }
 
-        let mut blocks = Vec::with_capacity(limit);
+        // Fetch blocks in parallel using JoinSet (std lib over external crate)
+        let mut join_set = JoinSet::new();
 
-        for i in 0..limit {
-            if i >= latest_round as usize {
-                break;
-            }
-
+        for i in 0..limit.min(latest_round as usize) {
             let round = latest_round - i as u64;
             let block_url = format!("{}/v2/blocks/{}", self.network.algod_url(), round);
+            let request = self.build_algod_request(&block_url).send();
 
-            let response = match self.build_algod_request(&block_url).send().await {
-                Ok(resp) if resp.status().is_success() => resp,
-                _ => continue,
-            };
+            join_set.spawn(async move {
+                let response = request.await.ok()?.error_for_status().ok()?;
+                let block_data: Value = response.json().await.ok()?;
 
-            let block_data: Value = match response.json().await {
-                Ok(data) => data,
-                Err(_) => continue,
-            };
+                let block = block_data.get("block").unwrap_or(&block_data);
+                let timestamp_secs = block["ts"].as_u64().unwrap_or(0);
+                let formatted_time = format_timestamp(timestamp_secs);
+                let txn_count = count_transactions(block);
 
-            let block = block_data.get("block").unwrap_or(&block_data);
-            let timestamp_secs = block["ts"].as_u64().unwrap_or(0);
-            let formatted_time = format_timestamp(timestamp_secs);
-            let txn_count = count_transactions(block);
-
-            blocks.push(AlgoBlock {
-                id: round,
-                txn_count,
-                timestamp: formatted_time,
+                Some(AlgoBlock {
+                    id: round,
+                    txn_count,
+                    timestamp: formatted_time,
+                })
             });
         }
 
+        // Collect results using iterator chain (iterators over manual loops)
+        let mut blocks: Vec<AlgoBlock> = join_set.join_all().await.into_iter().flatten().collect();
+
+        // Sort by block ID descending (newest first)
+        blocks.sort_by(|a, b| b.id.cmp(&a.id));
         Ok(blocks)
     }
 
@@ -693,8 +698,7 @@ impl AlgoClient {
 
     /// Get detailed account information from algod.
     ///
-    /// Fetches comprehensive account details including balance, assets, applications,
-    /// participation information, and optionally NFD (NFDomains) information for MainNet/TestNet.
+    /// Fetches balance, assets, applications, participation info, and NFD data.
     ///
     /// # Arguments
     ///
@@ -1339,8 +1343,6 @@ mod tests {
         assert!(!Network::LocalNet.supports_nfd());
     }
 
-
-
     #[test]
     fn test_transaction_from_json_payment() {
         let json = serde_json::json!({
@@ -1849,6 +1851,4 @@ mod tests {
         assert_eq!(txn.fee, 0);
         assert_eq!(txn.details, TransactionDetails::None);
     }
-
-
 }

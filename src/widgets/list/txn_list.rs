@@ -62,7 +62,7 @@ pub struct TransactionListWidget<'a> {
 
 impl<'a> TransactionListWidget<'a> {
     /// Height of each transaction item in the list (in rows).
-    #[allow(dead_code)] // Part of TransactionListWidget public API
+    #[allow(dead_code)]
     pub const DEFAULT_ITEM_HEIGHT: u16 = 4;
 
     /// Creates a new `TransactionListWidget` with the given transactions.
@@ -75,7 +75,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// A new `TransactionListWidget` with default settings
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListWidget public API
+    #[allow(dead_code)]
     pub const fn new(transactions: &'a [Transaction]) -> Self {
         Self {
             transactions,
@@ -96,7 +96,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// Self with the focus state updated
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListWidget public API
+    #[allow(dead_code)]
     pub const fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -112,7 +112,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// Self with the item height updated
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListWidget public API
+    #[allow(dead_code)]
     pub const fn item_height(mut self, height: u16) -> Self {
         self.item_height = height;
         self
@@ -124,7 +124,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// The number of transactions in the list
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListWidget public API
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.transactions.len()
     }
@@ -135,7 +135,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// `true` if the transactions slice is empty
     #[must_use]
-    #[allow(dead_code)] // Part of TransactionListWidget public API
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.transactions.is_empty()
     }

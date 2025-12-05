@@ -156,80 +156,141 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_calculate_toast_position_normal() {
-        let area = Rect::new(0, 0, 100, 50);
-        let message = "Test message";
-        let toast_area = calculate_toast_position(area, message);
+    fn test_calculate_toast_position_variants() {
+        struct TestCase {
+            name: &'static str,
+            area: Rect,
+            message: &'static str,
+            expected_height: u16,
+            min_width_check: Option<u16>,
+            max_width_check: Option<u16>,
+            bounds_check: bool,
+        }
 
-        assert_eq!(toast_area.height, TOAST_HEIGHT);
-        assert!(toast_area.width >= MIN_TOAST_WIDTH);
-        assert!(toast_area.width <= area.width / 2);
+        let cases = [
+            TestCase {
+                name: "normal message",
+                area: Rect::new(0, 0, 100, 50),
+                message: "Test message",
+                expected_height: TOAST_HEIGHT,
+                min_width_check: Some(MIN_TOAST_WIDTH),
+                max_width_check: Some(50), // area.width / 2
+                bounds_check: false,
+            },
+            TestCase {
+                name: "long message",
+                area: Rect::new(0, 0, 100, 50),
+                message: "This is a very long message that should be constrained",
+                expected_height: TOAST_HEIGHT,
+                min_width_check: None,
+                max_width_check: Some(50),
+                bounds_check: false,
+            },
+            TestCase {
+                name: "short message",
+                area: Rect::new(0, 0, 100, 50),
+                message: "Hi",
+                expected_height: TOAST_HEIGHT,
+                min_width_check: Some(MIN_TOAST_WIDTH),
+                max_width_check: None,
+                bounds_check: false,
+            },
+            TestCase {
+                name: "small area",
+                area: Rect::new(0, 0, 30, 10),
+                message: "Test",
+                expected_height: TOAST_HEIGHT,
+                min_width_check: None,
+                max_width_check: None,
+                bounds_check: true,
+            },
+        ];
+
+        for case in &cases {
+            let toast_area = calculate_toast_position(case.area, case.message);
+
+            assert_eq!(
+                toast_area.height, case.expected_height,
+                "{}: height",
+                case.name
+            );
+
+            if let Some(min_width) = case.min_width_check {
+                assert!(
+                    toast_area.width >= min_width,
+                    "{}: width should be >= {}",
+                    case.name,
+                    min_width
+                );
+            }
+
+            if let Some(max_width) = case.max_width_check {
+                assert!(
+                    toast_area.width <= max_width,
+                    "{}: width should be <= {}",
+                    case.name,
+                    max_width
+                );
+            }
+
+            if case.bounds_check {
+                assert!(
+                    toast_area.x + toast_area.width <= case.area.width,
+                    "{}: x bounds",
+                    case.name
+                );
+                assert!(
+                    toast_area.y + toast_area.height <= case.area.height,
+                    "{}: y bounds",
+                    case.name
+                );
+            }
+        }
     }
 
     #[test]
-    fn test_calculate_toast_position_long_message() {
-        let area = Rect::new(0, 0, 100, 50);
-        let message = "This is a very long message that should be constrained";
-        let toast_area = calculate_toast_position(area, message);
+    fn test_determine_text_color_variants() {
+        struct TestCase {
+            message: &'static str,
+            expected: Color,
+        }
 
-        // Should not exceed half the area width
-        assert!(toast_area.width <= area.width / 2);
+        let cases = [
+            TestCase {
+                message: "✓ Success",
+                expected: SUCCESS_COLOR,
+            },
+            TestCase {
+                message: "✗ Error",
+                expected: ERROR_COLOR,
+            },
+            TestCase {
+                message: "Info message",
+                expected: Color::White,
+            },
+            TestCase {
+                message: "",
+                expected: Color::White,
+            },
+        ];
+
+        for case in &cases {
+            assert_eq!(
+                determine_text_color(case.message),
+                case.expected,
+                "message: '{}'",
+                case.message
+            );
+        }
     }
 
     #[test]
-    fn test_calculate_toast_position_short_message() {
-        let area = Rect::new(0, 0, 100, 50);
-        let message = "Hi";
-        let toast_area = calculate_toast_position(area, message);
-
-        // Should use minimum width
-        assert_eq!(toast_area.width, MIN_TOAST_WIDTH);
-    }
-
-    #[test]
-    fn test_calculate_toast_position_small_area() {
-        let area = Rect::new(0, 0, 30, 10);
-        let message = "Test";
-        let toast_area = calculate_toast_position(area, message);
-
-        // Should not exceed area bounds
-        assert!(toast_area.x + toast_area.width <= area.width);
-        assert!(toast_area.y + toast_area.height <= area.height);
-    }
-
-    #[test]
-    fn test_determine_text_color_success() {
-        assert_eq!(determine_text_color("✓ Success"), SUCCESS_COLOR);
-    }
-
-    #[test]
-    fn test_determine_text_color_error() {
-        assert_eq!(determine_text_color("✗ Error"), ERROR_COLOR);
-    }
-
-    #[test]
-    fn test_determine_text_color_normal() {
-        assert_eq!(determine_text_color("Info message"), Color::White);
-    }
-
-    #[test]
-    fn test_determine_text_color_empty() {
-        assert_eq!(determine_text_color(""), Color::White);
-    }
-
-    #[test]
-    fn test_create_toast_block_has_borders() {
-        // Test that create_toast_block returns a valid block
-        // We can't directly access private fields, so we just verify
-        // the function runs without error and returns a block
-        let _block = create_toast_block();
-        // Block was created successfully - function works as expected
-    }
-
-    #[test]
-    fn test_toast_dimensions() {
+    fn test_toast_constants_and_block() {
         assert_eq!(TOAST_HEIGHT, 3);
         assert_eq!(MIN_TOAST_WIDTH, 20);
         assert_eq!(TOAST_WIDTH_PADDING, 4);
+
+        // Verify create_toast_block works
+        let _block = create_toast_block();
     }
 }

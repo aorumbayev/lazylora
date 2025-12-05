@@ -21,9 +21,7 @@ use crate::widgets::{TxnGraph, TxnGraphWidget, TxnVisualCard};
 
 /// Renders the transaction details popup with table or visual graph view.
 ///
-/// Displays comprehensive transaction information with support for all
-/// Algorand transaction types. Includes toggleable visual graph mode with
-/// auto-scaling and scrolling support.
+/// Supports all Algorand transaction types with toggleable visual graph mode.
 ///
 /// # Arguments
 ///
@@ -82,18 +80,24 @@ pub fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
         )
     } else if is_visual && !graph.columns.is_empty() {
         // Auto-scale popup based on graph content
-        let graph_width = graph.total_width();
+        // Use required_width which includes type indicator column and tree prefix
+        let graph_width = graph_widget.required_width();
         let graph_height = graph_widget.required_height();
 
-        // Add padding for chrome (borders, tabs, buttons, help text)
-        let chrome_h_padding: u16 = 10; // 2 border + 4 content padding + margin
-        let chrome_v_padding: u16 = 10; // 2 border + tabs(2) + separator(1) + button(4) + help(1)
+        // Chrome padding breakdown:
+        // Horizontal: 2 (border) + 2 (inner padding) + 4 (centering margin) = 8
+        // The centering margin ensures the graph doesn't touch the edges and has
+        // room for visual centering since most lines are shorter than the widest line.
+        // Vertical: 2 (border) + 1 (tab) + 1 (separator) + 3 (buttons) + 1 (help) = 8
+        let chrome_h_padding: u16 = 8;
+        let chrome_v_padding: u16 = 8;
 
-        // Calculate ideal dimensions with reasonable bounds
-        let min_width: u16 = 50;
-        let min_height: u16 = 18;
-        let max_width = (area.width as f32 * 0.92) as u16;
-        let max_height = (area.height as f32 * 0.92) as u16;
+        // Calculate ideal dimensions - expand to fit content
+        let min_width: u16 = 60;
+        let min_height: u16 = 20;
+        // Allow up to 95% of available space to maximize content visibility
+        let max_width = (area.width as f32 * 0.95) as u16;
+        let max_height = (area.height as f32 * 0.95) as u16;
 
         let ideal_width = (graph_width as u16)
             .saturating_add(chrome_h_padding)
@@ -161,11 +165,12 @@ pub fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
     // Render content based on view mode
     let content_area = content_layout[2];
 
-    if is_visual {
-        render_visual_mode(app, &txn, &graph, &graph_widget, frame, content_area);
+    let needs_scroll = if is_visual {
+        render_visual_mode(app, &txn, &graph, &graph_widget, frame, content_area)
     } else {
         render_table_mode(&txn, app, frame, content_area);
-    }
+        false // Table mode doesn't scroll in this implementation
+    };
 
     // Render compact action bar with inline buttons
     let button_area = content_layout[3];
@@ -188,10 +193,12 @@ pub fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
     let action_rect = Rect::new(button_area.x, button_area.y + 1, button_area.width, 1);
     frame.render_widget(action_paragraph, action_rect);
 
-    // Render minimal help text
+    // Render minimal help text - only show scroll hint when scrolling is actually available
     let help_area = content_layout[4];
-    let help_text = if is_visual {
+    let help_text = if is_visual && needs_scroll {
         "↑↓←→ Scroll"
+    } else if is_visual {
+        "" // No scrolling needed, don't confuse users
     } else {
         "↑↓ Navigate"
     };
@@ -213,6 +220,10 @@ pub fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
 /// * `graph_widget` - Graph widget for rendering
 /// * `frame` - Ratatui frame
 /// * `area` - Content area for the graph
+///
+/// # Returns
+///
+/// `true` if scrolling is needed (content exceeds viewport), `false` otherwise.
 fn render_visual_mode(
     app: &App,
     txn: &Transaction,
@@ -220,7 +231,7 @@ fn render_visual_mode(
     graph_widget: &TxnGraphWidget,
     frame: &mut Frame,
     area: Rect,
-) {
+) -> bool {
     let graph_lines = graph_widget.to_lines();
 
     // If graph has meaningful content, show it
@@ -337,6 +348,8 @@ fn render_visual_mode(
                 max_scroll_x,
             );
         }
+
+        needs_v_scroll || needs_h_scroll
     } else {
         // Fallback to TxnVisualCard for edge cases
         let visual_card = TxnVisualCard::new(txn);
@@ -351,6 +364,8 @@ fn render_visual_mode(
             area.height.saturating_sub(2),
         );
         frame.render_widget(visual_content, padded_area);
+
+        false // Fallback mode doesn't support scrolling
     }
 }
 
@@ -811,4 +826,108 @@ fn render_default_details(
     details.push(("Fee:".to_string(), formatted_fee.to_string()));
     details.push(("Block:".to_string(), format!("#{}", txn.block)));
     details.push(("Timestamp:".to_string(), txn.timestamp.clone()));
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    use crate::domain::Network;
+    use crate::state::StartupOptions;
+
+    /// Helper to create a mock App for testing.
+    async fn create_mock_app() -> App {
+        let options = StartupOptions {
+            network: Some(Network::MainNet),
+            search: None,
+            graph_view: false,
+        };
+        App::new(options).await.expect("Failed to create app")
+    }
+
+    /// Real mainnet snapshot test for the full transaction popup in visual mode.
+    ///
+    /// This test verifies that the popup auto-scales correctly to fit the graph
+    /// without unnecessary scrolling, and that the graph renders centered when
+    /// it fits within the available space.
+    #[tokio::test]
+    async fn test_transaction_popup_visual_mode_snapshot() {
+        use crate::client::AlgoClient;
+        use crate::widgets::TxnGraph;
+
+        let client = AlgoClient::new(Network::MainNet);
+        let txn = client
+            .get_transaction_by_id("RSTLLBOXL3LIVU6JDP2MYP7DR6624F4M7NDXERCKSETCLRNADWHQ")
+            .await
+            .expect("Failed to fetch transaction")
+            .expect("Transaction not found");
+
+        // Debug: print graph dimensions
+        let graph = TxnGraph::from_transaction(&txn);
+        let graph_widget = TxnGraphWidget::new(&graph);
+        eprintln!("Graph columns: {}", graph.columns.len());
+        eprintln!("Graph rows: {}", graph.rows.len());
+        eprintln!("Graph total_width: {}", graph.total_width());
+        eprintln!("Widget required_width: {}", graph_widget.required_width());
+        eprintln!("Widget required_height: {}", graph_widget.required_height());
+
+        // Print each line's actual width
+        let lines = graph_widget.to_lines();
+        for (i, line) in lines.iter().enumerate() {
+            let full: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            eprintln!(
+                "Line {}: total={} trimmed={}",
+                i,
+                full.chars().count(),
+                full.trim_end().chars().count()
+            );
+        }
+
+        // Create app state with the transaction and visual mode enabled
+        let mut app = create_mock_app().await;
+        app.data.viewed_transaction = Some(txn);
+        app.ui.detail_view_mode = DetailViewMode::Visual;
+
+        // Use a large terminal to test auto-scaling (popup should NOT fill the whole space)
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_transaction_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("transaction_popup_visual_mode", terminal.backend());
+    }
+
+    /// Test popup renders in table mode
+    #[tokio::test]
+    async fn test_transaction_popup_table_mode_snapshot() {
+        use crate::client::AlgoClient;
+
+        let client = AlgoClient::new(Network::MainNet);
+        let txn = client
+            .get_transaction_by_id("RSTLLBOXL3LIVU6JDP2MYP7DR6624F4M7NDXERCKSETCLRNADWHQ")
+            .await
+            .expect("Failed to fetch transaction")
+            .expect("Transaction not found");
+
+        // Create app state with the transaction and table mode
+        let mut app = create_mock_app().await;
+        app.data.viewed_transaction = Some(txn);
+        app.ui.detail_view_mode = DetailViewMode::Table;
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 35)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_transaction_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("transaction_popup_table_mode", terminal.backend());
+    }
 }

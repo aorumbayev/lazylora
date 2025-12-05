@@ -207,7 +207,7 @@ pub enum GraphRepresentation {
 #[derive(Debug, Clone)]
 pub struct GraphRow {
     /// Transaction ID
-    #[allow(dead_code)] // Part of GraphRow public API
+    #[allow(dead_code)]
     pub txn_id: String,
     /// Transaction type
     pub txn_type: TxnType,
@@ -226,7 +226,7 @@ pub struct GraphRow {
     /// Display label (amount, action, etc.)
     pub label: String,
     /// Whether this row has children (inner transactions)
-    #[allow(dead_code)] // Part of GraphRow public API
+    #[allow(dead_code)]
     pub has_children: bool,
     /// Whether this is the last child in its parent group
     pub is_last_child: bool,
@@ -241,19 +241,19 @@ pub struct GraphRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_graph_entity_type_header_prefix() {
-        assert_eq!(GraphEntityType::Account.header_prefix(), "");
-        assert_eq!(GraphEntityType::Application.header_prefix(), "App #");
-        assert_eq!(GraphEntityType::Asset.header_prefix(), "ASA #");
-    }
-
-    #[test]
-    fn test_graph_entity_type_header_color() {
-        assert_eq!(GraphEntityType::Account.header_color(), Color::Yellow);
-        assert_eq!(GraphEntityType::Application.header_color(), Color::Cyan);
-        assert_eq!(GraphEntityType::Asset.header_color(), Color::Magenta);
+    #[rstest]
+    #[case::account(GraphEntityType::Account, "", Color::Yellow)]
+    #[case::application(GraphEntityType::Application, "App #", Color::Cyan)]
+    #[case::asset(GraphEntityType::Asset, "ASA #", Color::Magenta)]
+    fn test_graph_entity_type_properties(
+        #[case] entity: GraphEntityType,
+        #[case] expected_prefix: &str,
+        #[case] expected_color: Color,
+    ) {
+        assert_eq!(entity.header_prefix(), expected_prefix);
+        assert_eq!(entity.header_color(), expected_color);
     }
 
     #[test]
@@ -282,10 +282,15 @@ mod tests {
         assert_eq!(col.index, 2);
     }
 
-    #[test]
-    fn test_graph_representation_equality() {
-        assert_eq!(GraphRepresentation::Vector, GraphRepresentation::Vector);
-        assert_ne!(GraphRepresentation::Vector, GraphRepresentation::SelfLoop);
-        assert_ne!(GraphRepresentation::SelfLoop, GraphRepresentation::Point);
+    #[rstest]
+    #[case::vector_eq_vector(GraphRepresentation::Vector, GraphRepresentation::Vector, true)]
+    #[case::vector_ne_selfloop(GraphRepresentation::Vector, GraphRepresentation::SelfLoop, false)]
+    #[case::selfloop_ne_point(GraphRepresentation::SelfLoop, GraphRepresentation::Point, false)]
+    fn test_graph_representation_equality(
+        #[case] left: GraphRepresentation,
+        #[case] right: GraphRepresentation,
+        #[case] expected_eq: bool,
+    ) {
+        assert_eq!(left == right, expected_eq);
     }
 }

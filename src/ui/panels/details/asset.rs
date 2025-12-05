@@ -17,10 +17,9 @@ use crate::theme::{
 use crate::ui::helpers::create_popup_block;
 use crate::ui::layout::centered_popup_area;
 
-/// Renders the asset details popup with comprehensive asset information.
+/// Renders the asset details popup.
 ///
-/// Displays asset metadata, supply information, management addresses,
-/// and configuration details for Algorand Standard Assets (ASAs).
+/// Displays ASA metadata, supply, and management addresses.
 ///
 /// # Arguments
 ///

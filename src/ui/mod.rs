@@ -24,10 +24,13 @@ pub mod popups;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
+    style::{Modifier, Style},
+    widgets::Paragraph,
 };
 
 use crate::state::{App, PopupState};
 
+use helpers::create_border_block;
 use layout::{HEADER_HEIGHT, TITLE_HEIGHT};
 
 // ============================================================================
@@ -84,12 +87,6 @@ pub fn render(app: &App, frame: &mut Frame) {
 
 /// Render the main content area (explore section with blocks and transactions)
 fn render_main_content(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
-    use helpers::create_border_block;
-    use ratatui::{
-        style::{Modifier, Style},
-        widgets::Paragraph,
-    };
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(TITLE_HEIGHT), Constraint::Min(10)])
@@ -158,21 +155,5 @@ fn render_detail_views(app: &App, frame: &mut Frame, area: ratatui::layout::Rect
         panels::details::account::render_account_details(app, frame, area);
     } else if app.nav.show_asset_details {
         panels::details::asset::render_asset_details(app, frame, area);
-    }
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_module_exports_available() {
-        // Verify module structure is accessible
-        // These will fail to compile if exports are missing
-        let _ = std::any::type_name::<layout::AppLayout>();
     }
 }

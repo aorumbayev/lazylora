@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"       TYP     CAL...AA   App #12…   APP...BI   REC...TU              "
+"       ────────────┬──────────┬──────────┬──────────┬───              "
+"                   │          │          │          │                 "
+"         APP       ●──────────▶          │          │    NoOp         "
+"        ·PAY       │          │          ●──────────▶    5.00A        "
+"        ·AXF       │          │          ●──────────▶    500000       "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "

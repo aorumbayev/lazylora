@@ -67,7 +67,7 @@ pub const DEFAULT_VISIBLE_TRANSACTIONS: u16 = 10;
 /// let dims = Dimensions::default();
 /// let items_per_page = area_height / dims.block_height as usize;
 /// ```
-#[allow(dead_code)] // Design system utility
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Dimensions {
     /// Height of each block item in the blocks list.
@@ -94,7 +94,7 @@ impl Dimensions {
     ///
     /// A new `Dimensions` instance.
     #[must_use]
-    #[allow(dead_code)] // Design system utility
+    #[allow(dead_code)]
     pub const fn new(
         block_height: u16,
         txn_height: u16,
@@ -119,7 +119,7 @@ impl Dimensions {
     ///
     /// The number of block items that can be displayed.
     #[must_use]
-    #[allow(dead_code)] // Design system utility
+    #[allow(dead_code)]
     pub const fn blocks_per_page(&self, available_height: u16) -> usize {
         (available_height / self.block_height) as usize
     }
@@ -134,7 +134,7 @@ impl Dimensions {
     ///
     /// The number of transaction items that can be displayed.
     #[must_use]
-    #[allow(dead_code)] // Design system utility
+    #[allow(dead_code)]
     pub const fn transactions_per_page(&self, available_height: u16) -> usize {
         (available_height / self.txn_height) as usize
     }
@@ -158,13 +158,13 @@ impl Default for Dimensions {
 /// Unicode symbol for Algorand currency display.
 ///
 /// This diamond-like symbol (◈) represents the Algo currency in the UI.
-#[allow(dead_code)] // Design system constant
+#[allow(dead_code)]
 pub const ALGO_SYMBOL: &str = "◈";
 
 /// Unicode symbol for Algorand Standard Asset display.
 ///
 /// This filled diamond symbol (◆) represents ASAs in the UI.
-#[allow(dead_code)] // Design system constant
+#[allow(dead_code)]
 pub const ASSET_SYMBOL: &str = "◆";
 
 // ============================================================================
@@ -180,7 +180,7 @@ pub const MICROALGOS_PER_ALGO: f64 = 1_000_000.0;
 /// Number of microAlgos per Algo as an integer.
 ///
 /// Useful for integer arithmetic without floating-point conversion.
-#[allow(dead_code)] // Design system constant
+#[allow(dead_code)]
 pub const MICROALGOS_PER_ALGO_U64: u64 = 1_000_000;
 
 // ============================================================================
@@ -188,18 +188,18 @@ pub const MICROALGOS_PER_ALGO_U64: u64 = 1_000_000;
 // ============================================================================
 
 /// Default decimal places for Algo amount display.
-#[allow(dead_code)] // Design system constant
+#[allow(dead_code)]
 pub const ALGO_DECIMALS: u32 = 6;
 
 /// Maximum address length before truncation.
 ///
 /// Algorand addresses are 58 characters. This constant defines when
 /// to apply truncation for display purposes.
-#[allow(dead_code)] // Design system constant
+#[allow(dead_code)]
 pub const MAX_ADDRESS_DISPLAY_LENGTH: usize = 58;
 
 /// Default truncated address length for compact displays.
-#[allow(dead_code)] // Design system constant
+#[allow(dead_code)]
 pub const DEFAULT_TRUNCATED_ADDRESS_LENGTH: usize = 20;
 
 // ============================================================================
@@ -225,7 +225,7 @@ pub const DEFAULT_TRUNCATED_ADDRESS_LENGTH: usize = 20;
 /// assert_eq!(algos, 5.0);
 /// ```
 #[must_use]
-#[allow(dead_code)] // Design system utility
+#[allow(dead_code)]
 pub const fn microalgos_to_algos(microalgos: u64) -> f64 {
     microalgos as f64 / MICROALGOS_PER_ALGO
 }
@@ -249,7 +249,7 @@ pub const fn microalgos_to_algos(microalgos: u64) -> f64 {
 /// assert_eq!(microalgos, 5_000_000);
 /// ```
 #[must_use]
-#[allow(dead_code)] // Design system utility
+#[allow(dead_code)]
 pub fn algos_to_microalgos(algos: f64) -> u64 {
     (algos * MICROALGOS_PER_ALGO) as u64
 }
@@ -273,7 +273,7 @@ pub fn algos_to_microalgos(algos: f64) -> u64 {
 /// assert_eq!(formatted, "5.500000 ALGO");
 /// ```
 #[must_use]
-#[allow(dead_code)] // Design system utility
+#[allow(dead_code)]
 pub fn format_algo(microalgos: u64) -> String {
     let algos = microalgos_to_algos(microalgos);
     format!("{algos:.6} ALGO")
@@ -298,7 +298,7 @@ pub fn format_algo(microalgos: u64) -> String {
 /// assert_eq!(formatted, "◈ 5.000000");
 /// ```
 #[must_use]
-#[allow(dead_code)] // Design system utility
+#[allow(dead_code)]
 pub fn format_algo_with_symbol(microalgos: u64) -> String {
     let algos = microalgos_to_algos(microalgos);
     format!("{ALGO_SYMBOL} {algos:.6}")
@@ -311,35 +311,29 @@ pub fn format_algo_with_symbol(microalgos: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    /// Per commandments: "One table test > Five edge case unit tests"
-    #[test]
-    fn test_microalgos_conversion() {
-        let cases = [
-            (0_u64, 0.0_f64),
-            (1_000_000, 1.0),
-            (5_500_000, 5.5),
-            (123_456, 0.123456),
-        ];
-
-        for (microalgos, algos) in cases {
-            assert_eq!(microalgos_to_algos(microalgos), algos);
-            assert_eq!(algos_to_microalgos(algos), microalgos);
-        }
+    #[rstest]
+    #[case::zero(0, 0.0)]
+    #[case::one_algo(1_000_000, 1.0)]
+    #[case::five_and_half(5_500_000, 5.5)]
+    #[case::fractional(123_456, 0.123456)]
+    fn test_microalgos_conversion(#[case] microalgos: u64, #[case] algos: f64) {
+        assert_eq!(microalgos_to_algos(microalgos), algos);
+        assert_eq!(algos_to_microalgos(algos), microalgos);
     }
 
-    #[test]
-    fn test_format_algo_functions() {
-        let cases = [
-            (0_u64, "0.000000 ALGO", "◈ 0.000000"),
-            (1_000_000, "1.000000 ALGO", "◈ 1.000000"),
-            (5_500_000, "5.500000 ALGO", "◈ 5.500000"),
-        ];
-
-        for (microalgos, expected_plain, expected_symbol) in cases {
-            assert_eq!(format_algo(microalgos), expected_plain);
-            assert_eq!(format_algo_with_symbol(microalgos), expected_symbol);
-        }
+    #[rstest]
+    #[case::zero(0, "0.000000 ALGO", "◈ 0.000000")]
+    #[case::one_algo(1_000_000, "1.000000 ALGO", "◈ 1.000000")]
+    #[case::five_and_half(5_500_000, "5.500000 ALGO", "◈ 5.500000")]
+    fn test_format_algo_functions(
+        #[case] microalgos: u64,
+        #[case] expected_plain: &str,
+        #[case] expected_symbol: &str,
+    ) {
+        assert_eq!(format_algo(microalgos), expected_plain);
+        assert_eq!(format_algo_with_symbol(microalgos), expected_symbol);
     }
 
     #[test]

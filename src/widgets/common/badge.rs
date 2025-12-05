@@ -54,7 +54,7 @@ impl TxnTypeBadge {
     ///
     /// A new `TxnTypeBadge` instance
     #[must_use]
-    #[allow(dead_code)] // Part of TxnTypeBadge public API
+    #[allow(dead_code)]
     pub const fn new(txn_type: TxnType) -> Self {
         Self {
             txn_type,
@@ -68,7 +68,7 @@ impl TxnTypeBadge {
     ///
     /// Self with compact mode enabled
     #[must_use]
-    #[allow(dead_code)] // Part of TxnTypeBadge public API
+    #[allow(dead_code)]
     pub const fn compact(mut self) -> Self {
         self.compact = true;
         self

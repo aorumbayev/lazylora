@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/txn_graph.rs
+expression: terminal.backend()
+---
+"                           TYP   WK3...TM   QUA...SA                            "
+"                           ──────────┬──────────┬───                            "
+"                                     │          │                               "
+"                             PAY    ↺0A         │                               "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

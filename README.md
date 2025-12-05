@@ -98,8 +98,14 @@ lazylora update --install
 git clone https://github.com/aorumbayev/lazylora.git
 cd lazylora
 
+# Install cargo-nextest for faster test runs (one-time)
+cargo install cargo-nextest
+
 # Build and install
 cargo build --release
+
+# Run tests
+cargo t --all-features
 ```
 
 ## Contributing

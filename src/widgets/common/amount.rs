@@ -58,7 +58,7 @@ impl AmountDisplay {
     ///
     /// A new `AmountDisplay` configured for ALGO
     #[must_use]
-    #[allow(dead_code)] // Part of AmountDisplay public API
+    #[allow(dead_code)]
     pub const fn algo(microalgos: u64) -> Self {
         Self {
             amount: microalgos,
@@ -81,7 +81,7 @@ impl AmountDisplay {
     ///
     /// A new `AmountDisplay` configured for an ASA
     #[must_use]
-    #[allow(dead_code)] // Part of AmountDisplay public API
+    #[allow(dead_code)]
     pub const fn asset(amount: u64, asset_id: Option<u64>, decimals: Option<u64>) -> Self {
         Self {
             amount,
@@ -102,7 +102,7 @@ impl AmountDisplay {
     ///
     /// Self with the unit name set
     #[must_use]
-    #[allow(dead_code)] // Part of AmountDisplay public API
+    #[allow(dead_code)]
     pub fn with_unit_name(mut self, name: impl Into<String>) -> Self {
         self.unit_name = Some(name.into());
         self
@@ -188,43 +188,80 @@ impl Widget for AmountDisplay {
 mod tests {
     use super::*;
 
+    /// Tests AmountDisplay behavior for both ALGO and asset amounts.
+    ///
+    /// Validates: formatting, unit names, asset IDs, and edge cases.
     #[test]
-    fn test_amount_display_algo() {
-        let display = AmountDisplay::algo(5_000_000);
-        let line = display.to_line();
-        assert!(!line.spans.is_empty());
-    }
+    fn test_amount_display_behavior() {
+        struct TestCase {
+            name: &'static str,
+            display: AmountDisplay,
+            expect_content_contains: Vec<&'static str>,
+            expect_content_excludes: Vec<&'static str>,
+        }
 
-    #[test]
-    fn test_amount_display_asset() {
-        let display = AmountDisplay::asset(1000, Some(31566704), Some(6));
-        let line = display.to_line();
-        assert!(!line.spans.is_empty());
-    }
+        let test_cases = [
+            TestCase {
+                name: "algo amount formats correctly",
+                display: AmountDisplay::algo(5_000_000),
+                expect_content_contains: vec!["5.000000", "ALGO"],
+                expect_content_excludes: vec!["ASA"],
+            },
+            TestCase {
+                name: "zero algo amount shows zeros",
+                display: AmountDisplay::algo(0),
+                expect_content_contains: vec!["0.000000"],
+                expect_content_excludes: vec![],
+            },
+            TestCase {
+                name: "asset with ID shows ASA reference",
+                display: AmountDisplay::asset(1000, Some(31566704), Some(6)),
+                expect_content_contains: vec!["ASA #31566704"],
+                expect_content_excludes: vec![],
+            },
+            TestCase {
+                name: "asset with unit name displays name",
+                display: AmountDisplay::asset(1000, Some(31566704), Some(6)).with_unit_name("USDC"),
+                expect_content_contains: vec!["USDC", "ASA #31566704"],
+                expect_content_excludes: vec![],
+            },
+            TestCase {
+                name: "asset without ID uses default unit",
+                display: AmountDisplay::asset(500, None, None),
+                expect_content_contains: vec!["units"],
+                expect_content_excludes: vec!["ASA #"],
+            },
+        ];
 
-    #[test]
-    fn test_amount_display_asset_with_unit_name() {
-        let display = AmountDisplay::asset(1000, Some(31566704), Some(6)).with_unit_name("USDC");
-        let line = display.to_line();
-        assert!(!line.spans.is_empty());
+        for tc in test_cases {
+            let line = tc.display.to_line();
+            let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
 
-        // Check that the line contains "USDC"
-        let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(content.contains("USDC"));
-    }
+            assert!(
+                !line.spans.is_empty(),
+                "{}: should produce non-empty spans",
+                tc.name
+            );
 
-    #[test]
-    fn test_amount_display_asset_no_id() {
-        let display = AmountDisplay::asset(500, None, None);
-        let line = display.to_line();
-        assert!(!line.spans.is_empty());
-    }
+            for expected in &tc.expect_content_contains {
+                assert!(
+                    content.contains(expected),
+                    "{}: expected content to contain '{}', got '{}'",
+                    tc.name,
+                    expected,
+                    content
+                );
+            }
 
-    #[test]
-    fn test_amount_display_zero_algo() {
-        let display = AmountDisplay::algo(0);
-        let line = display.to_line();
-        let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(content.contains("0.000000"));
+            for excluded in &tc.expect_content_excludes {
+                assert!(
+                    !content.contains(excluded),
+                    "{}: expected content to NOT contain '{}', got '{}'",
+                    tc.name,
+                    excluded,
+                    content
+                );
+            }
+        }
     }
 }

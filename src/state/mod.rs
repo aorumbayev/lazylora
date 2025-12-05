@@ -36,6 +36,8 @@ use crossterm::event::{
     self, Event, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
 use std::collections::HashSet;
+use std::io::Write;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 use tokio::time::interval;
@@ -48,9 +50,11 @@ use crate::constants::{
 };
 use crate::domain::{
     AccountDetails, AlgoBlock, AssetDetails, BlockDetails, Network, SearchResultItem, Transaction,
+    TransactionDetails,
 };
 use crate::tui::Tui;
 use crate::ui;
+use crate::widgets::TxnGraph;
 
 // ============================================================================
 // Module Declarations
@@ -547,11 +551,17 @@ impl App {
                 }
             }
 
-            if let Ok(blocks) = client.get_latest_blocks(5).await {
+            // Fetch blocks and transactions in parallel
+            let (blocks_result, transactions_result) = tokio::join!(
+                client.get_latest_blocks(5),
+                client.get_latest_transactions(5)
+            );
+
+            if let Ok(blocks) = blocks_result {
                 let _ = message_tx.send(AppMessage::BlocksUpdated(blocks));
             }
 
-            if let Ok(transactions) = client.get_latest_transactions(5).await {
+            if let Ok(transactions) = transactions_result {
                 let _ = message_tx.send(AppMessage::TransactionsUpdated(transactions));
             }
         });
@@ -1448,9 +1458,6 @@ impl App {
     /// Returns true if successful.
     #[cfg(target_os = "linux")]
     fn try_copy_with_external_tool(&self, text: &str) -> bool {
-        use std::io::Write;
-        use std::process::{Command, Stdio};
-
         // Try wl-copy first (Wayland)
         if let Ok(mut child) = Command::new("wl-copy")
             .stdin(Stdio::piped())
@@ -1503,8 +1510,6 @@ impl App {
 
     /// Export the current transaction graph to SVG file.
     fn export_transaction_svg(&mut self) {
-        use crate::widgets::TxnGraph;
-
         // Get the current transaction
         let txn = self.get_current_transaction();
         let Some(txn) = txn else {
@@ -1562,7 +1567,6 @@ impl App {
             return vec![];
         };
 
-        use crate::domain::TransactionDetails;
         match &txn.details {
             TransactionDetails::AppCall(app_details) => {
                 let mut sections = Vec::new();
@@ -1732,90 +1736,76 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_merge_blocks_empty_input() {
-        let mut app = create_test_app();
-        app.data.blocks = vec![create_test_block(100, 5)];
+    fn test_merge_blocks_all_scenarios() {
+        struct TestCase {
+            name: &'static str,
+            initial_blocks: Vec<AlgoBlock>,
+            new_blocks: Vec<AlgoBlock>,
+            expected_len: usize,
+            expected_order: Vec<u64>, // Expected IDs in descending order
+        }
 
-        app.merge_blocks(Vec::new());
-
-        assert_eq!(app.data.blocks.len(), 1);
-        assert_eq!(app.data.blocks[0].id, 100);
-    }
-
-    #[test]
-    fn test_merge_blocks_adds_new_blocks() {
-        let mut app = create_test_app();
-        app.data.blocks = vec![create_test_block(100, 5)];
-
-        let new_blocks = vec![create_test_block(101, 3), create_test_block(102, 7)];
-        app.merge_blocks(new_blocks);
-
-        assert_eq!(app.data.blocks.len(), 3);
-        // Blocks should be sorted in descending order (newest first)
-        assert_eq!(app.data.blocks[0].id, 102);
-        assert_eq!(app.data.blocks[1].id, 101);
-        assert_eq!(app.data.blocks[2].id, 100);
-    }
-
-    #[test]
-    fn test_merge_blocks_deduplication() {
-        let mut app = create_test_app();
-        // Blocks are stored in descending order (newest first)
-        app.data.blocks = vec![create_test_block(101, 3), create_test_block(100, 5)];
-
-        // Try to add duplicate block (101) and a new block (102)
-        let new_blocks = vec![create_test_block(101, 3), create_test_block(102, 7)];
-        app.merge_blocks(new_blocks);
-
-        // Should have 3 blocks total (duplicate 101 not added)
-        assert_eq!(app.data.blocks.len(), 3);
-        // Verify descending order
-        assert_eq!(app.data.blocks[0].id, 102);
-        assert_eq!(app.data.blocks[1].id, 101);
-        assert_eq!(app.data.blocks[2].id, 100);
-    }
-
-    #[test]
-    fn test_merge_blocks_maintains_sort_order() {
-        let mut app = create_test_app();
-        app.data.blocks = vec![
-            create_test_block(105, 2),
-            create_test_block(103, 4),
-            create_test_block(101, 6),
+        let cases = [
+            TestCase {
+                name: "empty input preserves existing blocks",
+                initial_blocks: vec![create_test_block(100, 5)],
+                new_blocks: vec![],
+                expected_len: 1,
+                expected_order: vec![100],
+            },
+            TestCase {
+                name: "adds new blocks in descending order",
+                initial_blocks: vec![create_test_block(100, 5)],
+                new_blocks: vec![create_test_block(101, 3), create_test_block(102, 7)],
+                expected_len: 3,
+                expected_order: vec![102, 101, 100],
+            },
+            TestCase {
+                name: "deduplicates existing blocks",
+                initial_blocks: vec![create_test_block(101, 3), create_test_block(100, 5)],
+                new_blocks: vec![create_test_block(101, 3), create_test_block(102, 7)],
+                expected_len: 3,
+                expected_order: vec![102, 101, 100],
+            },
+            TestCase {
+                name: "maintains sort order with interleaved blocks",
+                initial_blocks: vec![
+                    create_test_block(105, 2),
+                    create_test_block(103, 4),
+                    create_test_block(101, 6),
+                ],
+                new_blocks: vec![create_test_block(104, 1), create_test_block(102, 3)],
+                expected_len: 5,
+                expected_order: vec![105, 104, 103, 102, 101],
+            },
         ];
 
-        // Add blocks that need to be inserted in between
-        let new_blocks = vec![create_test_block(104, 1), create_test_block(102, 3)];
-        app.merge_blocks(new_blocks);
+        for case in cases {
+            let mut app = create_test_app();
+            app.data.blocks = case.initial_blocks;
+            app.merge_blocks(case.new_blocks);
 
-        assert_eq!(app.data.blocks.len(), 5);
-        // Should maintain descending order
-        assert_eq!(app.data.blocks[0].id, 105);
-        assert_eq!(app.data.blocks[1].id, 104);
-        assert_eq!(app.data.blocks[2].id, 103);
-        assert_eq!(app.data.blocks[3].id, 102);
-        assert_eq!(app.data.blocks[4].id, 101);
-    }
+            assert_eq!(app.data.blocks.len(), case.expected_len, "{}", case.name);
+            for (idx, expected_id) in case.expected_order.iter().enumerate() {
+                assert_eq!(
+                    app.data.blocks[idx].id, *expected_id,
+                    "{}: block at index {idx}",
+                    case.name
+                );
+            }
+        }
 
-    #[test]
-    fn test_merge_blocks_truncates_to_100() {
+        // Test capacity limit separately (requires different setup)
         let mut app = create_test_app();
-
-        // Create 98 existing blocks
         for i in 0..98 {
             app.data.blocks.push(create_test_block(1000 - i, 1));
         }
-        assert_eq!(app.data.blocks.len(), 98);
-
-        // Add 5 more blocks (should trigger truncation to 100)
         let new_blocks: Vec<AlgoBlock> = (1..=5).map(|i| create_test_block(2000 + i, 1)).collect();
         app.merge_blocks(new_blocks);
 
-        // Should be capped at 100
-        assert_eq!(app.data.blocks.len(), 100);
-        // Newest blocks should be kept (highest IDs)
-        assert_eq!(app.data.blocks[0].id, 2005);
-        assert_eq!(app.data.blocks[99].id, 906);
+        assert_eq!(app.data.blocks.len(), 100, "truncates to 100 blocks");
+        assert_eq!(app.data.blocks[0].id, 2005, "keeps newest blocks first");
+        assert_eq!(app.data.blocks[99].id, 906, "keeps newest blocks last");
     }
 
     // ========================================================================
@@ -1823,63 +1813,88 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_merge_transactions_empty_input() {
-        let mut app = create_test_app();
-        app.data.transactions = vec![create_test_transaction("TXN1", TxnType::Payment, 100)];
+    fn test_merge_transactions_all_scenarios() {
+        struct TestCase {
+            name: &'static str,
+            initial_txns: Vec<Transaction>,
+            new_txns: Vec<Transaction>,
+            expected_len: usize,
+            expected_ids: Vec<&'static str>,
+            unexpected_ids: Vec<&'static str>,
+        }
 
-        app.merge_transactions(Vec::new());
-
-        assert_eq!(app.data.transactions.len(), 1);
-        assert_eq!(app.data.transactions[0].id, "TXN1");
-    }
-
-    #[test]
-    fn test_merge_transactions_adds_new_transactions() {
-        let mut app = create_test_app();
-        app.data.transactions = vec![create_test_transaction("TXN1", TxnType::Payment, 100)];
-
-        let new_txns = vec![
-            create_test_transaction("TXN2", TxnType::AppCall, 101),
-            create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
+        let cases = [
+            TestCase {
+                name: "empty input preserves existing transactions",
+                initial_txns: vec![create_test_transaction("TXN1", TxnType::Payment, 100)],
+                new_txns: vec![],
+                expected_len: 1,
+                expected_ids: vec!["TXN1"],
+                unexpected_ids: vec![],
+            },
+            TestCase {
+                name: "adds new transactions",
+                initial_txns: vec![create_test_transaction("TXN1", TxnType::Payment, 100)],
+                new_txns: vec![
+                    create_test_transaction("TXN2", TxnType::AppCall, 101),
+                    create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
+                ],
+                expected_len: 3,
+                expected_ids: vec!["TXN1", "TXN2", "TXN3"],
+                unexpected_ids: vec![],
+            },
+            TestCase {
+                name: "deduplicates transactions by ID",
+                initial_txns: vec![
+                    create_test_transaction("TXN1", TxnType::Payment, 100),
+                    create_test_transaction("TXN2", TxnType::AppCall, 101),
+                ],
+                new_txns: vec![
+                    create_test_transaction("TXN2", TxnType::AppCall, 101),
+                    create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
+                ],
+                expected_len: 3,
+                expected_ids: vec!["TXN1", "TXN2", "TXN3"],
+                unexpected_ids: vec![],
+            },
         ];
-        app.merge_transactions(new_txns);
 
-        assert_eq!(app.data.transactions.len(), 3);
-    }
+        for case in cases {
+            let mut app = create_test_app();
+            app.data.transactions = case.initial_txns;
+            app.merge_transactions(case.new_txns);
 
-    #[test]
-    fn test_merge_transactions_deduplication() {
+            assert_eq!(
+                app.data.transactions.len(),
+                case.expected_len,
+                "{}",
+                case.name
+            );
+
+            let ids: Vec<&str> = app
+                .data
+                .transactions
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect();
+            for expected_id in case.expected_ids {
+                assert!(
+                    ids.contains(&expected_id),
+                    "{}: missing expected ID {expected_id}",
+                    case.name
+                );
+            }
+            for unexpected_id in case.unexpected_ids {
+                assert!(
+                    !ids.contains(&unexpected_id),
+                    "{}: found unexpected ID {unexpected_id}",
+                    case.name
+                );
+            }
+        }
+
+        // Test capacity limit with new transactions
         let mut app = create_test_app();
-        app.data.transactions = vec![
-            create_test_transaction("TXN1", TxnType::Payment, 100),
-            create_test_transaction("TXN2", TxnType::AppCall, 101),
-        ];
-
-        // Try to add duplicate transaction
-        let new_txns = vec![
-            create_test_transaction("TXN2", TxnType::AppCall, 101),
-            create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
-        ];
-        app.merge_transactions(new_txns);
-
-        assert_eq!(app.data.transactions.len(), 3);
-        // Check IDs are unique
-        let ids: Vec<&str> = app
-            .data
-            .transactions
-            .iter()
-            .map(|t| t.id.as_str())
-            .collect();
-        assert!(ids.contains(&"TXN1"));
-        assert!(ids.contains(&"TXN2"));
-        assert!(ids.contains(&"TXN3"));
-    }
-
-    #[test]
-    fn test_merge_transactions_capacity_limit() {
-        let mut app = create_test_app();
-
-        // Create 98 existing transactions
         for i in 0..98 {
             app.data.transactions.push(create_test_transaction(
                 &format!("OLD_TXN_{i}"),
@@ -1887,33 +1902,23 @@ mod tests {
                 100,
             ));
         }
-        assert_eq!(app.data.transactions.len(), 98);
-
-        // Add 5 new transactions
         let new_txns: Vec<Transaction> = (1..=5)
             .map(|i| create_test_transaction(&format!("NEW_TXN_{i}"), TxnType::Payment, 200))
             .collect();
         app.merge_transactions(new_txns);
 
-        // Should be capped at 100
-        assert_eq!(app.data.transactions.len(), 100);
-
-        // New transactions should be present
+        assert_eq!(app.data.transactions.len(), 100, "caps at 100 transactions");
         let ids: Vec<&str> = app
             .data
             .transactions
             .iter()
             .map(|t| t.id.as_str())
             .collect();
-        assert!(ids.contains(&"NEW_TXN_1"));
-        assert!(ids.contains(&"NEW_TXN_5"));
-    }
+        assert!(ids.contains(&"NEW_TXN_1"), "keeps new transactions");
+        assert!(ids.contains(&"NEW_TXN_5"), "keeps new transactions");
 
-    #[test]
-    fn test_merge_transactions_prioritizes_new_over_old() {
+        // Test prioritization: new transactions replace old when at capacity
         let mut app = create_test_app();
-
-        // Fill with 100 old transactions
         for i in 0..100 {
             app.data.transactions.push(create_test_transaction(
                 &format!("OLD_{i}"),
@@ -1921,17 +1926,12 @@ mod tests {
                 100,
             ));
         }
-
-        // Add 10 new transactions
         let new_txns: Vec<Transaction> = (1..=10)
             .map(|i| create_test_transaction(&format!("NEW_{i}"), TxnType::Payment, 200))
             .collect();
         app.merge_transactions(new_txns);
 
-        // Should still be 100 total
-        assert_eq!(app.data.transactions.len(), 100);
-
-        // All new transactions should be present
+        assert_eq!(app.data.transactions.len(), 100, "prioritizes new over old");
         let ids: Vec<&str> = app
             .data
             .transactions
@@ -1939,11 +1939,15 @@ mod tests {
             .map(|t| t.id.as_str())
             .collect();
         for i in 1..=10 {
-            assert!(ids.contains(&format!("NEW_{i}").as_str()));
+            assert!(
+                ids.contains(&format!("NEW_{i}").as_str()),
+                "all new transactions present"
+            );
         }
-
-        // Some old transactions should have been dropped
-        assert!(!ids.contains(&"OLD_99"));
+        assert!(
+            !ids.contains(&"OLD_99"),
+            "oldest transactions dropped when at capacity"
+        );
     }
 
     // ========================================================================
@@ -1951,86 +1955,110 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_sync_selections_block_still_exists() {
-        let mut app = create_test_app();
+    fn test_sync_selections_all_scenarios() {
+        struct BlockTestCase {
+            name: &'static str,
+            blocks: Vec<AlgoBlock>,
+            selected_id: Option<u64>,
+            expected_index: Option<usize>,
+            expected_id_after: Option<u64>,
+        }
 
-        // Add blocks and select one
-        app.data.blocks = vec![
-            create_test_block(103, 1),
-            create_test_block(102, 2),
-            create_test_block(101, 3),
+        let block_cases = [
+            BlockTestCase {
+                name: "block still exists after merge",
+                blocks: vec![
+                    create_test_block(103, 1),
+                    create_test_block(102, 2),
+                    create_test_block(101, 3),
+                ],
+                selected_id: Some(102),
+                expected_index: Some(1),
+                expected_id_after: Some(102),
+            },
+            BlockTestCase {
+                name: "block removed clears selection",
+                blocks: vec![create_test_block(103, 1), create_test_block(101, 3)],
+                selected_id: Some(102),
+                expected_index: None,
+                expected_id_after: None,
+            },
+            BlockTestCase {
+                name: "no selection remains None",
+                blocks: vec![create_test_block(100, 1)],
+                selected_id: None,
+                expected_index: None,
+                expected_id_after: None,
+            },
         ];
-        app.nav.selected_block_id = Some(102);
 
-        app.sync_selections();
+        for case in block_cases {
+            let mut app = create_test_app();
+            app.data.blocks = case.blocks;
+            app.nav.selected_block_id = case.selected_id;
+            app.sync_selections();
 
-        // Should find the block at index 1
-        assert_eq!(app.nav.selected_block_index, Some(1));
-    }
+            assert_eq!(
+                app.nav.selected_block_index, case.expected_index,
+                "{}",
+                case.name
+            );
+            assert_eq!(
+                app.nav.selected_block_id, case.expected_id_after,
+                "{}",
+                case.name
+            );
+        }
 
-    #[test]
-    fn test_sync_selections_block_removed() {
-        let mut app = create_test_app();
+        struct TxnTestCase {
+            name: &'static str,
+            transactions: Vec<Transaction>,
+            selected_id: Option<String>,
+            expected_index: Option<usize>,
+            expected_id_after: Option<String>,
+        }
 
-        // Add blocks and select one that doesn't exist
-        app.data.blocks = vec![create_test_block(103, 1), create_test_block(101, 3)];
-        app.nav.selected_block_id = Some(102); // This block is missing
-
-        app.sync_selections();
-
-        // Selection should be cleared
-        assert_eq!(app.nav.selected_block_index, None);
-        assert_eq!(app.nav.selected_block_id, None);
-    }
-
-    #[test]
-    fn test_sync_selections_transaction_still_exists() {
-        let mut app = create_test_app();
-
-        // Add transactions and select one
-        app.data.transactions = vec![
-            create_test_transaction("TXN1", TxnType::Payment, 100),
-            create_test_transaction("TXN2", TxnType::AppCall, 101),
-            create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
+        let txn_cases = [
+            TxnTestCase {
+                name: "transaction still exists after merge",
+                transactions: vec![
+                    create_test_transaction("TXN1", TxnType::Payment, 100),
+                    create_test_transaction("TXN2", TxnType::AppCall, 101),
+                    create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
+                ],
+                selected_id: Some("TXN2".to_string()),
+                expected_index: Some(1),
+                expected_id_after: Some("TXN2".to_string()),
+            },
+            TxnTestCase {
+                name: "transaction removed clears selection",
+                transactions: vec![
+                    create_test_transaction("TXN1", TxnType::Payment, 100),
+                    create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
+                ],
+                selected_id: Some("TXN2".to_string()),
+                expected_index: None,
+                expected_id_after: None,
+            },
         ];
-        app.nav.selected_transaction_id = Some("TXN2".to_string());
 
-        app.sync_selections();
+        for case in txn_cases {
+            let mut app = create_test_app();
+            app.data.transactions = case.transactions;
+            app.nav.selected_transaction_id = case.selected_id;
+            app.sync_selections();
 
-        // Should find the transaction at index 1
-        assert_eq!(app.nav.selected_transaction_index, Some(1));
-    }
-
-    #[test]
-    fn test_sync_selections_transaction_removed() {
-        let mut app = create_test_app();
-
-        // Add transactions but not the selected one
-        app.data.transactions = vec![
-            create_test_transaction("TXN1", TxnType::Payment, 100),
-            create_test_transaction("TXN3", TxnType::AssetTransfer, 102),
-        ];
-        app.nav.selected_transaction_id = Some("TXN2".to_string());
-
-        app.sync_selections();
-
-        // Selection should be cleared
-        assert_eq!(app.nav.selected_transaction_index, None);
-        assert_eq!(app.nav.selected_transaction_id, None);
-    }
-
-    #[test]
-    fn test_sync_selections_no_selection() {
-        let mut app = create_test_app();
-
-        app.data.blocks = vec![create_test_block(100, 1)];
-        app.data.transactions = vec![create_test_transaction("TXN1", TxnType::Payment, 100)];
-
-        app.sync_selections();
-
-        // Should remain None
-        assert_eq!(app.nav.selected_block_index, None);
-        assert_eq!(app.nav.selected_transaction_index, None);
+            assert_eq!(
+                app.nav.selected_transaction_index, case.expected_index,
+                "{}",
+                case.name
+            );
+            assert_eq!(
+                app.nav.selected_transaction_id, case.expected_id_after,
+                "{}",
+                case.name
+            );
+        }
     }
 
     // ========================================================================
@@ -2038,128 +2066,115 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_move_selection_up_from_middle() {
-        let mut app = create_test_app();
-        app.ui.focus = Focus::Blocks;
-        app.data.blocks = vec![
-            create_test_block(103, 1),
-            create_test_block(102, 2),
-            create_test_block(101, 3),
-        ];
-        app.nav.selected_block_index = Some(1);
-        app.nav.selected_block_id = Some(102);
+    fn test_navigation_all_scenarios() {
+        struct TestCase {
+            name: &'static str,
+            focus: Focus,
+            initial_index: Option<usize>,
+            initial_id: Option<String>,
+            action: fn(&mut App),
+            expected_index: Option<usize>,
+            expected_id: Option<String>,
+        }
 
-        app.move_selection_up();
-
-        assert_eq!(app.nav.selected_block_index, Some(0));
-        assert_eq!(app.nav.selected_block_id, Some(103));
-    }
-
-    #[test]
-    fn test_move_selection_up_from_top() {
-        let mut app = create_test_app();
-        app.ui.focus = Focus::Blocks;
-        app.data.blocks = vec![
-            create_test_block(103, 1),
-            create_test_block(102, 2),
-            create_test_block(101, 3),
-        ];
-        app.nav.selected_block_index = Some(0);
-        app.nav.selected_block_id = Some(103);
-
-        app.move_selection_up();
-
-        // Should stay at top
-        assert_eq!(app.nav.selected_block_index, Some(0));
-        assert_eq!(app.nav.selected_block_id, Some(103));
-    }
-
-    #[test]
-    fn test_move_selection_up_no_selection() {
-        let mut app = create_test_app();
-        app.ui.focus = Focus::Blocks;
-        app.data.blocks = vec![
+        // Setup: 3-item block list [103, 102, 101]
+        let block_list = vec![
             create_test_block(103, 1),
             create_test_block(102, 2),
             create_test_block(101, 3),
         ];
 
-        app.move_selection_up();
-
-        // Should select first item
-        assert_eq!(app.nav.selected_block_index, Some(0));
-        assert_eq!(app.nav.selected_block_id, Some(103));
-    }
-
-    #[test]
-    fn test_move_selection_down_from_middle() {
-        let mut app = create_test_app();
-        app.ui.focus = Focus::Blocks;
-        app.data.blocks = vec![
-            create_test_block(103, 1),
-            create_test_block(102, 2),
-            create_test_block(101, 3),
+        let cases = [
+            TestCase {
+                name: "move up from middle",
+                focus: Focus::Blocks,
+                initial_index: Some(1),
+                initial_id: Some("102".to_string()),
+                action: App::move_selection_up,
+                expected_index: Some(0),
+                expected_id: Some("103".to_string()),
+            },
+            TestCase {
+                name: "move up from top stays at top",
+                focus: Focus::Blocks,
+                initial_index: Some(0),
+                initial_id: Some("103".to_string()),
+                action: App::move_selection_up,
+                expected_index: Some(0),
+                expected_id: Some("103".to_string()),
+            },
+            TestCase {
+                name: "move up with no selection selects first",
+                focus: Focus::Blocks,
+                initial_index: None,
+                initial_id: None,
+                action: App::move_selection_up,
+                expected_index: Some(0),
+                expected_id: Some("103".to_string()),
+            },
+            TestCase {
+                name: "move down from middle",
+                focus: Focus::Blocks,
+                initial_index: Some(1),
+                initial_id: Some("102".to_string()),
+                action: App::move_selection_down,
+                expected_index: Some(2),
+                expected_id: Some("101".to_string()),
+            },
+            TestCase {
+                name: "move down from bottom stays at bottom",
+                focus: Focus::Blocks,
+                initial_index: Some(2),
+                initial_id: Some("101".to_string()),
+                action: App::move_selection_down,
+                expected_index: Some(2),
+                expected_id: Some("101".to_string()),
+            },
+            TestCase {
+                name: "move down with no selection selects first",
+                focus: Focus::Blocks,
+                initial_index: None,
+                initial_id: None,
+                action: App::move_selection_down,
+                expected_index: Some(0),
+                expected_id: Some("103".to_string()),
+            },
         ];
-        app.nav.selected_block_index = Some(1);
-        app.nav.selected_block_id = Some(102);
 
-        app.move_selection_down();
+        for case in cases {
+            let mut app = create_test_app();
+            app.ui.focus = case.focus;
+            app.data.blocks = block_list.clone();
+            app.nav.selected_block_index = case.initial_index;
+            app.nav.selected_block_id = case.initial_id.as_ref().and_then(|s| s.parse().ok());
 
-        assert_eq!(app.nav.selected_block_index, Some(2));
-        assert_eq!(app.nav.selected_block_id, Some(101));
-    }
+            (case.action)(&mut app);
 
-    #[test]
-    fn test_move_selection_down_from_bottom() {
-        let mut app = create_test_app();
-        app.ui.focus = Focus::Blocks;
-        app.data.blocks = vec![
-            create_test_block(103, 1),
-            create_test_block(102, 2),
-            create_test_block(101, 3),
-        ];
-        app.nav.selected_block_index = Some(2);
-        app.nav.selected_block_id = Some(101);
+            assert_eq!(
+                app.nav.selected_block_index, case.expected_index,
+                "{}",
+                case.name
+            );
+            assert_eq!(
+                app.nav.selected_block_id,
+                case.expected_id.as_ref().and_then(|s| s.parse().ok()),
+                "{}",
+                case.name
+            );
+        }
 
-        app.move_selection_down();
-
-        // Should stay at bottom
-        assert_eq!(app.nav.selected_block_index, Some(2));
-        assert_eq!(app.nav.selected_block_id, Some(101));
-    }
-
-    #[test]
-    fn test_move_selection_down_no_selection() {
-        let mut app = create_test_app();
-        app.ui.focus = Focus::Blocks;
-        app.data.blocks = vec![
-            create_test_block(103, 1),
-            create_test_block(102, 2),
-            create_test_block(101, 3),
-        ];
-
-        app.move_selection_down();
-
-        // Should select first item
-        assert_eq!(app.nav.selected_block_index, Some(0));
-        assert_eq!(app.nav.selected_block_id, Some(103));
-    }
-
-    #[test]
-    fn test_move_selection_empty_list() {
+        // Test empty list behavior
         let mut app = create_test_app();
         app.ui.focus = Focus::Blocks;
         app.data.blocks = Vec::new();
 
         app.move_selection_up();
-        assert_eq!(app.nav.selected_block_index, None);
+        assert_eq!(app.nav.selected_block_index, None, "empty list move up");
 
         app.move_selection_down();
-        assert_eq!(app.nav.selected_block_index, None);
-    }
+        assert_eq!(app.nav.selected_block_index, None, "empty list move down");
 
-    #[test]
-    fn test_move_selection_transactions() {
+        // Test transaction navigation
         let mut app = create_test_app();
         app.ui.focus = Focus::Transactions;
         app.data.transactions = vec![
@@ -2169,13 +2184,25 @@ mod tests {
         ];
 
         app.move_selection_down();
-        assert_eq!(app.nav.selected_transaction_index, Some(0));
+        assert_eq!(
+            app.nav.selected_transaction_index,
+            Some(0),
+            "transactions: first down selects 0"
+        );
 
         app.move_selection_down();
-        assert_eq!(app.nav.selected_transaction_index, Some(1));
+        assert_eq!(
+            app.nav.selected_transaction_index,
+            Some(1),
+            "transactions: second down moves to 1"
+        );
 
         app.move_selection_up();
-        assert_eq!(app.nav.selected_transaction_index, Some(0));
+        assert_eq!(
+            app.nav.selected_transaction_index,
+            Some(0),
+            "transactions: up moves back to 0"
+        );
     }
 
     // ========================================================================
@@ -2183,139 +2210,134 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_handle_dismiss_transaction_details() {
-        let mut app = create_test_app();
+    fn test_handle_dismiss_all_contexts() {
+        #[allow(dead_code)]
+        struct TestCase {
+            name: &'static str,
+            setup: fn(&mut App),
+            verify: fn(&App),
+        }
 
-        // Set up transaction details view
-        app.nav.show_transaction_details = true;
-        app.data.viewed_transaction = Some(create_test_transaction("TXN1", TxnType::Payment, 100));
-        app.nav.graph_scroll_x = 10;
-        app.nav.graph_scroll_y = 5;
+        let cases = [
+            TestCase {
+                name: "transaction details clears graph scroll and view state",
+                setup: |app| {
+                    app.nav.show_transaction_details = true;
+                    app.data.viewed_transaction =
+                        Some(create_test_transaction("TXN1", TxnType::Payment, 100));
+                    app.nav.graph_scroll_x = 10;
+                    app.nav.graph_scroll_y = 5;
+                },
+                verify: |app| {
+                    assert!(!app.nav.show_transaction_details);
+                    assert!(!app.nav.show_block_details);
+                    assert!(!app.nav.show_account_details);
+                    assert!(!app.nav.show_asset_details);
+                    assert!(app.data.viewed_transaction.is_none());
+                    assert_eq!(app.nav.graph_scroll_x, 0);
+                    assert_eq!(app.nav.graph_scroll_y, 0);
+                },
+            },
+            TestCase {
+                name: "block details closes view",
+                setup: |app| {
+                    app.nav.show_block_details = true;
+                    app.data.block_details = Some(BlockDetails::new(
+                        BlockInfo::new(
+                            100,
+                            "2023-11-14".to_string(),
+                            5,
+                            "PROPOSER".to_string(),
+                            "SEED".to_string(),
+                        ),
+                        Vec::new(),
+                    ));
+                },
+                verify: |app| {
+                    assert!(!app.nav.show_block_details);
+                },
+            },
+            TestCase {
+                name: "search popup clears search results",
+                setup: |app| {
+                    app.ui.popup_state =
+                        PopupState::SearchWithType("query".to_string(), SearchType::Transaction);
+                    app.data.filtered_search_results.push((
+                        0,
+                        SearchResultItem::Transaction(Box::new(create_test_transaction(
+                            "TXN1",
+                            TxnType::Payment,
+                            100,
+                        ))),
+                    ));
+                },
+                verify: |app| {
+                    assert_eq!(app.ui.popup_state, PopupState::None);
+                    assert!(app.data.filtered_search_results.is_empty());
+                    assert!(!app.ui.viewing_search_result);
+                },
+            },
+            TestCase {
+                name: "search results popup clears results",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::SearchResults(vec![(
+                        0,
+                        SearchResultItem::Transaction(Box::new(create_test_transaction(
+                            "TXN1",
+                            TxnType::Payment,
+                            100,
+                        ))),
+                    )]);
+                    app.data.filtered_search_results.push((
+                        0,
+                        SearchResultItem::Transaction(Box::new(create_test_transaction(
+                            "TXN1",
+                            TxnType::Payment,
+                            100,
+                        ))),
+                    ));
+                },
+                verify: |app| {
+                    assert_eq!(app.ui.popup_state, PopupState::None);
+                    assert!(app.data.filtered_search_results.is_empty());
+                },
+            },
+            TestCase {
+                name: "network select popup dismisses",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::NetworkSelect(1);
+                },
+                verify: |app| {
+                    assert_eq!(app.ui.popup_state, PopupState::None);
+                },
+            },
+            TestCase {
+                name: "message popup dismisses",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::Message("Test message".to_string());
+                },
+                verify: |app| {
+                    assert_eq!(app.ui.popup_state, PopupState::None);
+                },
+            },
+            TestCase {
+                name: "no popup or details does nothing",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::None;
+                    app.nav.show_transaction_details = false;
+                },
+                verify: |app| {
+                    assert_eq!(app.ui.popup_state, PopupState::None);
+                },
+            },
+        ];
 
-        app.handle_dismiss();
-
-        // Should close details and clear state
-        assert!(!app.nav.show_transaction_details);
-        assert!(!app.nav.show_block_details);
-        assert!(!app.nav.show_account_details);
-        assert!(!app.nav.show_asset_details);
-        assert!(app.data.viewed_transaction.is_none());
-        assert_eq!(app.nav.graph_scroll_x, 0);
-        assert_eq!(app.nav.graph_scroll_y, 0);
-    }
-
-    #[test]
-    fn test_handle_dismiss_block_details() {
-        let mut app = create_test_app();
-
-        // Set up block details view
-        app.nav.show_block_details = true;
-        app.data.block_details = Some(BlockDetails::new(
-            BlockInfo::new(
-                100,
-                "2023-11-14".to_string(),
-                5,
-                "PROPOSER".to_string(),
-                "SEED".to_string(),
-            ),
-            Vec::new(),
-        ));
-
-        app.handle_dismiss();
-
-        // Should close details
-        assert!(!app.nav.show_block_details);
-        // Block details are retained (not cleared on dismiss)
-    }
-
-    #[test]
-    fn test_handle_dismiss_search_popup() {
-        let mut app = create_test_app();
-
-        // Open search popup
-        app.ui.popup_state =
-            PopupState::SearchWithType("query".to_string(), SearchType::Transaction);
-        app.data.filtered_search_results.push((
-            0,
-            SearchResultItem::Transaction(Box::new(create_test_transaction(
-                "TXN1",
-                TxnType::Payment,
-                100,
-            ))),
-        ));
-
-        app.handle_dismiss();
-
-        // Should dismiss popup and clear search results
-        assert_eq!(app.ui.popup_state, PopupState::None);
-        assert!(app.data.filtered_search_results.is_empty());
-        assert!(!app.ui.viewing_search_result);
-    }
-
-    #[test]
-    fn test_handle_dismiss_search_results() {
-        let mut app = create_test_app();
-
-        // Open search results popup
-        app.ui.popup_state = PopupState::SearchResults(vec![(
-            0,
-            SearchResultItem::Transaction(Box::new(create_test_transaction(
-                "TXN1",
-                TxnType::Payment,
-                100,
-            ))),
-        )]);
-        app.data.filtered_search_results.push((
-            0,
-            SearchResultItem::Transaction(Box::new(create_test_transaction(
-                "TXN1",
-                TxnType::Payment,
-                100,
-            ))),
-        ));
-
-        app.handle_dismiss();
-
-        // Should dismiss popup and clear search results
-        assert_eq!(app.ui.popup_state, PopupState::None);
-        assert!(app.data.filtered_search_results.is_empty());
-    }
-
-    #[test]
-    fn test_handle_dismiss_network_select() {
-        let mut app = create_test_app();
-
-        app.ui.popup_state = PopupState::NetworkSelect(1);
-
-        app.handle_dismiss();
-
-        // Should dismiss popup
-        assert_eq!(app.ui.popup_state, PopupState::None);
-    }
-
-    #[test]
-    fn test_handle_dismiss_message_popup() {
-        let mut app = create_test_app();
-
-        app.ui.popup_state = PopupState::Message("Test message".to_string());
-
-        app.handle_dismiss();
-
-        // Should dismiss popup
-        assert_eq!(app.ui.popup_state, PopupState::None);
-    }
-
-    #[test]
-    fn test_handle_dismiss_no_popup() {
-        let mut app = create_test_app();
-
-        app.ui.popup_state = PopupState::None;
-        app.nav.show_transaction_details = false;
-
-        app.handle_dismiss();
-
-        // Should remain in None state
-        assert_eq!(app.ui.popup_state, PopupState::None);
+        for case in cases {
+            let mut app = create_test_app();
+            (case.setup)(&mut app);
+            app.handle_dismiss();
+            (case.verify)(&app);
+        }
     }
 
     // ========================================================================
@@ -2323,77 +2345,85 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_get_input_context_main() {
-        let app = create_test_app();
+    fn test_get_input_context_all_states() {
+        struct TestCase {
+            name: &'static str,
+            setup: fn(&mut App),
+            expected: InputContext,
+        }
 
-        assert_eq!(app.get_input_context(), InputContext::Main);
-    }
+        let cases = [
+            TestCase {
+                name: "main context by default",
+                setup: |_| {},
+                expected: InputContext::Main,
+            },
+            TestCase {
+                name: "network select popup",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::NetworkSelect(0);
+                },
+                expected: InputContext::NetworkSelect,
+            },
+            TestCase {
+                name: "search input popup",
+                setup: |app| {
+                    app.ui.popup_state =
+                        PopupState::SearchWithType(String::new(), SearchType::Transaction);
+                },
+                expected: InputContext::SearchInput,
+            },
+            TestCase {
+                name: "search results popup",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::SearchResults(vec![(
+                        0,
+                        SearchResultItem::Transaction(Box::new(create_test_transaction(
+                            "TXN1",
+                            TxnType::Payment,
+                            100,
+                        ))),
+                    )]);
+                },
+                expected: InputContext::SearchResults,
+            },
+            TestCase {
+                name: "message popup",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::Message("Test".to_string());
+                },
+                expected: InputContext::MessagePopup,
+            },
+            TestCase {
+                name: "block detail view",
+                setup: |app| {
+                    app.nav.show_block_details = true;
+                },
+                expected: InputContext::BlockDetailView,
+            },
+            TestCase {
+                name: "transaction detail view",
+                setup: |app| {
+                    app.nav.show_transaction_details = true;
+                },
+                expected: InputContext::DetailView,
+            },
+            TestCase {
+                name: "popup precedence over detail view",
+                setup: |app| {
+                    app.ui.popup_state = PopupState::NetworkSelect(0);
+                    app.nav.show_transaction_details = true;
+                },
+                expected: InputContext::NetworkSelect,
+            },
+        ];
 
-    #[test]
-    fn test_get_input_context_network_select() {
-        let mut app = create_test_app();
-        app.ui.popup_state = PopupState::NetworkSelect(0);
+        for case in cases {
+            let mut app = create_test_app();
+            (case.setup)(&mut app);
 
-        assert_eq!(app.get_input_context(), InputContext::NetworkSelect);
-    }
-
-    #[test]
-    fn test_get_input_context_search_input() {
-        let mut app = create_test_app();
-        app.ui.popup_state = PopupState::SearchWithType(String::new(), SearchType::Transaction);
-
-        assert_eq!(app.get_input_context(), InputContext::SearchInput);
-    }
-
-    #[test]
-    fn test_get_input_context_search_results() {
-        let mut app = create_test_app();
-        app.ui.popup_state = PopupState::SearchResults(vec![(
-            0,
-            SearchResultItem::Transaction(Box::new(create_test_transaction(
-                "TXN1",
-                TxnType::Payment,
-                100,
-            ))),
-        )]);
-
-        assert_eq!(app.get_input_context(), InputContext::SearchResults);
-    }
-
-    #[test]
-    fn test_get_input_context_message_popup() {
-        let mut app = create_test_app();
-        app.ui.popup_state = PopupState::Message("Test".to_string());
-
-        assert_eq!(app.get_input_context(), InputContext::MessagePopup);
-    }
-
-    #[test]
-    fn test_get_input_context_block_detail_view() {
-        let mut app = create_test_app();
-        app.nav.show_block_details = true;
-
-        assert_eq!(app.get_input_context(), InputContext::BlockDetailView);
-    }
-
-    #[test]
-    fn test_get_input_context_transaction_detail_view() {
-        let mut app = create_test_app();
-        app.nav.show_transaction_details = true;
-
-        assert_eq!(app.get_input_context(), InputContext::DetailView);
-    }
-
-    #[test]
-    fn test_get_input_context_popup_precedence() {
-        let mut app = create_test_app();
-
-        // Set both popup and detail view
-        app.ui.popup_state = PopupState::NetworkSelect(0);
-        app.nav.show_transaction_details = true;
-
-        // Popup should take precedence
-        assert_eq!(app.get_input_context(), InputContext::NetworkSelect);
+            assert_eq!(app.get_input_context(), case.expected, "{}", case.name);
+        }
     }
 
     // ========================================================================

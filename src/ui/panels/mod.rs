@@ -359,26 +359,6 @@ mod tests {
     use crate::state::StartupOptions;
     use ratatui::{Terminal, backend::TestBackend};
 
-    /// Helper function to run tests with a mock App.
-    /// Since App construction is complex and requires async runtime,
-    /// we use a helper that creates it properly.
-    fn test_with_mock_app<F>(test_fn: F)
-    where
-        F: FnOnce(&App),
-    {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let app = rt.block_on(async {
-            let options = StartupOptions {
-                network: Some(Network::TestNet),
-                search: None,
-                graph_view: false,
-            };
-            App::new(options).await.unwrap()
-        });
-
-        test_fn(&app);
-    }
-
     /// Helper function to run tests with a mutable mock App.
     fn test_with_mock_app_mut<F>(test_fn: F)
     where
@@ -432,181 +412,117 @@ mod tests {
     }
 
     #[test]
-    fn test_render_blocks_empty_state() {
-        test_with_mock_app(|app| {
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
+    fn test_render_blocks_states() {
+        struct TestState {
+            name: &'static str,
+            setup: fn(&mut App),
+            check: fn(&ratatui::buffer::Buffer) -> bool,
+        }
 
-            terminal
-                .draw(|frame| {
-                    render_blocks(app, frame, frame.area());
-                })
-                .unwrap();
+        let states = [
+            TestState {
+                name: "empty state shows message",
+                setup: |_app| {},
+                check: |buffer| {
+                    (0..buffer.area().width)
+                        .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
+                        .any(|(x, y)| buffer[(x, y)].symbol().contains('N'))
+                },
+            },
+            TestState {
+                name: "with data renders content",
+                setup: populate_test_data,
+                check: |buffer| !buffer[(0, 0)].symbol().is_empty(),
+            },
+            TestState {
+                name: "focused shows selection indicator",
+                setup: |app| {
+                    populate_test_data(app);
+                    app.ui.focus = Focus::Blocks;
+                    app.nav.selected_block_index = Some(0);
+                },
+                check: |buffer| {
+                    (0..buffer.area().width)
+                        .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
+                        .any(|(x, y)| buffer[(x, y)].symbol().contains('▶'))
+                },
+            },
+        ];
 
-            let buffer = terminal.backend().buffer();
+        for state in &states {
+            test_with_mock_app_mut(|app| {
+                (state.setup)(app);
 
-            // Verify "No blocks available" message appears somewhere in the buffer
-            let message_found = (0..buffer.area().width)
-                .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
-                .any(|(x, y)| buffer[(x, y)].symbol().contains('N'));
+                let backend = TestBackend::new(80, 24);
+                let mut terminal = Terminal::new(backend).unwrap();
 
-            assert!(message_found, "Empty state message should be rendered");
-        });
+                terminal
+                    .draw(|frame| {
+                        render_blocks(app, frame, frame.area());
+                    })
+                    .unwrap();
+
+                let buffer = terminal.backend().buffer();
+                assert!((state.check)(buffer), "{} failed", state.name);
+            });
+        }
     }
 
     #[test]
-    fn test_render_blocks_with_data() {
-        test_with_mock_app_mut(|app| {
-            populate_test_data(app);
+    fn test_render_transactions_states() {
+        struct TestState {
+            name: &'static str,
+            setup: fn(&mut App),
+            check: fn(&ratatui::buffer::Buffer) -> bool,
+        }
 
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
+        let states = [
+            TestState {
+                name: "empty state shows message",
+                setup: |_app| {},
+                check: |buffer| {
+                    (0..buffer.area().width)
+                        .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
+                        .any(|(x, y)| buffer[(x, y)].symbol().contains('N'))
+                },
+            },
+            TestState {
+                name: "with data renders content",
+                setup: populate_test_data,
+                check: |buffer| !buffer[(0, 0)].symbol().is_empty(),
+            },
+            TestState {
+                name: "focused shows selection indicator",
+                setup: |app| {
+                    populate_test_data(app);
+                    app.ui.focus = Focus::Transactions;
+                    app.nav.selected_transaction_index = Some(0);
+                },
+                check: |buffer| {
+                    (0..buffer.area().width)
+                        .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
+                        .any(|(x, y)| buffer[(x, y)].symbol().contains('▶'))
+                },
+            },
+        ];
 
-            terminal
-                .draw(|frame| {
-                    render_blocks(app, frame, frame.area());
-                })
-                .unwrap();
+        for state in &states {
+            test_with_mock_app_mut(|app| {
+                (state.setup)(app);
 
-            // Should render without panicking
-            let buffer = terminal.backend().buffer();
-            assert!(!buffer[(0, 0)].symbol().is_empty());
-        });
-    }
+                let backend = TestBackend::new(80, 24);
+                let mut terminal = Terminal::new(backend).unwrap();
 
-    #[test]
-    fn test_render_blocks_focused_border() {
-        test_with_mock_app_mut(|app| {
-            populate_test_data(app);
-            app.ui.focus = Focus::Blocks;
+                terminal
+                    .draw(|frame| {
+                        render_transactions(app, frame, frame.area());
+                    })
+                    .unwrap();
 
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
-
-            terminal
-                .draw(|frame| {
-                    render_blocks(app, frame, frame.area());
-                })
-                .unwrap();
-
-            // Should render with focused border (double-line borders)
-            let buffer = terminal.backend().buffer();
-            assert!(!buffer[(0, 0)].symbol().is_empty());
-        });
-    }
-
-    #[test]
-    fn test_render_transactions_empty_state() {
-        test_with_mock_app(|app| {
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
-
-            terminal
-                .draw(|frame| {
-                    render_transactions(app, frame, frame.area());
-                })
-                .unwrap();
-
-            let buffer = terminal.backend().buffer();
-
-            // Verify "No transactions available" message appears
-            let message_found = (0..buffer.area().width)
-                .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
-                .any(|(x, y)| buffer[(x, y)].symbol().contains('N'));
-
-            assert!(message_found, "Empty state message should be rendered");
-        });
-    }
-
-    #[test]
-    fn test_render_transactions_with_data() {
-        test_with_mock_app_mut(|app| {
-            populate_test_data(app);
-
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
-
-            terminal
-                .draw(|frame| {
-                    render_transactions(app, frame, frame.area());
-                })
-                .unwrap();
-
-            // Should render without panicking
-            let buffer = terminal.backend().buffer();
-            assert!(!buffer[(0, 0)].symbol().is_empty());
-        });
-    }
-
-    #[test]
-    fn test_render_transactions_focused_border() {
-        test_with_mock_app_mut(|app| {
-            populate_test_data(app);
-            app.ui.focus = Focus::Transactions;
-
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
-
-            terminal
-                .draw(|frame| {
-                    render_transactions(app, frame, frame.area());
-                })
-                .unwrap();
-
-            // Should render with focused border
-            let buffer = terminal.backend().buffer();
-            assert!(!buffer[(0, 0)].symbol().is_empty());
-        });
-    }
-
-    #[test]
-    fn test_render_blocks_selection_indicator() {
-        test_with_mock_app_mut(|app| {
-            populate_test_data(app);
-            app.nav.selected_block_index = Some(0);
-
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
-
-            terminal
-                .draw(|frame| {
-                    render_blocks(app, frame, frame.area());
-                })
-                .unwrap();
-
-            // Selection indicator (▶) should be present in the buffer
-            let buffer = terminal.backend().buffer();
-            let indicator_found = (0..buffer.area().width)
-                .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
-                .any(|(x, y)| buffer[(x, y)].symbol().contains('▶'));
-
-            assert!(indicator_found, "Selection indicator should be rendered");
-        });
-    }
-
-    #[test]
-    fn test_render_transactions_selection_indicator() {
-        test_with_mock_app_mut(|app| {
-            populate_test_data(app);
-            app.nav.selected_transaction_index = Some(0);
-
-            let backend = TestBackend::new(80, 24);
-            let mut terminal = Terminal::new(backend).unwrap();
-
-            terminal
-                .draw(|frame| {
-                    render_transactions(app, frame, frame.area());
-                })
-                .unwrap();
-
-            // Selection indicator should be present
-            let buffer = terminal.backend().buffer();
-            let indicator_found = (0..buffer.area().width)
-                .flat_map(|x| (0..buffer.area().height).map(move |y| (x, y)))
-                .any(|(x, y)| buffer[(x, y)].symbol().contains('▶'));
-
-            assert!(indicator_found, "Selection indicator should be rendered");
-        });
+                let buffer = terminal.backend().buffer();
+                assert!((state.check)(buffer), "{} failed", state.name);
+            });
+        }
     }
 
     #[test]

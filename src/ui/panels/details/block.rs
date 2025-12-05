@@ -26,7 +26,6 @@ use crate::ui::layout::centered_popup_area;
 
 /// Renders the block details popup with tabbed interface.
 ///
-/// Displays comprehensive block information including metadata and transactions.
 /// Supports tabbed navigation between Info and Transactions views.
 ///
 /// # Arguments

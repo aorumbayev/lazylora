@@ -53,6 +53,7 @@ It provides a simple and intuitive way to browse blocks and transactions.
 
 [dev-dependencies]
 insta = "1.42"
+rstest = "0.25"
 
 [features]
 default = []
