@@ -1,6 +1,6 @@
 [package]
 name = "lazylora"
-version = "0.5.0"
+version = "0.5.1"
 description = "Unofficial terminal user interface for Algorand Blockchain exploration"
 authors = ["Altynbek Orumbayev <aorumbayev@pm.me>"]
 license = "MIT"

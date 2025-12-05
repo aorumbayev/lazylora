@@ -1,0 +1,20 @@
+[book]
+title = "LazyLora Documentation"
+authors = ["Altynbek Orumbayev"]
+description = "Terminal user interface for Algorand Blockchain exploration"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "coal"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/aorumbayev/lazylora"
+
+site-url = "/lazylora/"
+
+[output.html.fold]
+enable = true
+level = 1

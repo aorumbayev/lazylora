@@ -75,14 +75,14 @@ if (-not $Version) {
         if (-not $Version) {
             Write-Error-Exit "Failed to determine latest version"
         }
-
-        # Remove 'v' prefix if present
-        $Version = $Version -replace '^v', ''
     }
     catch {
         Write-Error-Exit "Failed to fetch latest version information. $($_.Exception.Message)"
     }
 }
+
+# Remove 'v' prefix if present (handles both CLI args and API response)
+$Version = $Version -replace '^v', ''
 
 Write-Info "Installing LazyLora $Version for $arch-$os..."
 

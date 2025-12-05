@@ -11,6 +11,10 @@ fn configure_updater() -> Result<Box<dyn ReleaseUpdate>, Box<dyn std::error::Err
         .repo_owner(GITHUB_REPO_OWNER)
         .repo_name(GITHUB_REPO_NAME)
         .bin_name(BINARY_NAME)
+        .identifier(BINARY_NAME)
+        .bin_path_in_archive(
+            "{{ bin }}-{{ target }}/{{ bin }}{% if target contains 'windows' %}.exe{% endif %}",
+        )
         .current_version(cargo_crate_version!())
         .build()?;
     Ok(updater)

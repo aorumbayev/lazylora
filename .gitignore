@@ -3,3 +3,6 @@
 .DS_Store
 
 references/
+
+# mdbook build output
+docs/book/
