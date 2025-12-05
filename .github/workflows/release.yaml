@@ -118,6 +118,30 @@ jobs:
             exit 1
           fi
 
+      - name: Test update check
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          LAZYLORA_BIN=""
+          if command -v lazylora >/dev/null 2>&1; then
+            LAZYLORA_BIN="lazylora"
+          elif [ -f "/usr/local/bin/lazylora" ]; then
+            LAZYLORA_BIN="/usr/local/bin/lazylora"
+          elif [ -f "$HOME/.local/bin/lazylora" ]; then
+            LAZYLORA_BIN="$HOME/.local/bin/lazylora"
+          fi
+          
+          if [ -n "$LAZYLORA_BIN" ]; then
+            echo "Testing update check functionality..."
+            $LAZYLORA_BIN update 2>&1 | tee update_output.txt
+            if grep -q "You are using the latest version\|Current version:" update_output.txt; then
+              echo "Update check works correctly"
+            else
+              echo "Update check failed"
+              exit 1
+            fi
+          fi
+
       - name: Test script installation (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -136,6 +160,30 @@ jobs:
             lazylora version
           } else {
             throw "Installation failed"
+          }
+
+      - name: Test update check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binaryPath = "$env:LOCALAPPDATA\Programs\lazylora\lazylora.exe"
+          $lazylora = $null
+          
+          if (Test-Path $binaryPath) {
+            $lazylora = $binaryPath
+          } elseif (Get-Command lazylora -ErrorAction SilentlyContinue) {
+            $lazylora = "lazylora"
+          }
+          
+          if ($lazylora) {
+            Write-Host "Testing update check functionality..."
+            $output = & $lazylora update 2>&1 | Out-String
+            Write-Host $output
+            if ($output -match "You are using the latest version|Current version:") {
+              Write-Host "Update check works correctly"
+            } else {
+              throw "Update check failed"
+            }
           }
 
   publish-aur:
