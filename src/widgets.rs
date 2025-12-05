@@ -1854,7 +1854,10 @@ impl GraphColumn {
             if available >= 4 {
                 format!("App #{}…", &app_id.to_string()[..available - 1])
             } else {
-                format!("#{}", &app_id.to_string()[..label_width.saturating_sub(2).max(1)])
+                format!(
+                    "#{}",
+                    &app_id.to_string()[..label_width.saturating_sub(2).max(1)]
+                )
             }
         } else {
             full_label
@@ -1877,7 +1880,10 @@ impl GraphColumn {
             if available >= 4 {
                 format!("ASA #{}…", &asset_id.to_string()[..available - 1])
             } else {
-                format!("#{}", &asset_id.to_string()[..label_width.saturating_sub(2).max(1)])
+                format!(
+                    "#{}",
+                    &asset_id.to_string()[..label_width.saturating_sub(2).max(1)]
+                )
             }
         } else {
             full_label
