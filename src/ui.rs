@@ -40,6 +40,15 @@ const HIGHLIGHT_STYLE: Style = Style::new()
     .bg(Color::DarkGray)
     .add_modifier(Modifier::BOLD);
 
+/// Tokyo Night background color for subtle overlays
+const BG_COLOR: Color = Color::Rgb(26, 27, 38);
+
+/// Calculate the display width of a string in characters (for fixed-width hints).
+#[must_use]
+fn hint_width_chars(s: &str) -> u16 {
+    s.chars().count() as u16
+}
+
 fn create_border_block(title: &str, focused: bool) -> Block<'_> {
     let (border_style, border_set, title_style, display_title) = if focused {
         (
@@ -798,7 +807,12 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
         return;
     };
 
-    // Calculate popup size - fullscreen or normal
+    // Pre-calculate graph dimensions for auto-scaling
+    let is_visual = app.ui.detail_view_mode == DetailViewMode::Visual;
+    let graph = TxnGraph::from_transaction(&txn);
+    let graph_widget = TxnGraphWidget::new(&graph);
+
+    // Calculate popup size - fullscreen or auto-scaled
     let popup_area = if app.ui.detail_fullscreen {
         // Fullscreen: use almost all available area with small margin
         Rect::new(
@@ -807,9 +821,32 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             area.width.saturating_sub(2),
             area.height.saturating_sub(2),
         )
+    } else if is_visual && !graph.columns.is_empty() {
+        // Auto-scale popup based on graph content
+        let graph_width = graph.total_width();
+        let graph_height = graph_widget.required_height();
+
+        // Add padding for chrome (borders, tabs, buttons, help text)
+        let chrome_h_padding: u16 = 10; // 2 border + 4 content padding + margin
+        let chrome_v_padding: u16 = 10; // 2 border + tabs(2) + separator(1) + button(4) + help(1)
+
+        // Calculate ideal dimensions with reasonable bounds
+        let min_width: u16 = 50;
+        let min_height: u16 = 18;
+        let max_width = (area.width as f32 * 0.92) as u16;
+        let max_height = (area.height as f32 * 0.92) as u16;
+
+        let ideal_width = (graph_width as u16)
+            .saturating_add(chrome_h_padding)
+            .clamp(min_width, max_width);
+        let ideal_height = (graph_height as u16)
+            .saturating_add(chrome_v_padding)
+            .clamp(min_height, max_height);
+
+        centered_popup_area(area, ideal_width, ideal_height)
     } else {
-        // Normal: centered popup
-        centered_popup_area(area, 85, 32)
+        // Table mode or fallback: standard size
+        centered_popup_area(area, 80, 28)
     };
 
     let popup_block = create_popup_block("Transaction Details");
@@ -818,20 +855,19 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
 
     let inner_area = popup_block.inner(popup_area);
 
-    // Create layout: tab bar at top, content area, button, help text
+    // Create layout: tab bar, separator, content, buttons, help
     let content_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // Tab bar
             Constraint::Length(1), // Separator
-            Constraint::Min(10),   // Main content
-            Constraint::Length(4), // Button area
+            Constraint::Min(6),    // Main content
+            Constraint::Length(3), // Button area (more compact)
             Constraint::Length(1), // Help text
         ])
         .split(inner_area);
 
     // Render tab bar
-    let is_visual = app.ui.detail_view_mode == DetailViewMode::Visual;
     let visual_style = if is_visual {
         Style::default()
             .bg(PRIMARY_COLOR)
@@ -850,9 +886,9 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
     };
 
     let tab_bar = Line::from(vec![
-        Span::raw("  "),
+        Span::raw(" "),
         Span::styled(" Table ", table_style),
-        Span::raw("  "),
+        Span::raw(" "),
         Span::styled(" Visual ", visual_style),
     ]);
     let tab_paragraph = Paragraph::new(tab_bar);
@@ -868,61 +904,56 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
 
     if is_visual {
         // Visual mode: use TxnGraph for sophisticated visualization
-        let graph = TxnGraph::from_transaction(&txn);
-        let graph_widget = TxnGraphWidget::new(&graph);
         let graph_lines = graph_widget.to_lines();
 
-        // If graph has meaningful content (multiple columns), show it
-        // Otherwise fall back to TxnVisualCard
+        // If graph has meaningful content, show it
         if !graph.columns.is_empty() {
-            // Calculate padded area
+            // Calculate padded area (minimal padding for compactness)
             let padded_area = Rect::new(
-                content_area.x + 2,
-                content_area.y + 1,
-                content_area.width.saturating_sub(4),
-                content_area.height.saturating_sub(2),
+                content_area.x + 1,
+                content_area.y,
+                content_area.width.saturating_sub(2),
+                content_area.height,
             );
 
-            // Calculate graph dimensions
+            // Calculate graph dimensions (use required_width for accurate measurement)
             let graph_height = graph_widget.required_height();
-            let graph_width = graph.total_width();
+            let graph_width = graph_widget.required_width();
 
-            // Get scroll offsets from app state
-            let scroll_x = app.nav.graph_scroll_x as usize;
-            let scroll_y = app.nav.graph_scroll_y as usize;
+            // Determine if we need scrolling
+            let needs_v_scroll = graph_height > padded_area.height as usize;
+            let needs_h_scroll = graph_width > padded_area.width as usize;
 
-            // Clamp scroll to valid range
+            // Calculate max scroll values
             let max_scroll_y = graph_height.saturating_sub(padded_area.height as usize);
             let max_scroll_x = graph_width.saturating_sub(padded_area.width as usize);
-            let clamped_scroll_y = scroll_y.min(max_scroll_y);
-            let clamped_scroll_x = scroll_x.min(max_scroll_x);
+
+            // Get scroll offsets from app state, clamped to valid range
+            let scroll_x = (app.nav.graph_scroll_x as usize).min(max_scroll_x);
+            let scroll_y = (app.nav.graph_scroll_y as usize).min(max_scroll_y);
 
             // Calculate centering offsets (when graph fits in view)
-            let center_x = if graph_width < padded_area.width as usize {
-                (padded_area.width as usize - graph_width) / 2
+            let center_x = if !needs_h_scroll {
+                (padded_area.width as usize).saturating_sub(graph_width) / 2
             } else {
                 0
             };
-            let center_y = if graph_height < padded_area.height as usize {
-                (padded_area.height as usize - graph_height) / 2
+            let center_y = if !needs_v_scroll {
+                (padded_area.height as usize).saturating_sub(graph_height) / 2
             } else {
                 0
             };
-
-            // Determine if we need scrolling (only when content exceeds view)
-            let needs_scroll = graph_height > padded_area.height as usize
-                || graph_width > padded_area.width as usize;
 
             // Build visible lines with centering or scrolling
-            let visible_lines: Vec<Line> = if needs_scroll {
+            let visible_lines: Vec<Line> = if needs_v_scroll || needs_h_scroll {
                 // Scrolling mode - apply scroll offsets
                 graph_lines
                     .into_iter()
-                    .skip(clamped_scroll_y)
+                    .skip(scroll_y)
                     .take(padded_area.height as usize)
                     .map(|line| {
-                        if clamped_scroll_x > 0 {
-                            let mut remaining_skip = clamped_scroll_x;
+                        if scroll_x > 0 {
+                            let mut remaining_skip = scroll_x;
                             let mut new_spans = Vec::new();
 
                             for span in line.spans {
@@ -974,24 +1005,49 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
             };
 
             let visual_content = Paragraph::new(visible_lines).alignment(Alignment::Left);
-
             frame.render_widget(visual_content, padded_area);
 
-            // Show scroll indicators if content exceeds visible area
-            let needs_v_scroll = graph_height > padded_area.height as usize;
-            let needs_h_scroll = graph_width > padded_area.width as usize;
-
+            // Show scroll indicator ONLY if scrolling is needed
             if needs_v_scroll || needs_h_scroll {
-                // Render scroll indicator at bottom right of content area
+                // Build a compact scroll indicator
                 let scroll_hint = if needs_v_scroll && needs_h_scroll {
-                    format!("Scroll: {},{} (arrows)", clamped_scroll_x, clamped_scroll_y)
+                    // Show position with directional arrows
+                    let v_indicator = if scroll_y > 0 && scroll_y < max_scroll_y {
+                        "↕"
+                    } else if scroll_y > 0 {
+                        "↑"
+                    } else {
+                        "↓"
+                    };
+                    let h_indicator = if scroll_x > 0 && scroll_x < max_scroll_x {
+                        "↔"
+                    } else if scroll_x > 0 {
+                        "←"
+                    } else {
+                        "→"
+                    };
+                    format!(" {} {} ", v_indicator, h_indicator)
                 } else if needs_v_scroll {
-                    format!("Scroll: {} (up/down)", clamped_scroll_y)
+                    let v_indicator = if scroll_y > 0 && scroll_y < max_scroll_y {
+                        "↕"
+                    } else if scroll_y > 0 {
+                        "↑"
+                    } else {
+                        "↓"
+                    };
+                    format!(" {} ", v_indicator)
                 } else {
-                    format!("Scroll: {} (left/right)", clamped_scroll_x)
+                    let h_indicator = if scroll_x > 0 && scroll_x < max_scroll_x {
+                        "↔"
+                    } else if scroll_x > 0 {
+                        "←"
+                    } else {
+                        "→"
+                    };
+                    format!(" {} ", h_indicator)
                 };
 
-                let hint_width = scroll_hint.len() as u16;
+                let hint_width = hint_width_chars(&scroll_hint);
                 let hint_area = Rect::new(
                     padded_area.x + padded_area.width.saturating_sub(hint_width + 1),
                     padded_area.y + padded_area.height.saturating_sub(1),
@@ -999,8 +1055,8 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
                     1,
                 );
 
-                let hint_widget =
-                    Paragraph::new(scroll_hint).style(Style::default().fg(Color::DarkGray));
+                let hint_widget = Paragraph::new(scroll_hint)
+                    .style(Style::default().fg(Color::DarkGray).bg(BG_COLOR));
                 frame.render_widget(hint_widget, hint_area);
             }
         } else {
@@ -1317,46 +1373,38 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
         frame.render_widget(table, content_area);
     }
 
-    // Render copy button
+    // Render compact action bar with inline buttons
     let button_area = content_layout[3];
-    let button_text = "[C] Copy TXN ID";
-    let button_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(BORDER_STYLE)
-        .border_set(border::ROUNDED);
 
-    let button_width = button_text.len() as u16 + 4;
-    let button_height = 3;
-    let button_x = button_area.x + (button_area.width - button_width) / 2;
-    let button_y = button_area.y;
+    // Create a compact horizontal layout for actions
+    let action_bar = Line::from(vec![
+        Span::styled("  [C]", Style::default().fg(PRIMARY_COLOR)),
+        Span::styled(" Copy", Style::default().fg(Color::White)),
+        Span::raw("   "),
+        Span::styled("[S]", Style::default().fg(PRIMARY_COLOR)),
+        Span::styled(" Export SVG", Style::default().fg(Color::White)),
+        Span::raw("   "),
+        Span::styled("[Tab]", Style::default().fg(PRIMARY_COLOR)),
+        Span::styled(" View", Style::default().fg(Color::White)),
+        Span::raw("   "),
+        Span::styled("[Esc]", Style::default().fg(PRIMARY_COLOR)),
+        Span::styled(" Close", Style::default().fg(Color::White)),
+    ]);
 
-    let button_rect = Rect::new(button_x, button_y, button_width, button_height);
+    let action_paragraph = Paragraph::new(action_bar).alignment(Alignment::Center);
+    let action_rect = Rect::new(button_area.x, button_area.y + 1, button_area.width, 1);
+    frame.render_widget(action_paragraph, action_rect);
 
-    frame.render_widget(button_block, button_rect);
-
-    let button_content = Paragraph::new(button_text)
-        .style(
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )
-        .alignment(Alignment::Center);
-
-    let button_inner_area = Rect::new(
-        button_rect.x + 1,
-        button_rect.y + 1,
-        button_rect.width - 2,
-        button_rect.height - 2,
-    );
-
-    frame.render_widget(button_content, button_inner_area);
-
-    // Render help text with Tab info
-    let help_text = "Tab: Switch View | Arrows: Scroll | [S] Export SVG | [C] Copy | Esc: Close";
+    // Render minimal help text
     let help_area = content_layout[4];
+    let help_text = if is_visual {
+        "↑↓←→ Scroll"
+    } else {
+        "↑↓ Navigate"
+    };
 
     let help_msg = Paragraph::new(help_text)
-        .style(Style::default().fg(MUTED_COLOR))
+        .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
 
     frame.render_widget(help_msg, help_area);

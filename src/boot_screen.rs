@@ -245,9 +245,7 @@ impl BootScreen {
             .fg(Color::Indexed(10)) // Bright green
             .add_modifier(Modifier::BOLD);
 
-        let lora_style = Style::default()
-            .fg(lora_color)
-            .add_modifier(Modifier::BOLD);
+        let lora_style = Style::default().fg(lora_color).add_modifier(Modifier::BOLD);
 
         // Original logo split at position 34 (after LAZY, before LORA's L)
         vec![

@@ -1846,22 +1846,46 @@ impl GraphColumn {
 
     /// Create a new application column
     #[must_use]
-    pub fn application(app_id: u64, index: usize) -> Self {
+    pub fn application(app_id: u64, index: usize, label_width: usize) -> Self {
+        let full_label = format!("App #{}", app_id);
+        let label = if full_label.len() > label_width {
+            // Truncate app ID, keeping "App #" prefix
+            let available = label_width.saturating_sub(5); // "App #" is 5 chars
+            if available >= 4 {
+                format!("App #{}…", &app_id.to_string()[..available - 1])
+            } else {
+                format!("#{}", &app_id.to_string()[..label_width.saturating_sub(2).max(1)])
+            }
+        } else {
+            full_label
+        };
         Self {
             entity_type: GraphEntityType::Application,
             entity_id: app_id.to_string(),
-            label: format!("App #{}", app_id),
+            label,
             index,
         }
     }
 
     /// Create a new asset column
     #[must_use]
-    pub fn asset(asset_id: u64, index: usize) -> Self {
+    pub fn asset(asset_id: u64, index: usize, label_width: usize) -> Self {
+        let full_label = format!("ASA #{}", asset_id);
+        let label = if full_label.len() > label_width {
+            // Truncate asset ID, keeping "ASA #" prefix
+            let available = label_width.saturating_sub(5); // "ASA #" is 5 chars
+            if available >= 4 {
+                format!("ASA #{}…", &asset_id.to_string()[..available - 1])
+            } else {
+                format!("#{}", &asset_id.to_string()[..label_width.saturating_sub(2).max(1)])
+            }
+        } else {
+            full_label
+        };
         Self {
             entity_type: GraphEntityType::Asset,
             entity_id: asset_id.to_string(),
-            label: format!("ASA #{}", asset_id),
+            label,
             index,
         }
     }
@@ -1921,10 +1945,10 @@ pub struct TxnGraph {
 }
 
 impl TxnGraph {
-    /// Default column width
-    pub const DEFAULT_COLUMN_WIDTH: usize = 12;
-    /// Default spacing between columns
-    pub const DEFAULT_COLUMN_SPACING: usize = 8;
+    /// Default column width (compact to fit more columns)
+    pub const DEFAULT_COLUMN_WIDTH: usize = 8;
+    /// Default spacing between columns (reduced for compact layout)
+    pub const DEFAULT_COLUMN_SPACING: usize = 3;
 
     /// Create a new empty graph
     #[must_use]
@@ -2005,9 +2029,10 @@ impl TxnGraph {
         let current_row_index = self.rows.len();
 
         // Handle rekey_to - create column for rekey target if present
-        let rekey_col = txn.rekey_to.as_ref().map(|rekey_addr| {
-            self.get_or_create_account_column(rekey_addr)
-        });
+        let rekey_col = txn
+            .rekey_to
+            .as_ref()
+            .map(|rekey_addr| self.get_or_create_account_column(rekey_addr));
 
         let row = GraphRow {
             txn_id: txn.id.clone(),
@@ -2171,7 +2196,8 @@ impl TxnGraph {
 
         // Create new column
         let index = self.columns.len();
-        self.columns.push(GraphColumn::application(app_id, index));
+        self.columns
+            .push(GraphColumn::application(app_id, index, self.column_width));
         index
     }
 
@@ -2188,7 +2214,8 @@ impl TxnGraph {
 
         // Create new column
         let index = self.columns.len();
-        self.columns.push(GraphColumn::asset(asset_id, index));
+        self.columns
+            .push(GraphColumn::asset(asset_id, index, self.column_width));
         index
     }
 
@@ -2431,17 +2458,17 @@ impl TxnGraph {
 
                         let arrow_color = match row.txn_type {
                             TxnType::Payment => ARROW_PAYMENT,
-                            TxnType::AssetTransfer | TxnType::AssetConfig | TxnType::AssetFreeze => {
-                                ARROW_ASSET
-                            }
+                            TxnType::AssetTransfer
+                            | TxnType::AssetConfig
+                            | TxnType::AssetFreeze => ARROW_ASSET,
                             TxnType::AppCall => ARROW_APPCALL,
                             _ => ARROW_PAYMENT,
                         };
 
                         let marker_id = match row.txn_type {
-                            TxnType::AssetTransfer | TxnType::AssetConfig | TxnType::AssetFreeze => {
-                                "arrowhead-asset"
-                            }
+                            TxnType::AssetTransfer
+                            | TxnType::AssetConfig
+                            | TxnType::AssetFreeze => "arrowhead-asset",
                             TxnType::AppCall => "arrowhead-app",
                             _ => "arrowhead",
                         };
@@ -3083,6 +3110,37 @@ impl<'a> TxnGraphWidget<'a> {
         let rows_height = self.graph.rows.len() * Self::ROW_HEIGHT;
         header_height + rows_height
     }
+
+    /// Calculate required width for rendering (including tree prefix and labels)
+    #[must_use]
+    pub fn required_width(&self) -> usize {
+        if self.graph.columns.is_empty() {
+            return 0;
+        }
+
+        // Base width from columns
+        let base_width = self.graph.total_width();
+
+        // Tree prefix width
+        let max_prefix_width = self.calculate_max_prefix_width();
+
+        // Find maximum label width if labels are shown
+        let max_label_width = if self.show_labels {
+            self.graph
+                .rows
+                .iter()
+                .map(|row| row.label.chars().count())
+                .max()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Total: prefix + columns + spacing before label + label + right margin
+        let label_spacing = if max_label_width > 0 { 2 } else { 0 };
+        let right_margin = 2; // Extra space to prevent cutoff
+        max_prefix_width + base_width + label_spacing + max_label_width + right_margin
+    }
 }
 
 impl Widget for TxnGraphWidget<'_> {
@@ -3464,7 +3522,7 @@ mod tests {
                 note: "Test payment".to_string(),
                 amount: 5_000_000,
                 asset_id: None,
-            rekey_to: None,
+                rekey_to: None,
                 details: TransactionDetails::default(),
                 inner_transactions: Vec::new(),
             },
@@ -3479,7 +3537,7 @@ mod tests {
                 note: "".to_string(),
                 amount: 100,
                 asset_id: Some(31566704),
-            rekey_to: None,
+                rekey_to: None,
                 details: TransactionDetails::default(),
                 inner_transactions: Vec::new(),
             },
@@ -3494,7 +3552,7 @@ mod tests {
                 note: "".to_string(),
                 amount: 0,
                 asset_id: None,
-            rekey_to: None,
+                rekey_to: None,
                 details: TransactionDetails::default(),
                 inner_transactions: Vec::new(),
             },
@@ -3721,7 +3779,7 @@ mod tests {
 
     #[test]
     fn test_graph_column_application() {
-        let col = GraphColumn::application(12345, 1);
+        let col = GraphColumn::application(12345, 1, 12);
         assert_eq!(col.entity_type, GraphEntityType::Application);
         assert_eq!(col.entity_id, "12345");
         assert_eq!(col.label, "App #12345");
@@ -3730,7 +3788,7 @@ mod tests {
 
     #[test]
     fn test_graph_column_asset() {
-        let col = GraphColumn::asset(31566704, 2);
+        let col = GraphColumn::asset(31566704, 2, 14);
         assert_eq!(col.entity_type, GraphEntityType::Asset);
         assert_eq!(col.entity_id, "31566704");
         assert_eq!(col.label, "ASA #31566704");
@@ -4050,7 +4108,10 @@ mod tests {
     #[test]
     fn test_txn_graph_truncate_label() {
         assert_eq!(TxnGraph::truncate_label("short", 10), "short");
-        assert_eq!(TxnGraph::truncate_label("a_very_long_label", 10), "a_very_lo…");
+        assert_eq!(
+            TxnGraph::truncate_label("a_very_long_label", 10),
+            "a_very_lo…"
+        );
     }
 
     #[test]
@@ -4072,10 +4133,10 @@ mod tests {
         };
 
         let graph = TxnGraph::from_transaction(&txn);
-        
+
         // Should have 3 columns: sender, receiver, and rekey target
         assert_eq!(graph.columns.len(), 3);
-        
+
         // Row should have rekey_col set
         assert_eq!(graph.rows.len(), 1);
         assert!(graph.rows[0].rekey_col.is_some());

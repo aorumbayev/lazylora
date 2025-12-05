@@ -53,12 +53,10 @@ impl InstallSource {
         match self {
             InstallSource::Cargo => Some("cargo install lazylora --force"),
             InstallSource::Homebrew => Some("brew upgrade lazylora"),
-            InstallSource::AUR => {
-                Some("Update using your AUR helper, e.g.: yay -Syu lazylora")
-            }
-            InstallSource::Nixpkgs => {
-                Some("Update your Nix configuration and rebuild (e.g., nixos-rebuild switch or home-manager switch)")
-            }
+            InstallSource::AUR => Some("Update using your AUR helper, e.g.: yay -Syu lazylora"),
+            InstallSource::Nixpkgs => Some(
+                "Update your Nix configuration and rebuild (e.g., nixos-rebuild switch or home-manager switch)",
+            ),
             InstallSource::Binary => None,
         }
     }
@@ -488,12 +486,7 @@ mod tests {
         for path in paths {
             let exe_path = PathBuf::from(path);
             let result = detect_install_source_from_path(&exe_path, None, false);
-            assert_eq!(
-                result,
-                InstallSource::Homebrew,
-                "Failed for path: {}",
-                path
-            );
+            assert_eq!(result, InstallSource::Homebrew, "Failed for path: {}", path);
         }
     }
 
@@ -503,8 +496,7 @@ mod tests {
 
     #[test]
     fn test_detect_nix_store() {
-        let exe_path =
-            PathBuf::from("/nix/store/abc123-lazylora-1.0.0/bin/lazylora");
+        let exe_path = PathBuf::from("/nix/store/abc123-lazylora-1.0.0/bin/lazylora");
 
         let result = detect_install_source_from_path(&exe_path, None, false);
         assert_eq!(result, InstallSource::Nixpkgs);
@@ -735,21 +727,13 @@ mod tests {
         // Direct binary download works on all platforms
         // Test Linux-style path
         assert_eq!(
-            detect_install_source_from_path(
-                PathBuf::from("/usr/local/bin/lazylora"),
-                None,
-                false
-            ),
+            detect_install_source_from_path(PathBuf::from("/usr/local/bin/lazylora"), None, false),
             InstallSource::Binary
         );
 
         // Test macOS-style path
         assert_eq!(
-            detect_install_source_from_path(
-                PathBuf::from("/Applications/lazylora"),
-                None,
-                false
-            ),
+            detect_install_source_from_path(PathBuf::from("/Applications/lazylora"), None, false),
             InstallSource::Binary
         );
 

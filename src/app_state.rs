@@ -261,6 +261,10 @@ pub struct NavigationState {
     pub graph_scroll_x: u16,
     /// Vertical scroll offset for transaction graph view
     pub graph_scroll_y: u16,
+    /// Maximum horizontal scroll offset for transaction graph (computed from content)
+    pub graph_max_scroll_x: u16,
+    /// Maximum vertical scroll offset for transaction graph (computed from content)
+    pub graph_max_scroll_y: u16,
 }
 
 impl NavigationState {
@@ -287,6 +291,8 @@ impl NavigationState {
         self.block_txn_scroll = 0;
         self.graph_scroll_x = 0;
         self.graph_scroll_y = 0;
+        self.graph_max_scroll_x = 0;
+        self.graph_max_scroll_y = 0;
     }
 
     /// Returns `true` if any detail view is currently shown.
@@ -644,7 +650,7 @@ impl App {
 
         // Load configuration
         let config = AppConfig::load();
-        
+
         // Use startup network if provided, otherwise use config
         let network = startup_options.network.unwrap_or(config.network);
         let show_live = config.show_live;
@@ -678,7 +684,7 @@ impl App {
     pub async fn run(&mut self, terminal: &mut crate::tui::Tui) -> Result<()> {
         self.start_background_tasks().await;
         self.initial_data_fetch().await;
-        
+
         // Process startup search if provided
         self.process_startup_search().await;
 
@@ -1652,9 +1658,11 @@ impl App {
                 }
             }
             Focus::Transactions if self.nav.selected_transaction_index.is_some() => {
-                // Reset graph scroll position when opening transaction details
+                // Reset graph scroll position and bounds when opening transaction details
                 self.nav.graph_scroll_x = 0;
                 self.nav.graph_scroll_y = 0;
+                self.nav.graph_max_scroll_x = 0;
+                self.nav.graph_max_scroll_y = 0;
                 self.nav.show_transaction_details = true;
             }
             _ => {}
@@ -1972,8 +1980,15 @@ impl App {
 
     /// Gets the current transaction being viewed.
     fn get_current_transaction(&self) -> Option<Transaction> {
+        // First check if we have a directly viewed transaction (from search or block details)
+        if let Some(txn) = &self.data.viewed_transaction {
+            return Some(txn.clone());
+        }
+
+        // Then check if viewing a search result
         if self.ui.viewing_search_result {
-            self.nav
+            return self
+                .nav
                 .selected_transaction_id
                 .as_ref()
                 .and_then(|txn_id| {
@@ -1988,12 +2003,13 @@ impl App {
                             }
                             _ => None,
                         })
-                })
-        } else {
-            self.nav
-                .selected_transaction_index
-                .and_then(|index| self.data.transactions.get(index).cloned())
+                });
         }
+
+        // Finally fall back to selected transaction from main list
+        self.nav
+            .selected_transaction_index
+            .and_then(|index| self.data.transactions.get(index).cloned())
     }
 
     /// Move to the previous expandable section.
