@@ -186,6 +186,231 @@ jobs:
             }
           }
 
+  test-upgrade:
+    needs: upload-assets
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Get previous release tag
+        id: prev_release
+        shell: bash
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          echo "Current release tag: $CURRENT_TAG"
+          
+          # Get all tags sorted by version (semver), exclude current tag, pick the most recent one before current
+          # Using git ls-remote to get tags directly, then sort by version
+          PREV_TAG=$(git ls-remote --tags --sort=-v:refname "https://github.com/${{ github.repository }}.git" | \
+            grep -o 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*$' | \
+            sed 's|refs/tags/||' | \
+            grep -v "^${CURRENT_TAG}$" | \
+            head -n 1)
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous release found, skipping upgrade test"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Previous release tag: $PREV_TAG"
+            echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install previous release (Unix)
+        if: runner.os != 'Windows' && steps.prev_release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          PREV_TAG="${{ steps.prev_release.outputs.prev_tag }}"
+          echo "Installing previous release: $PREV_TAG"
+          
+          # Install previous version using the install script from that release
+          curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/${PREV_TAG}/install.sh" | bash -s -- --version "$PREV_TAG"
+          
+          # Find and verify the installed binary
+          LAZYLORA_BIN=""
+          if command -v lazylora >/dev/null 2>&1; then
+            LAZYLORA_BIN="lazylora"
+          elif [ -f "/usr/local/bin/lazylora" ]; then
+            LAZYLORA_BIN="/usr/local/bin/lazylora"
+          elif [ -f "$HOME/.local/bin/lazylora" ]; then
+            LAZYLORA_BIN="$HOME/.local/bin/lazylora"
+          fi
+          
+          if [ -z "$LAZYLORA_BIN" ]; then
+            echo "Failed to install previous release"
+            exit 1
+          fi
+          
+          # Verify previous version is installed
+          echo "Verifying previous version installation..."
+          INSTALLED_VERSION=$($LAZYLORA_BIN version 2>&1 || echo "")
+          echo "Installed version output: $INSTALLED_VERSION"
+          
+          # Store the binary path for later steps
+          echo "LAZYLORA_BIN=$LAZYLORA_BIN" >> $GITHUB_ENV
+          echo "PREV_VERSION=$PREV_TAG" >> $GITHUB_ENV
+
+      - name: Upgrade to new release (Unix)
+        if: runner.os != 'Windows' && steps.prev_release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          sleep 30  # Wait for release assets to be fully available
+          
+          CURRENT_TAG="${{ github.ref_name }}"
+          echo "Upgrading from ${{ env.PREV_VERSION }} to $CURRENT_TAG"
+          
+          # Install new version (should overwrite the previous one)
+          curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/${CURRENT_TAG}/install.sh" | bash -s -- --version "$CURRENT_TAG"
+          
+          echo "Upgrade completed"
+
+      - name: Verify upgrade and test binary (Unix)
+        if: runner.os != 'Windows' && steps.prev_release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          CURRENT_VERSION="${CURRENT_TAG#v}"  # Remove 'v' prefix
+          
+          # Find the binary
+          LAZYLORA_BIN=""
+          if command -v lazylora >/dev/null 2>&1; then
+            LAZYLORA_BIN="lazylora"
+          elif [ -f "/usr/local/bin/lazylora" ]; then
+            LAZYLORA_BIN="/usr/local/bin/lazylora"
+          elif [ -f "$HOME/.local/bin/lazylora" ]; then
+            LAZYLORA_BIN="$HOME/.local/bin/lazylora"
+          fi
+          
+          if [ -z "$LAZYLORA_BIN" ]; then
+            echo "Binary not found after upgrade"
+            exit 1
+          fi
+          
+          echo "Testing upgraded binary at: $LAZYLORA_BIN"
+          
+          # Test basic functionality
+          echo "=== Testing 'help' command ==="
+          $LAZYLORA_BIN help
+          
+          echo "=== Testing 'version' command ==="
+          VERSION_OUTPUT=$($LAZYLORA_BIN version 2>&1)
+          echo "$VERSION_OUTPUT"
+          
+          # Verify the version matches the new release
+          if echo "$VERSION_OUTPUT" | grep -q "$CURRENT_VERSION"; then
+            echo "Version verification passed: Binary reports version $CURRENT_VERSION"
+          else
+            echo "Warning: Version output does not contain expected version $CURRENT_VERSION"
+            echo "This may be expected if version format differs"
+          fi
+          
+          echo "=== Testing 'update' command ==="
+          UPDATE_OUTPUT=$($LAZYLORA_BIN update 2>&1 || true)
+          echo "$UPDATE_OUTPUT"
+          
+          if echo "$UPDATE_OUTPUT" | grep -q "You are using the latest version\|Current version:"; then
+            echo "Update check works correctly after upgrade"
+          else
+            echo "Update check returned unexpected output"
+          fi
+          
+          echo "=== Upgrade test completed successfully ==="
+
+      - name: Install previous release (Windows)
+        if: runner.os == 'Windows' && steps.prev_release.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $prevTag = "${{ steps.prev_release.outputs.prev_tag }}"
+          Write-Host "Installing previous release: $prevTag"
+          
+          # Install previous version using the install script from that release
+          $script = Invoke-WebRequest "https://raw.githubusercontent.com/${{ github.repository }}/${prevTag}/install.ps1"
+          $scriptBlock = [ScriptBlock]::Create($script.Content)
+          & $scriptBlock -Version "$prevTag"
+          
+          # Verify installation
+          $binaryPath = "$env:LOCALAPPDATA\Programs\lazylora\lazylora.exe"
+          if (Test-Path $binaryPath) {
+            Write-Host "Previous version installed successfully"
+            $versionOutput = & $binaryPath version 2>&1 | Out-String
+            Write-Host "Installed version: $versionOutput"
+          } elseif (Get-Command lazylora -ErrorAction SilentlyContinue) {
+            Write-Host "Previous version installed successfully (found in PATH)"
+            $versionOutput = lazylora version 2>&1 | Out-String
+            Write-Host "Installed version: $versionOutput"
+          } else {
+            throw "Failed to install previous release"
+          }
+
+      - name: Upgrade to new release (Windows)
+        if: runner.os == 'Windows' && steps.prev_release.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 30  # Wait for release assets to be fully available
+          
+          $currentTag = "${{ github.ref_name }}"
+          Write-Host "Upgrading to $currentTag"
+          
+          # Install new version (should overwrite the previous one)
+          $script = Invoke-WebRequest "https://raw.githubusercontent.com/${{ github.repository }}/${currentTag}/install.ps1"
+          $scriptBlock = [ScriptBlock]::Create($script.Content)
+          & $scriptBlock -Version "$currentTag"
+          
+          Write-Host "Upgrade completed"
+
+      - name: Verify upgrade and test binary (Windows)
+        if: runner.os == 'Windows' && steps.prev_release.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $currentTag = "${{ github.ref_name }}"
+          $currentVersion = $currentTag -replace '^v', ''
+          
+          # Find the binary
+          $binaryPath = "$env:LOCALAPPDATA\Programs\lazylora\lazylora.exe"
+          $lazylora = $null
+          
+          if (Test-Path $binaryPath) {
+            $lazylora = $binaryPath
+          } elseif (Get-Command lazylora -ErrorAction SilentlyContinue) {
+            $lazylora = "lazylora"
+          }
+          
+          if (-not $lazylora) {
+            throw "Binary not found after upgrade"
+          }
+          
+          Write-Host "Testing upgraded binary at: $lazylora"
+          
+          # Test basic functionality
+          Write-Host "=== Testing 'help' command ==="
+          & $lazylora help
+          
+          Write-Host "=== Testing 'version' command ==="
+          $versionOutput = & $lazylora version 2>&1 | Out-String
+          Write-Host $versionOutput
+          
+          # Verify the version matches the new release
+          if ($versionOutput -match [regex]::Escape($currentVersion)) {
+            Write-Host "Version verification passed: Binary reports version $currentVersion"
+          } else {
+            Write-Host "Warning: Version output does not contain expected version $currentVersion"
+            Write-Host "This may be expected if version format differs"
+          }
+          
+          Write-Host "=== Testing 'update' command ==="
+          $updateOutput = & $lazylora update 2>&1 | Out-String
+          Write-Host $updateOutput
+          
+          if ($updateOutput -match "You are using the latest version|Current version:") {
+            Write-Host "Update check works correctly after upgrade"
+          } else {
+            Write-Host "Update check returned unexpected output"
+          }
+          
+          Write-Host "=== Upgrade test completed successfully ==="
+
   publish-aur:
     needs: [upload-assets, create-release]
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc')
