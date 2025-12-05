@@ -13,10 +13,6 @@
 //! - [`asset`] - Asset types and details
 //! - [`nfd`] - NFD (Non-Fungible Domain) types
 
-// TODO: Remove these allows after full integration in Stage 2
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 // ============================================================================
 // Module Declarations
 // ============================================================================
@@ -40,10 +36,11 @@ pub use error::AlgoError;
 pub use network::Network;
 
 // Transaction types
+#[allow(unused_imports)] // OnComplete used by tests in algorand.rs
 pub use transaction::{
-    AppCallDetails, AssetConfigDetails, AssetFreezeDetails, AssetTransferDetails, BoxRef,
-    HeartbeatDetails, KeyRegDetails, OnComplete, PaymentDetails, StateProofDetails, StateSchema,
-    Transaction, TransactionDetails, TxnType, format_timestamp,
+    AppCallDetails, AssetConfigDetails, AssetFreezeDetails, AssetTransferDetails, HeartbeatDetails,
+    KeyRegDetails, OnComplete, PaymentDetails, StateProofDetails, Transaction, TransactionDetails,
+    TxnType, format_timestamp,
 };
 
 // Block types
@@ -56,7 +53,7 @@ pub use account::{
 };
 
 // Asset types
-pub use asset::{AssetDetails, AssetInfo, AssetParams};
+pub use asset::{AssetDetails, AssetInfo};
 
 // NFD types
 pub use nfd::NfdInfo;
@@ -80,6 +77,7 @@ pub enum SearchResultItem {
     Asset(AssetInfo),
 }
 
+#[allow(dead_code)] // Methods used by tests and as public API for future use
 impl SearchResultItem {
     /// Returns the type name of this search result item.
     ///

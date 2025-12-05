@@ -1,640 +1,238 @@
+//! State management module for the LazyLora TUI application.
+//!
+//! This module provides a decomposed state architecture, separating concerns into:
+//!
+//! - [`NavigationState`] - UI navigation (selections, scroll positions, view stack)
+//! - [`DataState`] - Application data (blocks, transactions, search results)
+//! - [`UiState`] - UI presentation concerns (focus, popups, toasts)
+//! - [`AppConfig`] - Persistent configuration with load/save capabilities
+//! - [`CommandHandler`] - Command execution trait and implementations
+//! - [`platform`] - Platform-specific abstractions (clipboard, paths)
+//!
+//! # Architecture
+//!
+//! The state is decomposed following the principle of separation of concerns:
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────┐
+//! │                       App                           │
+//! ├──────────────┬──────────────┬───────────────────────┤
+//! │ NavigationState │  DataState  │       UiState        │
+//! │  - selections   │  - blocks   │  - focus            │
+//! │  - scroll pos   │  - txns     │  - popups           │
+//! │  - view stack   │  - search   │  - toasts           │
+//! └──────────────┴──────────────┴───────────────────────┘
+//! ```
+//!
+//! # Example
+//!
+//! ```ignore
+//! use crate::state::{App, NavigationState, DataState, UiState, AppConfig};
+//!
+//! let app = App::new(Network::TestNet);
+//! ```
+
 use arboard::Clipboard;
 use color_eyre::Result;
 use crossterm::event::{
     self, Event, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fs;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 use tokio::time::interval;
 
-use crate::algorand::{
-    AlgoBlock, AlgoClient, BlockDetails, Network, SearchResultItem, Transaction,
+use crate::algorand::AlgoClient;
+use crate::commands::{AppCommand, InputContext, KeyMapper};
+use crate::domain::{
+    AccountDetails, AlgoBlock, AssetDetails, BlockDetails, Network, SearchResultItem, Transaction,
 };
-use crate::commands::{AppCommand, KeyMapper};
+use crate::tui::Tui;
 use crate::ui;
+
+// ============================================================================
+// Module Declarations
+// ============================================================================
+
+pub mod command_handler;
+pub mod config;
+pub mod data;
+pub mod navigation;
+pub mod platform;
+pub mod ui_state;
+
+// ============================================================================
+// Re-exports
+// ============================================================================
+
+// Navigation types
+pub use navigation::{BlockDetailTab, DetailViewMode, NavigationState};
+
+// Data types
+pub use data::DataState;
+
+// UI state types
+pub use ui_state::{Focus, PopupState, SearchType, UiState};
+
+// Configuration types
+pub use config::AppConfig;
+
+// Command handling types
+// pub use command_handler::{CommandContext, CommandHandler, CommandResult};
+
+// Platform abstractions
+// pub use platform::{clipboard, paths};
+
+// ============================================================================
+// App Message Types
+// ============================================================================
+
+/// Messages sent between async tasks and the main app loop.
+///
+/// These messages are used for async communication between background tasks
+/// (e.g., network fetches) and the main application state.
+#[derive(Debug, Clone)]
+pub enum AppMessage {
+    /// New blocks fetched from the network.
+    BlocksUpdated(Vec<AlgoBlock>),
+    /// New transactions fetched from the network.
+    TransactionsUpdated(Vec<Transaction>),
+    /// Search completed with results or error.
+    SearchCompleted(Result<Vec<SearchResultItem>, String>),
+    /// Network error occurred.
+    NetworkError(String),
+    /// Network connection established.
+    NetworkConnected,
+    /// Network switch completed successfully.
+    NetworkSwitchComplete,
+    /// Block details loaded.
+    BlockDetailsLoaded(BlockDetails),
+    /// Transaction details loaded.
+    TransactionDetailsLoaded(Box<Transaction>),
+    /// Transaction details fetch failed.
+    TransactionDetailsFailed(String),
+    /// Account details loaded.
+    AccountDetailsLoaded(Box<AccountDetails>),
+    /// Account details fetch failed.
+    AccountDetailsFailed(String),
+    /// Asset details loaded.
+    AssetDetailsLoaded(Box<AssetDetails>),
+    /// Asset details fetch failed.
+    AssetDetailsFailed(String),
+}
 
 // ============================================================================
 // Startup Options
 // ============================================================================
 
-/// Startup search type
+/// Startup search mode - perform a search immediately on startup.
 #[derive(Debug, Clone)]
 pub enum StartupSearch {
+    /// Search for a transaction by ID.
     Transaction(String),
+    /// Search for an account by address.
     Account(String),
+    /// Search for a block by round number.
     Block(u64),
+    /// Search for an asset by ID.
     Asset(u64),
 }
 
-/// Options to pass to the app on startup
+/// Options that can be passed when starting the application.
+///
+/// These options allow customization of the initial application state,
+/// such as pre-selecting a network or performing an initial search.
 #[derive(Debug, Clone, Default)]
 pub struct StartupOptions {
+    /// Network to connect to on startup.
     pub network: Option<Network>,
+    /// Search to perform immediately after startup.
     pub search: Option<StartupSearch>,
+    /// Start in graph view mode.
     pub graph_view: bool,
 }
 
 // ============================================================================
-// Configuration
+// Main App State
 // ============================================================================
 
-/// Configuration structure for persistence.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct AppConfig {
-    network: Network,
-    show_live: bool,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            network: Network::MainNet,
-            show_live: true,
-        }
-    }
-}
-
-impl AppConfig {
-    fn config_path() -> Result<PathBuf> {
-        let mut path = dirs::config_dir()
-            .ok_or_else(|| color_eyre::eyre::eyre!("Could not find config directory"))?;
-        path.push("lazylora");
-        fs::create_dir_all(&path)?;
-        path.push("config.json");
-        Ok(path)
-    }
-
-    fn load() -> Self {
-        Self::config_path()
-            .and_then(|path| {
-                let content = fs::read_to_string(&path)?;
-                let config: AppConfig = serde_json::from_str(&content)?;
-                Ok(config)
-            })
-            .unwrap_or_default()
-    }
-
-    fn save(&self) -> Result<()> {
-        let path = Self::config_path()?;
-        let content = serde_json::to_string_pretty(self)?;
-        fs::write(path, content)?;
-        Ok(())
-    }
-}
-
-// ============================================================================
-// Messages & Enums
-// ============================================================================
-
-/// Messages sent between async tasks and the main app loop.
-#[derive(Debug, Clone)]
-pub enum AppMessage {
-    BlocksUpdated(Vec<AlgoBlock>),
-    TransactionsUpdated(Vec<Transaction>),
-    SearchCompleted(Result<Vec<SearchResultItem>, String>),
-    NetworkError(String),
-    NetworkConnected,
-    NetworkSwitchComplete,
-    BlockDetailsLoaded(BlockDetails),
-    /// Transaction details loaded for viewing in popup
-    TransactionDetailsLoaded(Box<Transaction>),
-    /// Failed to load transaction details
-    TransactionDetailsFailed(String),
-    /// Account details loaded for viewing in popup
-    AccountDetailsLoaded(Box<crate::algorand::AccountDetails>),
-    /// Failed to load account details
-    AccountDetailsFailed(String),
-    /// Asset details loaded for viewing in popup
-    AssetDetailsLoaded(Box<crate::algorand::AssetDetails>),
-    /// Failed to load asset details
-    AssetDetailsFailed(String),
-}
-
-/// Represents which UI panel currently has focus.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Focus {
-    #[default]
-    Blocks,
-    Transactions,
-}
-
-/// Represents the current popup/modal state.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum PopupState {
-    #[default]
-    None,
-    /// Network selection popup with the currently highlighted index.
-    NetworkSelect(usize),
-    /// Search popup with query text and search type.
-    SearchWithType(String, SearchType),
-    /// Message/notification popup.
-    Message(String),
-    /// Search results display with indexed items.
-    SearchResults(Vec<(usize, SearchResultItem)>),
-}
-
-impl PopupState {
-    /// Returns `true` if there is an active popup.
-    #[must_use]
-    pub const fn is_active(&self) -> bool {
-        !matches!(self, Self::None)
-    }
-
-    /// Returns the search query and type if in search mode.
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn as_search(&self) -> Option<(&str, SearchType)> {
-        match self {
-            Self::SearchWithType(query, search_type) => Some((query.as_str(), *search_type)),
-            _ => None,
-        }
-    }
-
-    /// Returns the search results if displaying results.
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn as_search_results(&self) -> Option<&[(usize, SearchResultItem)]> {
-        match self {
-            Self::SearchResults(results) => Some(results.as_slice()),
-            _ => None,
-        }
-    }
-
-    /// Returns the network select index if in network select mode.
-    #[must_use]
-    #[allow(dead_code)]
-    pub const fn as_network_select(&self) -> Option<usize> {
-        match self {
-            Self::NetworkSelect(index) => Some(*index),
-            _ => None,
-        }
-    }
-}
-
-/// The type of search to perform.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SearchType {
-    #[default]
-    Transaction,
-    Asset,
-    Account,
-    Block,
-}
-
-/// The view mode for transaction/block details popup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DetailViewMode {
-    #[default]
-    Table,
-    Visual,
-}
-
-/// The tab in the block details popup
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum BlockDetailTab {
-    #[default]
-    Info,
-    Transactions,
-}
-
-impl SearchType {
-    #[must_use]
-    pub const fn as_str(&self) -> &str {
-        match self {
-            Self::Transaction => "Transaction",
-            Self::Asset => "Asset",
-            Self::Account => "Account",
-            Self::Block => "Block",
-        }
-    }
-
-    /// Cycles to the next search type.
-    #[must_use]
-    pub const fn next(self) -> Self {
-        match self {
-            Self::Transaction => Self::Block,
-            Self::Block => Self::Account,
-            Self::Account => Self::Asset,
-            Self::Asset => Self::Transaction,
-        }
-    }
-}
-
-// ============================================================================
-// State Sub-Structures
-// ============================================================================
-
-/// Navigation state: selection indices, scroll positions, and detail view flags.
-#[derive(Debug, Default)]
-pub struct NavigationState {
-    /// Scroll position for blocks list (in pixels/rows).
-    pub block_scroll: u16,
-    /// Scroll position for transactions list (in pixels/rows).
-    pub transaction_scroll: u16,
-    /// Currently selected block index in the blocks list.
-    pub selected_block_index: Option<usize>,
-    /// Currently selected transaction index in the transactions list.
-    pub selected_transaction_index: Option<usize>,
-    /// The block ID of the currently selected block (for stable selection across updates).
-    pub selected_block_id: Option<u64>,
-    /// The transaction ID of the currently selected transaction (for stable selection).
-    pub selected_transaction_id: Option<String>,
-    /// Whether the block details popup is shown.
-    pub show_block_details: bool,
-    /// Whether the transaction details popup is shown.
-    pub show_transaction_details: bool,
-    /// Whether the account details popup is shown.
-    pub show_account_details: bool,
-    /// Whether the asset details popup is shown.
-    pub show_asset_details: bool,
-    /// Current tab in block details popup
-    pub block_detail_tab: BlockDetailTab,
-    /// Selected transaction index within block details
-    pub block_txn_index: Option<usize>,
-    /// Scroll position for block transactions list
-    pub block_txn_scroll: u16,
-    /// Horizontal scroll offset for transaction graph view
-    pub graph_scroll_x: u16,
-    /// Vertical scroll offset for transaction graph view
-    pub graph_scroll_y: u16,
-    /// Maximum horizontal scroll offset for transaction graph (computed from content)
-    pub graph_max_scroll_x: u16,
-    /// Maximum vertical scroll offset for transaction graph (computed from content)
-    pub graph_max_scroll_y: u16,
-}
-
-impl NavigationState {
-    /// Creates a new `NavigationState` with default values.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Resets all navigation state (useful when switching networks).
-    pub fn reset(&mut self) {
-        self.block_scroll = 0;
-        self.transaction_scroll = 0;
-        self.selected_block_index = None;
-        self.selected_transaction_index = None;
-        self.selected_block_id = None;
-        self.selected_transaction_id = None;
-        self.show_block_details = false;
-        self.show_transaction_details = false;
-        self.show_account_details = false;
-        self.show_asset_details = false;
-        self.block_detail_tab = BlockDetailTab::default();
-        self.block_txn_index = None;
-        self.block_txn_scroll = 0;
-        self.graph_scroll_x = 0;
-        self.graph_scroll_y = 0;
-        self.graph_max_scroll_x = 0;
-        self.graph_max_scroll_y = 0;
-    }
-
-    /// Returns `true` if any detail view is currently shown.
-    #[must_use]
-    pub const fn is_showing_details(&self) -> bool {
-        self.show_block_details
-            || self.show_transaction_details
-            || self.show_account_details
-            || self.show_asset_details
-    }
-
-    /// Closes all detail views.
-    pub fn close_details(&mut self) {
-        self.show_block_details = false;
-        self.show_transaction_details = false;
-        self.show_account_details = false;
-        self.show_asset_details = false;
-    }
-
-    /// Selects a block by index and updates the stable ID.
-    pub fn select_block(&mut self, index: usize, blocks: &[AlgoBlock]) {
-        self.selected_block_index = Some(index);
-        self.selected_block_id = blocks.get(index).map(|b| b.id);
-    }
-
-    /// Selects a transaction by index and updates the stable ID.
-    pub fn select_transaction(&mut self, index: usize, transactions: &[Transaction]) {
-        self.selected_transaction_index = Some(index);
-        self.selected_transaction_id = transactions.get(index).map(|t| t.id.clone());
-    }
-
-    /// Clears block selection.
-    pub fn clear_block_selection(&mut self) {
-        self.selected_block_index = None;
-        self.selected_block_id = None;
-    }
-
-    /// Clears transaction selection.
-    pub fn clear_transaction_selection(&mut self) {
-        self.selected_transaction_index = None;
-        self.selected_transaction_id = None;
-    }
-
-    /// Cycles the block detail tab between Info and Transactions.
-    pub fn cycle_block_detail_tab(&mut self) {
-        self.block_detail_tab = match self.block_detail_tab {
-            BlockDetailTab::Info => BlockDetailTab::Transactions,
-            BlockDetailTab::Transactions => BlockDetailTab::Info,
-        };
-    }
-
-    /// Selects a transaction within the block details view.
-    #[allow(dead_code)]
-    pub fn select_block_txn(&mut self, index: usize) {
-        self.block_txn_index = Some(index);
-    }
-
-    /// Moves the block transaction selection up.
-    pub fn move_block_txn_up(&mut self) {
-        if let Some(idx) = self.block_txn_index
-            && idx > 0
-        {
-            self.block_txn_index = Some(idx - 1);
-            // Adjust scroll if needed (each txn item is 2 lines)
-            let item_height: u16 = 2;
-            let new_pos = (idx - 1) as u16 * item_height;
-            if new_pos < self.block_txn_scroll {
-                self.block_txn_scroll = new_pos;
-            }
-        }
-    }
-
-    /// Moves the block transaction selection down.
-    pub fn move_block_txn_down(&mut self, max: usize, visible_height: u16) {
-        let item_height: u16 = 2;
-        if let Some(idx) = self.block_txn_index {
-            if idx < max {
-                self.block_txn_index = Some(idx + 1);
-                // Adjust scroll if needed
-                let new_pos = (idx + 1) as u16 * item_height;
-                let visible_end = self.block_txn_scroll + visible_height;
-                if new_pos + item_height > visible_end {
-                    self.block_txn_scroll = (new_pos + item_height).saturating_sub(visible_height);
-                }
-            }
-        } else if max > 0 {
-            self.block_txn_index = Some(0);
-            self.block_txn_scroll = 0;
-        }
-    }
-}
-
-/// Data state: blocks, transactions, and search results.
-#[derive(Debug, Default)]
-pub struct DataState {
-    /// List of recent blocks.
-    pub blocks: Vec<AlgoBlock>,
-    /// List of recent transactions.
-    pub transactions: Vec<Transaction>,
-    /// Filtered search results with their original indices.
-    pub filtered_search_results: Vec<(usize, SearchResultItem)>,
-    /// Currently loaded block details (for block details popup)
-    pub block_details: Option<BlockDetails>,
-    /// Currently viewed transaction details (for transaction details popup)
-    pub viewed_transaction: Option<Transaction>,
-    /// Currently viewed account details (for account details popup)
-    pub viewed_account: Option<crate::algorand::AccountDetails>,
-    /// Currently viewed asset details (for asset details popup)
-    pub viewed_asset: Option<crate::algorand::AssetDetails>,
-}
-
-impl DataState {
-    /// Creates a new `DataState` with empty collections.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Clears all data (useful when switching networks).
-    pub fn clear(&mut self) {
-        self.blocks.clear();
-        self.transactions.clear();
-        self.filtered_search_results.clear();
-        self.block_details = None;
-        self.viewed_transaction = None;
-        self.viewed_account = None;
-        self.viewed_asset = None;
-    }
-
-    /// Returns `true` if there are no blocks.
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn has_no_blocks(&self) -> bool {
-        self.blocks.is_empty()
-    }
-
-    /// Returns `true` if there are no transactions.
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn has_no_transactions(&self) -> bool {
-        self.transactions.is_empty()
-    }
-
-    /// Finds a block index by its ID.
-    #[must_use]
-    pub fn find_block_index(&self, block_id: u64) -> Option<usize> {
-        self.blocks.iter().position(|b| b.id == block_id)
-    }
-
-    /// Finds a transaction index by its ID.
-    #[must_use]
-    pub fn find_transaction_index(&self, txn_id: &str) -> Option<usize> {
-        self.transactions.iter().position(|t| t.id == txn_id)
-    }
-
-    /// Gets a transaction by ID from search results.
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn find_search_result_transaction(&self, txn_id: &str) -> Option<&Transaction> {
-        self.filtered_search_results
-            .iter()
-            .find_map(|(_, item)| match item {
-                SearchResultItem::Transaction(t) if t.id == txn_id => Some(t.as_ref()),
-                _ => None,
-            })
-    }
-}
-
-/// UI state: focus, popup state, and viewing flags.
-#[derive(Debug, Default)]
-pub struct UiState {
-    /// Which panel currently has focus.
-    pub focus: Focus,
-    /// Current popup/modal state.
-    pub popup_state: PopupState,
-    /// Whether we're currently viewing a search result (affects transaction details display).
-    pub viewing_search_result: bool,
-    /// The view mode for detail popups (Visual or Table).
-    pub detail_view_mode: DetailViewMode,
-    /// Set of expanded section names in transaction details (e.g., "app_args", "accounts").
-    pub expanded_sections: HashSet<String>,
-    /// Currently focused expandable section index in transaction details.
-    pub detail_section_index: Option<usize>,
-    /// Whether the detail popup is in fullscreen mode.
-    pub detail_fullscreen: bool,
-    /// Toast notification message and remaining ticks (non-blocking overlay).
-    pub toast: Option<(String, u8)>,
-}
-
-impl UiState {
-    /// Creates a new `UiState` with default values.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Cycles focus between Blocks and Transactions panels only.
-    pub fn cycle_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Blocks => Focus::Transactions,
-            Focus::Transactions => Focus::Blocks,
-        };
-    }
-
-    /// Returns `true` if the popup is active.
-    #[must_use]
-    pub fn has_active_popup(&self) -> bool {
-        self.popup_state.is_active()
-    }
-
-    /// Dismisses the current popup.
-    pub fn dismiss_popup(&mut self) {
-        self.popup_state = PopupState::None;
-    }
-
-    /// Shows a message popup.
-    pub fn show_message(&mut self, message: impl Into<String>) {
-        self.popup_state = PopupState::Message(message.into());
-    }
-
-    /// Shows a toast notification (non-blocking overlay that auto-dismisses).
-    /// Duration is in ticks (each tick is ~100ms in the main loop).
-    pub fn show_toast(&mut self, message: impl Into<String>, ticks: u8) {
-        self.toast = Some((message.into(), ticks));
-    }
-
-    /// Decrements the toast countdown. Returns true if toast should be removed.
-    pub fn tick_toast(&mut self) -> bool {
-        if let Some((_, ref mut ticks)) = self.toast {
-            if *ticks > 1 {
-                *ticks -= 1;
-                false
-            } else {
-                self.toast = None;
-                true
-            }
-        } else {
-            false
-        }
-    }
-
-    /// Opens the search popup.
-    pub fn open_search(&mut self) {
-        self.popup_state = PopupState::SearchWithType(String::new(), SearchType::Transaction);
-    }
-
-    /// Opens the network selection popup with the given current index.
-    pub fn open_network_select(&mut self, current_index: usize) {
-        self.popup_state = PopupState::NetworkSelect(current_index);
-    }
-
-    /// Updates the search query text.
-    pub fn update_search_query(&mut self, new_query: String, search_type: SearchType) {
-        self.popup_state = PopupState::SearchWithType(new_query, search_type);
-    }
-
-    /// Switches to the next search type while preserving the query.
-    pub fn cycle_search_type(&mut self, query: String, current_type: SearchType) {
-        self.popup_state = PopupState::SearchWithType(query, current_type.next());
-    }
-
-    /// Updates the network selection index.
-    pub fn update_network_selection(&mut self, index: usize) {
-        self.popup_state = PopupState::NetworkSelect(index);
-    }
-
-    /// Sets search results popup.
-    pub fn show_search_results(&mut self, results: Vec<(usize, SearchResultItem)>) {
-        self.popup_state = PopupState::SearchResults(results);
-    }
-
-    /// Toggles the detail view mode between Visual and Table.
-    pub fn toggle_detail_view_mode(&mut self) {
-        self.detail_view_mode = match self.detail_view_mode {
-            DetailViewMode::Visual => DetailViewMode::Table,
-            DetailViewMode::Table => DetailViewMode::Visual,
-        };
-    }
-
-    /// Toggles whether a section is expanded in transaction details.
-    pub fn toggle_section(&mut self, section_name: &str) {
-        if self.expanded_sections.contains(section_name) {
-            self.expanded_sections.remove(section_name);
-        } else {
-            self.expanded_sections.insert(section_name.to_string());
-        }
-    }
-
-    /// Returns whether a section is expanded.
-    pub fn is_section_expanded(&self, section_name: &str) -> bool {
-        self.expanded_sections.contains(section_name)
-    }
-
-    /// Resets expanded sections and fullscreen state (call when closing details).
-    pub fn reset_expanded_sections(&mut self) {
-        self.expanded_sections.clear();
-        self.detail_section_index = None;
-        self.detail_fullscreen = false;
-    }
-
-    /// Toggles fullscreen mode for detail popups.
-    #[allow(dead_code)]
-    pub fn toggle_fullscreen(&mut self) {
-        self.detail_fullscreen = !self.detail_fullscreen;
-    }
-}
-
-// ============================================================================
-// Main App Structure
-// ============================================================================
-
-/// The main application state, composed of focused sub-states.
+/// The main application state container.
+///
+/// This struct holds all application state including:
+/// - Navigation state (selections, scroll positions)
+/// - Data state (blocks, transactions, search results)
+/// - UI state (focus, popups, toasts)
+/// - Network client and configuration
+/// - Async communication channels
+///
+/// # Architecture
+///
+/// The `App` struct uses a decomposed state architecture where different
+/// concerns are separated into sub-modules. This makes the codebase more
+/// maintainable and testable.
+///
+/// # Example
+///
+/// ```ignore
+/// use crate::state::App;
+/// use crate::domain::Network;
+///
+/// let app = App::new(Network::TestNet);
+/// ```
 #[derive(Debug)]
 pub struct App {
-    // === Sub-states ===
-    /// Navigation state (selections, scroll positions, detail views).
+    // ========================================================================
+    // Sub-states (decomposed concerns)
+    // ========================================================================
+    /// Navigation state - selections, scroll positions, view stack.
     pub nav: NavigationState,
-    /// Data state (blocks, transactions, search results).
+
+    /// Data state - blocks, transactions, search results.
     pub data: DataState,
-    /// UI state (focus, popups, viewing flags).
+
+    /// UI state - focus, popups, toasts.
     pub ui: UiState,
 
-    // === App-level state ===
-    /// Current network.
+    // ========================================================================
+    // App-level state
+    // ========================================================================
+    /// Current network (MainNet, TestNet, LocalNet).
     pub network: Network,
+
     /// Whether live updates are enabled.
     pub show_live: bool,
-    /// Whether the app should exit.
+
+    /// Whether the application should exit.
     pub exit: bool,
-    /// Animation tick counter for UI animations (e.g., logo shimmer).
+
+    /// Animation tick counter for UI animations.
     pub animation_tick: u64,
 
-    // === Channels ===
+    // ========================================================================
+    // Async Communication Channels
+    // ========================================================================
+    /// Sender for app messages (cloned for background tasks).
     message_tx: mpsc::UnboundedSender<AppMessage>,
+
+    /// Receiver for app messages.
     message_rx: mpsc::UnboundedReceiver<AppMessage>,
+
+    /// Watch channel for live updates toggle.
     live_updates_tx: watch::Sender<bool>,
+
+    /// Watch channel for network changes.
     network_tx: watch::Sender<Network>,
 
-    // === Client ===
+    // ========================================================================
+    // Network Client
+    // ========================================================================
+    /// Algorand client for network requests.
     client: AlgoClient,
 
-    // === Startup Options ===
+    // ========================================================================
+    // Startup Options
+    // ========================================================================
+    /// Options passed at startup (e.g., initial search).
     startup_options: Option<StartupOptions>,
 }
 
@@ -681,7 +279,7 @@ impl App {
     ///
     /// # Errors
     /// Returns an error if the terminal operations fail.
-    pub async fn run(&mut self, terminal: &mut crate::tui::Tui) -> Result<()> {
+    pub async fn run(&mut self, terminal: &mut Tui) -> Result<()> {
         self.start_background_tasks().await;
         self.initial_data_fetch().await;
 
@@ -1045,6 +643,41 @@ impl App {
         let context = self.get_input_context();
         let command = KeyMapper::map_key(key_event, &context);
         self.execute_command(command).await
+    }
+
+    /// Determines the current input context based on application state.
+    ///
+    /// This method examines the current popup state and navigation state
+    /// to determine which keybindings should be active.
+    #[must_use]
+    pub fn get_input_context(&self) -> InputContext {
+        // Check popup state first (popups take precedence)
+        match &self.ui.popup_state {
+            PopupState::NetworkSelect(_) => InputContext::NetworkSelect,
+            PopupState::SearchWithType(_, _) => InputContext::SearchInput,
+            PopupState::SearchResults(_) => InputContext::SearchResults,
+            PopupState::Message(_) => InputContext::MessagePopup,
+            PopupState::None => {
+                // No popup - check if showing details
+                if self.nav.show_block_details {
+                    InputContext::BlockDetailView
+                } else if self.nav.show_transaction_details {
+                    InputContext::DetailView
+                } else {
+                    InputContext::Main
+                }
+            }
+        }
+    }
+
+    /// Returns the current focus as a string for display purposes.
+    #[must_use]
+    #[allow(dead_code)]
+    pub const fn focus_name(&self) -> &'static str {
+        match self.ui.focus {
+            Focus::Blocks => "Blocks",
+            Focus::Transactions => "Transactions",
+        }
     }
 
     /// Executes an application command.
@@ -1953,7 +1586,7 @@ impl App {
             return vec![];
         };
 
-        use crate::algorand::TransactionDetails;
+        use crate::domain::TransactionDetails;
         match &txn.details {
             TransactionDetails::AppCall(app_details) => {
                 let mut sections = Vec::new();
@@ -1996,9 +1629,7 @@ impl App {
                         .filtered_search_results
                         .iter()
                         .find_map(|(_, item)| match item {
-                            crate::algorand::SearchResultItem::Transaction(t)
-                                if &t.id == txn_id =>
-                            {
+                            SearchResultItem::Transaction(t) if &t.id == txn_id => {
                                 Some((**t).clone())
                             }
                             _ => None,

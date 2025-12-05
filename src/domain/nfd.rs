@@ -4,6 +4,9 @@
 //! a naming service on Algorand that provides human-readable names
 //! for Algorand addresses (e.g., "alice.algo").
 
+// Helper methods are part of the public API but not yet all used in the application
+#![allow(dead_code)]
+
 use serde_json::Value;
 
 // ============================================================================

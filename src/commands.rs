@@ -21,8 +21,6 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::app_state::{App, Focus, PopupState};
-
 // ============================================================================
 // Input Context
 // ============================================================================
@@ -348,47 +346,6 @@ impl KeyMapper {
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ') => AppCommand::Dismiss,
             KeyCode::Char('q') => AppCommand::Quit,
             _ => AppCommand::Noop,
-        }
-    }
-}
-
-// ============================================================================
-// App Extension for Input Context
-// ============================================================================
-
-impl App {
-    /// Determines the current input context based on application state.
-    ///
-    /// This method examines the current popup state and navigation state
-    /// to determine which keybindings should be active.
-    #[must_use]
-    pub fn get_input_context(&self) -> InputContext {
-        // Check popup state first (popups take precedence)
-        match &self.ui.popup_state {
-            PopupState::NetworkSelect(_) => InputContext::NetworkSelect,
-            PopupState::SearchWithType(_, _) => InputContext::SearchInput,
-            PopupState::SearchResults(_) => InputContext::SearchResults,
-            PopupState::Message(_) => InputContext::MessagePopup,
-            PopupState::None => {
-                // No popup - check if showing details
-                if self.nav.show_block_details {
-                    InputContext::BlockDetailView
-                } else if self.nav.show_transaction_details {
-                    InputContext::DetailView
-                } else {
-                    InputContext::Main
-                }
-            }
-        }
-    }
-
-    /// Returns the current focus as a string for display purposes.
-    #[must_use]
-    #[allow(dead_code)]
-    pub const fn focus_name(&self) -> &'static str {
-        match self.ui.focus {
-            Focus::Blocks => "Blocks",
-            Focus::Transactions => "Transactions",
         }
     }
 }

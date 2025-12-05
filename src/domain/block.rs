@@ -3,6 +3,9 @@
 //! This module defines block-related types including basic block info
 //! and detailed block information with transactions.
 
+// Helper methods are part of the public API but not yet all used in the application
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use super::transaction::{Transaction, TxnType};

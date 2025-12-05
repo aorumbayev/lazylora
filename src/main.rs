@@ -3,12 +3,12 @@ use color_eyre::eyre::Result;
 use std::process::exit;
 
 mod algorand;
-mod app_state;
 mod boot_screen;
 mod client;
 mod commands;
 mod constants;
 mod domain;
+mod state;
 mod theme;
 mod tui;
 mod ui;
@@ -16,8 +16,8 @@ mod updater;
 mod widgets;
 
 use algorand::Network;
-use app_state::{App, StartupOptions, StartupSearch};
 use boot_screen::BootScreen;
+use state::{App, StartupOptions, StartupSearch};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

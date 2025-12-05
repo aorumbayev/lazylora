@@ -3,6 +3,9 @@
 //! This module defines asset-related types including basic asset info
 //! for search results and detailed asset information for popups.
 
+// Helper methods are part of the public API but not yet all used in the application
+#![allow(dead_code)]
+
 // ============================================================================
 // Asset Info
 // ============================================================================

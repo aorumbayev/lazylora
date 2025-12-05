@@ -3,6 +3,9 @@
 //! This module defines account-related types including basic account info
 //! for search results and detailed account information for popups.
 
+// Helper methods are part of the public API but not yet all used in the application
+#![allow(dead_code)]
+
 use super::nfd::NfdInfo;
 
 // ============================================================================

@@ -1,75 +1,1018 @@
-//! Algorand API client and domain type facade.
-//!
-//! This module provides a facade that re-exports domain types from `crate::domain`
-//! and provides the `AlgoClient` for interacting with Algorand networks.
-//!
-//! # Migration Note
-//!
-//! This file is transitioning to a thin facade. Eventually (Stage 3), it will be deleted
-//! and all code will import from `crate::domain` and `crate::client` directly.
-//!
-//! For now:
-//! - Domain types are re-exported from `crate::domain` for compatibility
-//! - `AlgoClient` remains here (will move to `crate::client` in Stage 3)
-
 use crate::state::SearchType;
 use color_eyre::Result;
+use ratatui::style::Color;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use thiserror::Error;
 
 // ============================================================================
-// Re-export Domain Types
+// Error Types
 // ============================================================================
 
-// Re-export all domain types so existing code using `crate::algorand::Type` continues to work
-pub use crate::domain::{
-    AccountAssetHolding,
-    // Account types
-    AccountDetails,
-    AccountInfo,
-    // Block types
-    AlgoBlock,
-    // Error types
-    AlgoError,
+/// Custom error type for Algorand client operations
+#[derive(Debug, Error)]
+pub enum AlgoError {
+    #[error("Network error: {0}")]
+    Network(#[from] reqwest::Error),
 
-    AppCallDetails,
-    AppLocalState,
-    AssetConfigDetails,
-    // Asset types
-    AssetDetails,
-    AssetFreezeDetails,
-    AssetInfo,
+    #[error("Parse error: {message}")]
+    Parse { message: String },
 
-    AssetTransferDetails,
-    BlockDetails,
-    BlockInfo,
+    #[error("{entity} '{id}' not found")]
+    NotFound { entity: &'static str, id: String },
 
-    CreatedAppInfo,
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+}
 
-    CreatedAssetInfo,
-    HeartbeatDetails,
+impl AlgoError {
+    /// Create a new parse error with the given message
+    #[must_use]
+    pub fn parse(message: impl Into<String>) -> Self {
+        Self::Parse {
+            message: message.into(),
+        }
+    }
 
-    KeyRegDetails,
-    // Network type (from domain)
-    Network,
+    /// Create a new not found error
+    #[must_use]
+    pub fn not_found(entity: &'static str, id: impl Into<String>) -> Self {
+        Self::NotFound {
+            entity,
+            id: id.into(),
+        }
+    }
 
-    // NFD types
-    NfdInfo,
-    ParticipationInfo,
-    PaymentDetails,
-    // Search result types
-    SearchResultItem,
+    /// Create a new invalid input error
+    #[must_use]
+    pub fn invalid_input(message: impl Into<String>) -> Self {
+        Self::InvalidInput(message.into())
+    }
 
-    StateProofDetails,
-    // Transaction types
-    Transaction,
-    count_transactions,
-    // Utility functions (used internally by AlgoClient)
-    format_timestamp,
-};
+    /// Convert to a color_eyre::Report for API compatibility
+    #[must_use = "this converts the error into a Report for display"]
+    pub fn into_report(self) -> color_eyre::Report {
+        color_eyre::eyre::eyre!("{}", self)
+    }
+}
 
 // ============================================================================
-// Algorand API Client
+// Network Configuration
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::enum_variant_names)]
+pub enum Network {
+    MainNet,
+    TestNet,
+    LocalNet,
+}
+
+impl Network {
+    #[must_use]
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::MainNet => "MainNet",
+            Self::TestNet => "TestNet",
+            Self::LocalNet => "LocalNet",
+        }
+    }
+
+    #[must_use]
+    pub const fn indexer_url(&self) -> &str {
+        match self {
+            Self::MainNet => "https://mainnet-idx.algonode.cloud",
+            Self::TestNet => "https://testnet-idx.algonode.cloud",
+            Self::LocalNet => "http://localhost:8980",
+        }
+    }
+
+    #[must_use]
+    pub const fn algod_url(&self) -> &str {
+        match self {
+            Self::MainNet => "https://mainnet-api.algonode.cloud",
+            Self::TestNet => "https://testnet-api.algonode.cloud",
+            Self::LocalNet => "http://localhost:4001",
+        }
+    }
+
+    /// Returns the NFD API base URL for the network.
+    /// NFD is only available on MainNet and TestNet.
+    #[must_use]
+    pub const fn nfd_api_url(&self) -> Option<&str> {
+        match self {
+            Self::MainNet => Some("https://api.nf.domains"),
+            Self::TestNet => Some("https://api.testnet.nf.domains"),
+            Self::LocalNet => None, // NFD not available on LocalNet
+        }
+    }
+
+    /// Returns whether NFD lookups are supported on this network.
+    #[must_use]
+    pub const fn supports_nfd(&self) -> bool {
+        matches!(self, Self::MainNet | Self::TestNet)
+    }
+}
+
+// ============================================================================
+// Transaction Types
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TxnType {
+    Payment,
+    AppCall,
+    AssetTransfer,
+    AssetConfig,
+    AssetFreeze,
+    KeyReg,
+    StateProof,
+    Heartbeat,
+    Unknown,
+}
+
+impl TxnType {
+    #[must_use]
+    pub const fn as_str(&self) -> &str {
+        match self {
+            Self::Payment => "Payment",
+            Self::AppCall => "App Call",
+            Self::AssetTransfer => "Asset Transfer",
+            Self::AssetConfig => "Asset Config",
+            Self::AssetFreeze => "Asset Freeze",
+            Self::KeyReg => "Key Registration",
+            Self::StateProof => "State Proof",
+            Self::Heartbeat => "Heartbeat",
+            Self::Unknown => "Unknown",
+        }
+    }
+
+    #[must_use]
+    pub const fn color(&self) -> Color {
+        match self {
+            Self::Payment => Color::Green,
+            Self::AppCall => Color::Blue,
+            Self::AssetTransfer => Color::Yellow,
+            Self::AssetConfig => Color::Cyan,
+            Self::AssetFreeze => Color::Magenta,
+            Self::KeyReg => Color::Red,
+            Self::StateProof => Color::Gray,
+            Self::Heartbeat => Color::White,
+            Self::Unknown => Color::DarkGray,
+        }
+    }
+
+    /// Determine transaction type from JSON data
+    #[must_use]
+    fn from_json(txn_json: &Value) -> Self {
+        if txn_json["payment-transaction"].is_object() {
+            Self::Payment
+        } else if txn_json["application-transaction"].is_object() {
+            Self::AppCall
+        } else if txn_json["asset-transfer-transaction"].is_object() {
+            Self::AssetTransfer
+        } else if txn_json["asset-config-transaction"].is_object() {
+            Self::AssetConfig
+        } else if txn_json["asset-freeze-transaction"].is_object() {
+            Self::AssetFreeze
+        } else if txn_json["keyreg-transaction"].is_object() {
+            Self::KeyReg
+        } else if txn_json["state-proof-transaction"].is_object() {
+            Self::StateProof
+        } else if txn_json["heartbeat-transaction"].is_object() {
+            Self::Heartbeat
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+// ============================================================================
+// Transaction Details - Type-specific metadata
+// ============================================================================
+
+/// Type-specific transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum TransactionDetails {
+    #[default]
+    None,
+    Payment(PaymentDetails),
+    AssetTransfer(AssetTransferDetails),
+    AssetConfig(AssetConfigDetails),
+    AssetFreeze(AssetFreezeDetails),
+    AppCall(AppCallDetails),
+    KeyReg(KeyRegDetails),
+    StateProof(StateProofDetails),
+    Heartbeat(HeartbeatDetails),
+}
+
+impl TransactionDetails {
+    /// Returns true if this transaction creates something (app, asset)
+    #[must_use]
+    #[allow(dead_code)] // Public API for external use
+    pub fn is_creation(&self) -> bool {
+        match self {
+            Self::AssetConfig(details) => details.asset_id.is_none() && details.total.is_some(),
+            Self::AppCall(details) => details.app_id == 0,
+            _ => false,
+        }
+    }
+
+    /// Returns the created entity ID if this was a creation transaction
+    #[must_use]
+    #[allow(dead_code)] // Public API for external use
+    pub fn created_id(&self) -> Option<u64> {
+        match self {
+            Self::AssetConfig(details) => details.created_asset_id,
+            Self::AppCall(details) => details.created_app_id,
+            _ => None,
+        }
+    }
+}
+
+/// Payment transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PaymentDetails {
+    /// Address to receive remaining funds when closing out
+    pub close_remainder_to: Option<String>,
+    /// Amount sent to close-to address
+    pub close_amount: Option<u64>,
+}
+
+/// Asset transfer transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AssetTransferDetails {
+    /// For clawback transactions, the address being clawed back from
+    pub asset_sender: Option<String>,
+    /// Address to receive remaining asset holdings when closing out
+    pub close_to: Option<String>,
+    /// Amount of asset sent to close-to address
+    pub close_amount: Option<u64>,
+}
+
+/// Asset configuration transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AssetConfigDetails {
+    /// Asset ID for modify/destroy (None for create)
+    pub asset_id: Option<u64>,
+    /// Set after creation - the ID of the created asset
+    pub created_asset_id: Option<u64>,
+    /// Total number of units of this asset
+    pub total: Option<u64>,
+    /// Number of decimal places for asset display
+    pub decimals: Option<u64>,
+    /// Whether asset holdings are frozen by default
+    pub default_frozen: Option<bool>,
+    /// Asset name
+    pub asset_name: Option<String>,
+    /// Asset unit name
+    pub unit_name: Option<String>,
+    /// URL with asset metadata
+    pub url: Option<String>,
+    /// Hash of metadata (32 bytes)
+    pub metadata_hash: Option<String>,
+    /// Manager address - can change asset config
+    pub manager: Option<String>,
+    /// Reserve address - holds non-minted units
+    pub reserve: Option<String>,
+    /// Freeze address - can freeze/unfreeze holdings
+    pub freeze: Option<String>,
+    /// Clawback address - can revoke holdings
+    pub clawback: Option<String>,
+}
+
+/// Asset freeze transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AssetFreezeDetails {
+    /// Whether the target is being frozen or unfrozen
+    pub frozen: bool,
+    /// Address whose asset holdings are being frozen/unfrozen
+    pub freeze_target: String,
+}
+
+/// Application call transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AppCallDetails {
+    /// Application ID (0 for creation)
+    pub app_id: u64,
+    /// Set after creation - the ID of the created application
+    pub created_app_id: Option<u64>,
+    /// Type of application call
+    pub on_complete: OnComplete,
+    /// Approval program (Base64 encoded)
+    pub approval_program: Option<String>,
+    /// Clear state program (Base64 encoded)
+    pub clear_state_program: Option<String>,
+    /// Application arguments (Base64 encoded)
+    pub app_args: Vec<String>,
+    /// Referenced accounts
+    pub accounts: Vec<String>,
+    /// Referenced applications
+    pub foreign_apps: Vec<u64>,
+    /// Referenced assets
+    pub foreign_assets: Vec<u64>,
+    /// Box references
+    pub boxes: Vec<BoxRef>,
+    /// Global state schema for app creation
+    pub global_state_schema: Option<StateSchema>,
+    /// Local state schema for app creation
+    pub local_state_schema: Option<StateSchema>,
+    /// Extra program pages for large programs
+    pub extra_program_pages: Option<u64>,
+}
+
+/// Application call on-completion type
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum OnComplete {
+    #[default]
+    NoOp,
+    OptIn,
+    CloseOut,
+    ClearState,
+    UpdateApplication,
+    DeleteApplication,
+}
+
+impl OnComplete {
+    /// Returns the string representation of the on-complete type
+    #[must_use]
+    #[allow(dead_code)] // Public API for external use
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::NoOp => "NoOp",
+            Self::OptIn => "OptIn",
+            Self::CloseOut => "CloseOut",
+            Self::ClearState => "ClearState",
+            Self::UpdateApplication => "Update",
+            Self::DeleteApplication => "Delete",
+        }
+    }
+
+    /// Parse on-complete type from string
+    #[must_use]
+    fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "noop" => Self::NoOp,
+            "optin" => Self::OptIn,
+            "closeout" => Self::CloseOut,
+            "clearstate" => Self::ClearState,
+            "updateapplication" | "update" => Self::UpdateApplication,
+            "deleteapplication" | "delete" => Self::DeleteApplication,
+            _ => Self::NoOp,
+        }
+    }
+}
+
+/// Box reference for application calls
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BoxRef {
+    /// Application ID (0 means current app)
+    pub app_id: u64,
+    /// Box name (Base64 encoded)
+    pub name: String,
+}
+
+/// State schema for application storage
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StateSchema {
+    /// Number of uint64 values
+    pub num_uint: u64,
+    /// Number of byte slice values
+    pub num_byte_slice: u64,
+}
+
+/// Key registration transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct KeyRegDetails {
+    /// Voting public key (Base64 encoded)
+    pub vote_key: Option<String>,
+    /// VRF selection public key (Base64 encoded)
+    pub selection_key: Option<String>,
+    /// State proof public key (Base64 encoded)
+    pub state_proof_key: Option<String>,
+    /// First round for which this key is valid
+    pub vote_first: Option<u64>,
+    /// Last round for which this key is valid
+    pub vote_last: Option<u64>,
+    /// Key dilution for voting key
+    pub vote_key_dilution: Option<u64>,
+    /// Whether this marks the account as non-participating
+    pub non_participation: bool,
+}
+
+/// State proof transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StateProofDetails {
+    /// Type of state proof
+    pub state_proof_type: Option<u64>,
+    /// State proof message (hex encoded)
+    pub message: Option<String>,
+}
+
+/// Heartbeat transaction details
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct HeartbeatDetails {
+    /// Heartbeat address
+    pub hb_address: Option<String>,
+    /// Key dilution for heartbeat
+    pub hb_key_dilution: Option<u64>,
+    /// Heartbeat proof (Base64 encoded)
+    pub hb_proof: Option<String>,
+    /// Heartbeat seed (Base64 encoded)
+    pub hb_seed: Option<String>,
+    /// Heartbeat vote ID (Base64 encoded)
+    pub hb_vote_id: Option<String>,
+}
+
+// ============================================================================
+// Transaction
+// ============================================================================
+
+/// Represents an Algorand transaction with all its metadata
+#[derive(Debug, Clone, PartialEq)]
+pub struct Transaction {
+    /// Transaction ID (52-character base32 string)
+    pub id: String,
+    /// Transaction type
+    pub txn_type: TxnType,
+    /// Sender address
+    pub from: String,
+    /// Receiver address (or app ID for app calls)
+    pub to: String,
+    /// Human-readable timestamp
+    pub timestamp: String,
+    /// Block number where the transaction was confirmed
+    pub block: u64,
+    /// Transaction fee in microAlgos
+    pub fee: u64,
+    /// Transaction note (may be Base64 encoded)
+    pub note: String,
+    /// Amount transferred (in microAlgos or asset units)
+    pub amount: u64,
+    /// Asset ID for asset-related transactions
+    pub asset_id: Option<u64>,
+    /// Rekey-to address (if this transaction rekeys the sender)
+    pub rekey_to: Option<String>,
+    /// Type-specific transaction details
+    pub details: TransactionDetails,
+    /// Inner transactions (for app calls)
+    pub inner_transactions: Vec<Transaction>,
+}
+
+impl Transaction {
+    /// Parse a Transaction from JSON data.
+    ///
+    /// This is the single source of truth for transaction parsing,
+    /// consolidating logic that was previously duplicated across multiple methods.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AlgoError::Parse` if the JSON structure is invalid.
+    pub fn from_json(txn_json: &Value) -> std::result::Result<Self, AlgoError> {
+        let id = txn_json["id"].as_str().unwrap_or("unknown").to_string();
+
+        let txn_type = TxnType::from_json(txn_json);
+
+        let from = txn_json["sender"].as_str().unwrap_or("unknown").to_string();
+
+        let to = Self::extract_receiver(txn_json, &txn_type);
+
+        let timestamp = txn_json["round-time"]
+            .as_u64()
+            .map(format_timestamp)
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let block = txn_json["confirmed-round"].as_u64().unwrap_or(0);
+        let fee = txn_json["fee"].as_u64().unwrap_or(0);
+
+        let note = Self::extract_note(txn_json);
+        let (amount, asset_id) = Self::extract_amount_and_asset(txn_json, &txn_type);
+        let rekey_to = txn_json["rekey-to"].as_str().map(String::from);
+        let details = Self::extract_details(txn_json, &txn_type);
+
+        // Parse inner transactions recursively
+        let inner_transactions = Self::parse_inner_transactions(txn_json)?;
+
+        Ok(Self {
+            id,
+            txn_type,
+            from,
+            to,
+            timestamp,
+            block,
+            fee,
+            note,
+            amount,
+            asset_id,
+            rekey_to,
+            details,
+            inner_transactions,
+        })
+    }
+
+    /// Parse inner transactions from the JSON data
+    fn parse_inner_transactions(
+        txn_json: &Value,
+    ) -> std::result::Result<Vec<Transaction>, AlgoError> {
+        let inner_txns_json = txn_json.get("inner-txns");
+
+        match inner_txns_json {
+            Some(Value::Array(arr)) => {
+                let mut inner_txns = Vec::with_capacity(arr.len());
+                for inner_json in arr {
+                    // Recursively parse inner transaction
+                    let inner_txn = Self::from_json(inner_json)?;
+                    inner_txns.push(inner_txn);
+                }
+                Ok(inner_txns)
+            }
+            _ => Ok(Vec::new()),
+        }
+    }
+
+    /// Extract the receiver address based on transaction type
+    #[must_use]
+    fn extract_receiver(txn_json: &Value, txn_type: &TxnType) -> String {
+        match txn_type {
+            TxnType::Payment => txn_json["payment-transaction"]["receiver"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
+            TxnType::AssetTransfer => txn_json["asset-transfer-transaction"]["receiver"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
+            TxnType::AssetConfig => {
+                if txn_json["asset-config-transaction"]["params"].is_object() {
+                    txn_json["asset-config-transaction"]["params"]["manager"]
+                        .as_str()
+                        .unwrap_or("unknown")
+                        .to_string()
+                } else {
+                    "unknown".to_string()
+                }
+            }
+            TxnType::AssetFreeze => txn_json["asset-freeze-transaction"]["address"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_string(),
+            TxnType::AppCall => {
+                let app_id = txn_json["application-transaction"]["application-id"]
+                    .as_u64()
+                    .unwrap_or(0);
+                if app_id > 0 {
+                    txn_json["application-transaction"]["application-id"].to_string()
+                } else {
+                    txn_json["created-application-index"].to_string()
+                }
+            }
+            _ => "unknown".to_string(),
+        }
+    }
+
+    /// Extract note from transaction JSON
+    #[must_use]
+    fn extract_note(txn_json: &Value) -> String {
+        txn_json["note"]
+            .as_str()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| {
+                txn_json["note"]
+                    .as_array()
+                    .map(|bytes| format!("{:?}", bytes))
+                    .unwrap_or_else(|| "None".to_string())
+            })
+    }
+
+    /// Extract amount and asset ID based on transaction type
+    #[must_use]
+    fn extract_amount_and_asset(txn_json: &Value, txn_type: &TxnType) -> (u64, Option<u64>) {
+        match txn_type {
+            TxnType::Payment => {
+                let amount = txn_json["payment-transaction"]["amount"]
+                    .as_u64()
+                    .unwrap_or(0);
+                (amount, None)
+            }
+            TxnType::AssetTransfer => {
+                let amount = txn_json["asset-transfer-transaction"]["amount"]
+                    .as_u64()
+                    .unwrap_or(0);
+                let asset_id = txn_json["asset-transfer-transaction"]["asset-id"].as_u64();
+                (amount, asset_id)
+            }
+            _ => (0, None),
+        }
+    }
+
+    /// Extract type-specific transaction details
+    #[must_use]
+    fn extract_details(txn_json: &Value, txn_type: &TxnType) -> TransactionDetails {
+        match txn_type {
+            TxnType::Payment => Self::extract_payment_details(txn_json),
+            TxnType::AssetTransfer => Self::extract_asset_transfer_details(txn_json),
+            TxnType::AssetConfig => Self::extract_asset_config_details(txn_json),
+            TxnType::AssetFreeze => Self::extract_asset_freeze_details(txn_json),
+            TxnType::AppCall => Self::extract_app_call_details(txn_json),
+            TxnType::KeyReg => Self::extract_keyreg_details(txn_json),
+            TxnType::StateProof => Self::extract_state_proof_details(txn_json),
+            TxnType::Heartbeat => Self::extract_heartbeat_details(txn_json),
+            TxnType::Unknown => TransactionDetails::None,
+        }
+    }
+
+    /// Extract payment transaction details
+    #[must_use]
+    fn extract_payment_details(txn_json: &Value) -> TransactionDetails {
+        let pay = &txn_json["payment-transaction"];
+        TransactionDetails::Payment(PaymentDetails {
+            close_remainder_to: pay["close-remainder-to"].as_str().map(String::from),
+            close_amount: pay["close-amount"].as_u64(),
+        })
+    }
+
+    /// Extract asset transfer transaction details
+    #[must_use]
+    fn extract_asset_transfer_details(txn_json: &Value) -> TransactionDetails {
+        let axfer = &txn_json["asset-transfer-transaction"];
+        TransactionDetails::AssetTransfer(AssetTransferDetails {
+            asset_sender: axfer["sender"].as_str().map(String::from),
+            close_to: axfer["close-to"].as_str().map(String::from),
+            close_amount: axfer["close-amount"].as_u64(),
+        })
+    }
+
+    /// Extract asset configuration transaction details
+    #[must_use]
+    fn extract_asset_config_details(txn_json: &Value) -> TransactionDetails {
+        let acfg = &txn_json["asset-config-transaction"];
+        let params = &acfg["params"];
+
+        TransactionDetails::AssetConfig(AssetConfigDetails {
+            asset_id: acfg["asset-id"].as_u64(),
+            created_asset_id: txn_json["created-asset-index"].as_u64(),
+            total: params["total"].as_u64(),
+            decimals: params["decimals"].as_u64(),
+            default_frozen: params["default-frozen"].as_bool(),
+            asset_name: params["name"].as_str().map(String::from),
+            unit_name: params["unit-name"].as_str().map(String::from),
+            url: params["url"].as_str().map(String::from),
+            metadata_hash: params["metadata-hash"].as_str().map(String::from),
+            manager: params["manager"].as_str().map(String::from),
+            reserve: params["reserve"].as_str().map(String::from),
+            freeze: params["freeze"].as_str().map(String::from),
+            clawback: params["clawback"].as_str().map(String::from),
+        })
+    }
+
+    /// Extract asset freeze transaction details
+    #[must_use]
+    fn extract_asset_freeze_details(txn_json: &Value) -> TransactionDetails {
+        let afrz = &txn_json["asset-freeze-transaction"];
+        TransactionDetails::AssetFreeze(AssetFreezeDetails {
+            frozen: afrz["new-freeze-status"].as_bool().unwrap_or(false),
+            freeze_target: afrz["address"].as_str().unwrap_or("unknown").to_string(),
+        })
+    }
+
+    /// Extract application call transaction details
+    #[must_use]
+    fn extract_app_call_details(txn_json: &Value) -> TransactionDetails {
+        let appl = &txn_json["application-transaction"];
+
+        let on_complete = appl["on-completion"]
+            .as_str()
+            .map(OnComplete::from_str)
+            .unwrap_or_default();
+
+        let app_args = appl["application-args"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let accounts = appl["accounts"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let foreign_apps = appl["foreign-apps"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+            .unwrap_or_default();
+
+        let foreign_assets = appl["foreign-assets"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+            .unwrap_or_default();
+
+        let boxes = appl["boxes"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|b| BoxRef {
+                        app_id: b["i"].as_u64().unwrap_or(0),
+                        name: b["n"].as_str().unwrap_or("").to_string(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let global_state_schema = if appl["global-state-schema"].is_object() {
+            Some(StateSchema {
+                num_uint: appl["global-state-schema"]["num-uint"]
+                    .as_u64()
+                    .unwrap_or(0),
+                num_byte_slice: appl["global-state-schema"]["num-byte-slice"]
+                    .as_u64()
+                    .unwrap_or(0),
+            })
+        } else {
+            None
+        };
+
+        let local_state_schema = if appl["local-state-schema"].is_object() {
+            Some(StateSchema {
+                num_uint: appl["local-state-schema"]["num-uint"].as_u64().unwrap_or(0),
+                num_byte_slice: appl["local-state-schema"]["num-byte-slice"]
+                    .as_u64()
+                    .unwrap_or(0),
+            })
+        } else {
+            None
+        };
+
+        TransactionDetails::AppCall(AppCallDetails {
+            app_id: appl["application-id"].as_u64().unwrap_or(0),
+            created_app_id: txn_json["created-application-index"].as_u64(),
+            on_complete,
+            approval_program: appl["approval-program"].as_str().map(String::from),
+            clear_state_program: appl["clear-state-program"].as_str().map(String::from),
+            app_args,
+            accounts,
+            foreign_apps,
+            foreign_assets,
+            boxes,
+            global_state_schema,
+            local_state_schema,
+            extra_program_pages: appl["extra-program-pages"].as_u64(),
+        })
+    }
+
+    /// Extract key registration transaction details
+    #[must_use]
+    fn extract_keyreg_details(txn_json: &Value) -> TransactionDetails {
+        let keyreg = &txn_json["keyreg-transaction"];
+        TransactionDetails::KeyReg(KeyRegDetails {
+            vote_key: keyreg["vote-participation-key"].as_str().map(String::from),
+            selection_key: keyreg["selection-participation-key"]
+                .as_str()
+                .map(String::from),
+            state_proof_key: keyreg["state-proof-key"].as_str().map(String::from),
+            vote_first: keyreg["vote-first-valid"].as_u64(),
+            vote_last: keyreg["vote-last-valid"].as_u64(),
+            vote_key_dilution: keyreg["vote-key-dilution"].as_u64(),
+            non_participation: keyreg["non-participation"].as_bool().unwrap_or(false),
+        })
+    }
+
+    /// Extract state proof transaction details
+    #[must_use]
+    fn extract_state_proof_details(txn_json: &Value) -> TransactionDetails {
+        let sp = &txn_json["state-proof-transaction"];
+        TransactionDetails::StateProof(StateProofDetails {
+            state_proof_type: sp["state-proof-type"].as_u64(),
+            message: sp["message"].as_str().map(String::from),
+        })
+    }
+
+    /// Extract heartbeat transaction details
+    #[must_use]
+    fn extract_heartbeat_details(txn_json: &Value) -> TransactionDetails {
+        let hb = &txn_json["heartbeat-transaction"];
+        TransactionDetails::Heartbeat(HeartbeatDetails {
+            hb_address: hb["hb-address"].as_str().map(String::from),
+            hb_key_dilution: hb["hb-key-dilution"].as_u64(),
+            hb_proof: hb["hb-proof"].as_str().map(String::from),
+            hb_seed: hb["hb-seed"].as_str().map(String::from),
+            hb_vote_id: hb["hb-vote-id"].as_str().map(String::from),
+        })
+    }
+}
+
+// ============================================================================
+// Block Types
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlgoBlock {
+    pub id: u64,
+    pub txn_count: u16,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockInfo {
+    pub id: u64,
+    pub timestamp: String,
+    pub txn_count: u16,
+    pub proposer: String,
+    pub seed: String,
+}
+
+/// Extended block details including transactions
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockDetails {
+    /// Basic block info
+    pub info: BlockInfo,
+    /// Transactions in this block
+    pub transactions: Vec<Transaction>,
+    /// Count of transactions by type
+    pub txn_type_counts: std::collections::HashMap<TxnType, usize>,
+}
+
+// ============================================================================
+// Account & Asset Types
+// ============================================================================
+
+/// Basic account info for search results display
+#[derive(Debug, Clone, PartialEq)]
+pub struct AccountInfo {
+    pub address: String,
+    pub balance: u64,         // In microAlgos
+    pub pending_rewards: u64, // In microAlgos
+    pub reward_base: u64,
+    pub status: String,              // e.g., "Offline", "Online"
+    pub assets_count: usize,         // Number of assets the account holds
+    pub created_assets_count: usize, // Number of assets created by the account
+}
+
+/// Detailed account information for popup display
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AccountDetails {
+    pub address: String,
+    pub balance: u64,         // In microAlgos
+    pub min_balance: u64,     // Minimum balance required
+    pub pending_rewards: u64, // In microAlgos
+    pub rewards: u64,         // Total rewards earned
+    pub reward_base: u64,
+    pub status: String,                           // e.g., "Offline", "Online"
+    pub total_apps_opted_in: usize,               // Number of apps opted into
+    pub total_assets_opted_in: usize,             // Number of assets opted into
+    pub total_created_apps: usize,                // Number of apps created
+    pub total_created_assets: usize,              // Number of assets created
+    pub total_boxes: usize,                       // Number of boxes
+    pub auth_addr: Option<String>,                // Authorized address (rekeyed)
+    pub participation: Option<ParticipationInfo>, // Online participation info
+    pub assets: Vec<AccountAssetHolding>,         // Asset holdings (limited)
+    pub created_assets: Vec<CreatedAssetInfo>,    // Created assets (limited)
+    pub apps_local_state: Vec<AppLocalState>,     // App local states (limited)
+    pub created_apps: Vec<CreatedAppInfo>,        // Created apps (limited)
+    pub nfd: Option<NfdInfo>,                     // NFD name if available (MainNet/TestNet only)
+}
+
+/// Participation key info for online accounts
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ParticipationInfo {
+    pub vote_first: u64,
+    pub vote_last: u64,
+    pub vote_key_dilution: u64,
+    pub selection_key: String,
+    pub vote_key: String,
+    pub state_proof_key: Option<String>,
+}
+
+/// Asset holding info for an account
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AccountAssetHolding {
+    pub asset_id: u64,
+    pub amount: u64,
+    pub is_frozen: bool,
+}
+
+/// Created asset summary
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CreatedAssetInfo {
+    pub asset_id: u64,
+    pub name: String,
+    pub unit_name: String,
+}
+
+/// App local state summary
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AppLocalState {
+    pub app_id: u64,
+    pub schema_num_uint: u64,
+    pub schema_num_byte_slice: u64,
+}
+
+/// Created app summary
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CreatedAppInfo {
+    pub app_id: u64,
+}
+
+/// Basic asset info for search results display
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssetInfo {
+    pub id: u64,
+    pub name: String,
+    pub unit_name: String,
+    pub creator: String,
+    pub total: u64,    // Total supply
+    pub decimals: u64, // For display formatting
+    pub url: String,   // Optional URL for metadata
+}
+
+/// Detailed asset information for popup display
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AssetDetails {
+    pub id: u64,
+    pub name: String,
+    pub unit_name: String,
+    pub creator: String,
+    pub total: u64,                    // Total supply
+    pub decimals: u64,                 // For display formatting
+    pub url: String,                   // Optional URL for metadata
+    pub metadata_hash: Option<String>, // Metadata hash (base64)
+    pub default_frozen: bool,
+    pub manager: Option<String>,
+    pub reserve: Option<String>,
+    pub freeze: Option<String>,
+    pub clawback: Option<String>,
+    pub deleted: bool,
+    pub created_at_round: Option<u64>,
+}
+
+// ============================================================================
+// NFD (NFDomains) Types
+// ============================================================================
+
+/// NFD (Non-Fungible Domain) information from the NFD API.
+/// This is a simplified view of the NFD data for display purposes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NfdInfo {
+    /// The NFD name (e.g., "alice.algo")
+    pub name: String,
+    /// The deposit account address linked to this NFD
+    pub deposit_account: Option<String>,
+    /// The owner address of this NFD
+    pub owner: Option<String>,
+    /// Avatar URL if available
+    pub avatar_url: Option<String>,
+    /// Whether this is a verified NFD
+    pub is_verified: bool,
+}
+
+impl NfdInfo {
+    /// Create a new NFD info from API response JSON
+    #[must_use]
+    fn from_json(json: &Value) -> Self {
+        let name = json["name"].as_str().unwrap_or("").to_string();
+        let deposit_account = json["depositAccount"].as_str().map(String::from);
+        let owner = json["owner"].as_str().map(String::from);
+
+        // Avatar can be in properties.userDefined.avatar or properties.verified.avatar
+        let avatar_url = json["properties"]["verified"]["avatar"]
+            .as_str()
+            .or_else(|| json["properties"]["userDefined"]["avatar"].as_str())
+            .map(String::from);
+
+        // Check if there are verified caAlgo addresses (indicates verification)
+        let is_verified = json["caAlgo"].as_array().is_some_and(|arr| !arr.is_empty());
+
+        Self {
+            name,
+            deposit_account,
+            owner,
+            avatar_url,
+            is_verified,
+        }
+    }
+}
+
+// ============================================================================
+// Search Results
+// ============================================================================
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SearchResultItem {
+    Transaction(Box<Transaction>),
+    Block(BlockInfo),
+    Account(AccountInfo),
+    Asset(AssetInfo),
+}
+
+// ============================================================================
+// Algorand Client
 // ============================================================================
 
 #[derive(Debug, Clone)]
@@ -77,6 +1020,7 @@ pub struct AlgoClient {
     network: Network,
     client: Client,
 }
+
 impl AlgoClient {
     #[must_use]
     pub fn new(network: Network) -> Self {
@@ -1120,6 +2064,34 @@ fn parse_transactions_array(json: &Value) -> Result<Vec<Transaction>> {
 }
 
 /// Format a Unix timestamp into a human-readable string
+#[must_use]
+fn format_timestamp(timestamp_secs: u64) -> String {
+    if timestamp_secs == 0 {
+        return "Timestamp not available".to_string();
+    }
+
+    let datetime =
+        chrono::DateTime::from_timestamp(timestamp_secs as i64, 0).unwrap_or_else(chrono::Utc::now);
+
+    datetime.format("%a, %d %b %Y %H:%M:%S").to_string()
+}
+
+/// Count the number of transactions in a block
+#[must_use]
+fn count_transactions(block: &Value) -> u16 {
+    if let Some(txns) = block.get("txns") {
+        if let Some(arr) = txns.as_array() {
+            return arr.len() as u16;
+        } else if let Some(obj) = txns.as_object()
+            && let Some(transactions) = obj.get("transactions")
+            && let Some(arr) = transactions.as_array()
+        {
+            return arr.len() as u16;
+        }
+    }
+    0
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -1127,7 +2099,6 @@ fn parse_transactions_array(json: &Value) -> Result<Vec<Transaction>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{OnComplete, TransactionDetails, TxnType};
 
     #[test]
     fn test_search_suggestions() {
