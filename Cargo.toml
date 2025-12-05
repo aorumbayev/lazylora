@@ -19,7 +19,7 @@ chrono = "0.4.42"
 thiserror = "1.0"
 anyhow = "1.0"
 arboard = "3.6.1"
-clap = { version = "4.5.49", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
 dirs = "5.0"
 semver = "1.0"
 self_update = { version = "0.42.0", features = [
