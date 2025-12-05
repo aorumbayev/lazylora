@@ -121,8 +121,8 @@ pub enum AppCommand {
     GraphScrollUp,
     /// Scroll graph view down.
     GraphScrollDown,
-    /// Toggle fullscreen mode for detail popup.
-    ToggleFullscreen,
+    /// Export transaction graph as SVG file.
+    ExportSvg,
 
     // === Search Input Actions ===
     /// Type a character in the search input.
@@ -270,8 +270,8 @@ impl KeyMapper {
         match key.code {
             KeyCode::Esc => AppCommand::Dismiss,
             KeyCode::Char('c') => AppCommand::CopyToClipboard,
+            KeyCode::Char('s') => AppCommand::ExportSvg,
             KeyCode::Char('q') => AppCommand::Quit,
-            KeyCode::Char('f') => AppCommand::ToggleFullscreen,
             KeyCode::Tab => AppCommand::ToggleDetailViewMode,
             // Arrow keys for graph scrolling (Visual mode) and section navigation (Table mode)
             KeyCode::Up => AppCommand::GraphScrollUp,
@@ -638,9 +638,9 @@ mod tests {
         }
 
         #[test]
-        fn test_f_toggles_fullscreen() {
-            let cmd = KeyMapper::map_key(key_event(KeyCode::Char('f')), &InputContext::DetailView);
-            assert_eq!(cmd, AppCommand::ToggleFullscreen);
+        fn test_s_exports_svg() {
+            let cmd = KeyMapper::map_key(key_event(KeyCode::Char('s')), &InputContext::DetailView);
+            assert_eq!(cmd, AppCommand::ExportSvg);
         }
     }
 

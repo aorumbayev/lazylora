@@ -48,30 +48,58 @@ async fn main() -> Result<()> {
 
     if let Some(command) = cli.command {
         match command {
-            Commands::Update { install } => match updater::check_for_updates() {
-                Ok(Some(latest_version)) => {
-                    if install {
-                        match updater::update_app() {
-                            Ok(_) => {
+            Commands::Update { install } => {
+                let source = updater::detect_install_source();
+                println!("Installation source: {}", source);
+
+                // Run blocking self_update operations in a dedicated thread
+                // to avoid conflicts with the tokio async runtime
+                let check_result = tokio::task::spawn_blocking(updater::check_for_updates)
+                    .await
+                    .expect("Failed to spawn blocking task");
+
+                match check_result {
+                    Ok(Some(latest_version)) => {
+                        println!("Update available: {}", latest_version);
+
+                        if install {
+                            // Check if this installation source supports self-update
+                            if source.supports_self_update() {
+                                let update_result =
+                                    tokio::task::spawn_blocking(updater::update_app)
+                                        .await
+                                        .expect("Failed to spawn blocking task");
+
+                                match update_result {
+                                    Ok(()) => exit(0),
+                                    Err(e) => {
+                                        eprintln!("Update failed: {}", e);
+                                        exit(1)
+                                    }
+                                }
+                            } else {
+                                // Package manager installation - provide instructions
+                                println!("\nThis installation does not support automatic updates.");
+                                if let Some(instructions) = source.update_instructions() {
+                                    println!("To update, run:\n  {}", instructions);
+                                }
                                 exit(0);
                             }
-                            Err(_) => {
-                                exit(1);
+                        } else {
+                            // Just checking for updates, provide appropriate guidance
+                            if source.supports_self_update() {
+                                println!("Run with --install flag to install the update.");
+                            } else if let Some(instructions) = source.update_instructions() {
+                                println!("To update, run:\n  {}", instructions);
                             }
+                            exit(0);
                         }
-                    } else {
-                        println!(
-                            "Update available: {}. Run with --install flag to install.",
-                            latest_version
-                        );
-                        exit(0);
                     }
-                }
-                Ok(None) => {
-                    exit(0);
-                }
-                Err(_) => {
-                    exit(1);
+                    Ok(None) => exit(0),
+                    Err(e) => {
+                        eprintln!("Failed to check for updates: {}", e);
+                        exit(1)
+                    }
                 }
             },
             Commands::Version => {

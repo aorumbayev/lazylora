@@ -1352,15 +1352,7 @@ fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(button_content, button_inner_area);
 
     // Render help text with Tab info
-    let fullscreen_hint = if app.ui.detail_fullscreen {
-        "Exit Fullscreen"
-    } else {
-        "Fullscreen"
-    };
-    let help_text = format!(
-        "Tab: Switch View | Arrows: Scroll | [F] {} | [C] Copy | Esc: Close",
-        fullscreen_hint
-    );
+    let help_text = "Tab: Switch View | Arrows: Scroll | [S] Export SVG | [C] Copy | Esc: Close";
     let help_area = content_layout[4];
 
     let help_msg = Paragraph::new(help_text)

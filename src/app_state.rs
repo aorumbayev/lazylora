@@ -567,6 +567,7 @@ impl UiState {
     }
 
     /// Toggles fullscreen mode for detail popups.
+    #[allow(dead_code)]
     pub fn toggle_fullscreen(&mut self) {
         self.detail_fullscreen = !self.detail_fullscreen;
     }
@@ -1031,9 +1032,9 @@ impl App {
                     self.nav.graph_scroll_y = self.nav.graph_scroll_y.saturating_add(1);
                 }
             }
-            AppCommand::ToggleFullscreen => {
-                if self.nav.is_showing_details() {
-                    self.ui.toggle_fullscreen();
+            AppCommand::ExportSvg => {
+                if self.nav.show_transaction_details {
+                    self.export_transaction_svg();
                 }
             }
 
@@ -1779,6 +1780,55 @@ impl App {
         }
 
         false
+    }
+
+    /// Export the current transaction graph to SVG file.
+    fn export_transaction_svg(&mut self) {
+        use crate::widgets::TxnGraph;
+
+        // Get the current transaction
+        let txn = self.get_current_transaction();
+        let Some(txn) = txn else {
+            self.ui.show_toast("No transaction selected", 20);
+            return;
+        };
+
+        // Build the graph and export to SVG
+        let graph = TxnGraph::from_transaction(&txn);
+        let svg_content = graph.to_svg();
+
+        // Create filename based on transaction ID (truncated)
+        let txn_id = &txn.id;
+        let short_id = if txn_id.len() > 12 {
+            format!("{}_{}", &txn_id[..6], &txn_id[txn_id.len() - 6..])
+        } else {
+            txn_id.clone()
+        };
+        let filename = format!("lazylora_{}.svg", short_id);
+
+        // Try to save to current directory or home directory
+        let path = std::path::Path::new(&filename);
+        match std::fs::write(path, &svg_content) {
+            Ok(()) => {
+                self.ui.show_toast(format!("Saved {}", filename), 30);
+            }
+            Err(e) => {
+                // Try home directory as fallback
+                if let Some(home) = dirs::home_dir() {
+                    let home_path = home.join(&filename);
+                    match std::fs::write(&home_path, &svg_content) {
+                        Ok(()) => {
+                            self.ui.show_toast(format!("Saved ~/{}", filename), 30);
+                        }
+                        Err(_) => {
+                            self.ui.show_toast(format!("Export failed: {}", e), 30);
+                        }
+                    }
+                } else {
+                    self.ui.show_toast(format!("Export failed: {}", e), 30);
+                }
+            }
+        }
     }
 
     // ========================================================================
