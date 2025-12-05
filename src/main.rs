@@ -4,11 +4,15 @@ use std::process::exit;
 
 mod algorand;
 mod app_state;
+mod boot_screen;
+mod commands;
 mod tui;
 mod ui;
 mod updater;
+mod widgets;
 
 use app_state::App;
+use boot_screen::BootScreen;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -76,6 +80,27 @@ async fn main() -> Result<()> {
                 println!("A terminal UI for exploring the Algorand blockchain");
                 exit(0);
             }
+        }
+    }
+
+    // Run boot screen animation before initializing the main app
+    // Get terminal size for boot screen
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+
+    // Run boot screen
+    let mut boot = BootScreen::new((cols, rows));
+    let should_continue = boot.run(|screen, frame| screen.draw(frame)).await;
+
+    match should_continue {
+        Ok(false) => {
+            // User pressed Ctrl+C during boot
+            return Ok(());
+        }
+        Err(_) => {
+            // Boot screen error, continue anyway
+        }
+        Ok(true) => {
+            // Continue to main app
         }
     }
 

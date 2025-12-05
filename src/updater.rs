@@ -47,13 +47,13 @@ pub fn update_app() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Err(e) => {
-            if let self_update::errors::Error::Io(io_err) = &e {
-                if io_err.kind() == std::io::ErrorKind::PermissionDenied {
-                    return Err(
-                        "Update failed: Permission denied. Try running with sudo or as administrator."
-                            .into(),
-                    );
-                }
+            if let self_update::errors::Error::Io(io_err) = &e
+                && io_err.kind() == std::io::ErrorKind::PermissionDenied
+            {
+                return Err(
+                    "Update failed: Permission denied. Try running with sudo or as administrator."
+                        .into(),
+                );
             }
             Err(format!("Update download/install failed: {}", e).into())
         }

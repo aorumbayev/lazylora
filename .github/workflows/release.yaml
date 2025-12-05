@@ -1,100 +1,203 @@
 name: Release
 
 on:
-    push:
-        tags:
-            - "v[0-9]+.*"
+  push:
+    tags: ["v[0-9]+.*"]
 
 permissions:
-    contents: write # Needed for creating releases and uploading assets
+  contents: write
 
 env:
-    CARGO_TERM_COLOR: always
-    RUST_BACKTRACE: 1
-    # Default binary name
-    BINARY_NAME: lazylora
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  BINARY_NAME: lazylora
 
 jobs:
-    create-release:
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v5
-            - uses: taiki-e/create-gh-release-action@v1
-              with:
-                  # If you have a changelog file, specify it here
-                  # changelog: CHANGELOG.md
-                  token: ${{ secrets.GITHUB_TOKEN }}
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    upload-assets:
-        needs: create-release
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - target: x86_64-unknown-linux-gnu
-                      os: ubuntu-latest
-                    - target: x86_64-unknown-linux-musl
-                      os: ubuntu-latest
-                    - target: x86_64-apple-darwin
-                      os: macos-latest
-                    - target: x86_64-pc-windows-msvc
-                      os: windows-latest
-                    - target: aarch64-unknown-linux-gnu
-                      os: ubuntu-latest
-                    - target: aarch64-unknown-linux-musl
-                      os: ubuntu-latest
-                    - target: aarch64-apple-darwin
-                      os: macos-latest
-        runs-on: ${{ matrix.os }}
-        steps:
-            - uses: actions/checkout@v5
+  publish-crate:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_API_TOKEN }}
+        run: |
+          cargo publish --dry-run
+          cargo publish
 
-            - name: Install Rust toolchain
-              uses: dtolnay/rust-toolchain@stable
-              with:
-                  targets: ${{ matrix.target }}
+  upload-assets:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
 
-            - uses: taiki-e/upload-rust-binary-action@v1
-              with:
-                  bin: lazylora
-                  target: ${{ matrix.target }}
-                  features: vendored-openssl
-                  include: LICENSE,README.md
-                  checksum: sha256
-                  token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-    test-installation:
-        needs: upload-assets
-        continue-on-error: true
-        strategy:
-            matrix:
-                include:
-                    - os: ubuntu-latest
-                      target: x86_64-unknown-linux-gnu
-                    - os: macos-latest
-                      target: x86_64-apple-darwin
-                    - os: windows-latest
-                      target: x86_64-pc-windows-msvc
-        runs-on: ${{ matrix.os }}
-        steps:
-            - name: Test installation on Linux/macOS
-              if: matrix.os != 'windows-latest'
-              shell: bash
-              run: |
-                  # Get the latest version tag
-                  VERSION=$GITHUB_REF_NAME
-                  # Use curl to download and test the binary
-                  curl -L https://github.com/${{ github.repository }}/releases/download/${VERSION}/lazylora-${{ matrix.target }}.tar.gz -o lazylora.tar.gz
-                  tar xzf lazylora.tar.gz
-                  ./lazylora version
+      - name: Install cross-compilation dependencies
+        if: matrix.target == 'x86_64-unknown-linux-musl' || contains(matrix.target, 'musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools musl-dev
 
-            - name: Test installation on Windows
-              if: matrix.os == 'windows-latest'
-              shell: pwsh
-              run: |
-                  # Get the latest version tag
-                  $VERSION = $env:GITHUB_REF_NAME
-                  # Use PowerShell to download and test the binary
-                  Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${VERSION}/lazylora-${{ matrix.target }}.zip" -OutFile "lazylora.zip"
-                  Expand-Archive -Path "lazylora.zip" -DestinationPath "."
-                  .\lazylora.exe version
+      - name: Install cross-compilation dependencies for aarch64
+        if: contains(matrix.target, 'aarch64') && matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Set cross-compilation environment
+        if: contains(matrix.target, 'aarch64-unknown-linux-gnu')
+        run: |
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: ${{ env.BINARY_NAME }}
+          target: ${{ matrix.target }}
+          features: vendored-openssl
+          include: LICENSE,README.md
+          checksum: sha256
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  test-installation:
+    needs: upload-assets
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Test script installation
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          sleep 30
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/install.sh | bash -s -- --version ${{ github.ref_name }}
+          
+          if command -v lazylora >/dev/null 2>&1; then
+            lazylora help
+            lazylora version
+          elif [ -f "/usr/local/bin/lazylora" ]; then
+            /usr/local/bin/lazylora help
+          elif [ -f "$HOME/.local/bin/lazylora" ]; then
+            $HOME/.local/bin/lazylora help
+          else
+            echo "Installation failed"
+            exit 1
+          fi
+
+      - name: Test script installation (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 30
+          $script = iwr "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/install.ps1"
+          $scriptBlock = [ScriptBlock]::Create($script.Content)
+          & $scriptBlock -Version "${{ github.ref_name }}"
+          
+          $binaryPath = "$env:LOCALAPPDATA\Programs\lazylora\lazylora.exe"
+          if (Test-Path $binaryPath) {
+            & $binaryPath help
+            & $binaryPath version
+          } elseif (Get-Command lazylora -ErrorAction SilentlyContinue) {
+            lazylora help
+            lazylora version
+          } else {
+            throw "Installation failed"
+          }
+
+  publish-aur:
+    needs: [upload-assets, create-release]
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment variables
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+          echo "RELEASE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Wait for binaries
+        run: |
+          sleep 60
+          BINARY_URL="https://github.com/${{ github.repository }}/releases/download/v${{ env.VERSION }}/${{ env.BINARY_NAME }}-x86_64-unknown-linux-gnu.tar.gz"
+          
+          for i in {1..5}; do
+            if curl -sSf --head "$BINARY_URL" > /dev/null; then
+              echo "Binaries available"
+              break
+            else
+              echo "Waiting for binaries... ($i/5)"
+              sleep 30
+            fi
+            if [ $i -eq 5 ]; then
+              echo "Binaries not available"
+              exit 1
+            fi
+          done
+
+      - name: Generate AUR PKGBUILD files
+        run: |
+          chmod +x scripts/generate-aur-pkgbuild.sh
+          ./scripts/generate-aur-pkgbuild.sh \
+            --version "${{ env.VERSION }}" \
+            --output "./aur-packages" \
+            --force
+
+      - name: Publish source package to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: lazylora
+          pkgbuild: ./aur-packages/PKGBUILD-source
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to version ${{ env.VERSION }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
+
+      - name: Publish binary package to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: lazylora-bin
+          pkgbuild: ./aur-packages/PKGBUILD-bin
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to version ${{ env.VERSION }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
