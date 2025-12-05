@@ -4,20 +4,12 @@
 //! transaction visualization graph, including methods for building graphs
 //! from transactions and calculating layout dimensions.
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
+use crate::constants::MICROALGOS_PER_ALGO;
 use crate::domain::{Transaction, TransactionDetails, TxnType};
 
 use super::types::{GraphColumn, GraphEntityType, GraphRepresentation, GraphRow};
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/// Number of microAlgos per Algo
-const MICROALGOS_PER_ALGO: f64 = 1_000_000.0;
 
 // ============================================================================
 // TxnGraph
@@ -81,6 +73,7 @@ impl TxnGraph {
     /// # Returns
     ///
     /// Self for method chaining
+    #[allow(dead_code)]
     #[must_use]
     pub const fn with_column_width(mut self, width: usize) -> Self {
         self.column_width = width;
@@ -96,6 +89,7 @@ impl TxnGraph {
     /// # Returns
     ///
     /// Self for method chaining
+    #[allow(dead_code)]
     #[must_use]
     pub const fn with_column_spacing(mut self, spacing: usize) -> Self {
         self.column_spacing = spacing;
@@ -131,6 +125,7 @@ impl TxnGraph {
     /// # Returns
     ///
     /// A new `TxnGraph` containing all transactions
+    #[allow(dead_code)]
     #[must_use]
     pub fn from_transactions(transactions: &[Transaction]) -> Self {
         let mut graph = Self::new();
@@ -150,6 +145,7 @@ impl TxnGraph {
     /// * `txn` - The transaction to add
     /// * `row_index` - The row index for this transaction
     /// * `parent_index` - Optional parent row index for inner transactions
+    #[allow(dead_code)]
     pub fn add_transaction(
         &mut self,
         txn: &Transaction,
@@ -433,6 +429,7 @@ impl TxnGraph {
     /// # Returns
     ///
     /// The x coordinate of the column center
+    #[allow(dead_code)]
     #[must_use]
     pub fn column_center_x(&self, col_index: usize) -> usize {
         col_index * (self.column_width + self.column_spacing) + self.column_width / 2
@@ -447,6 +444,7 @@ impl TxnGraph {
     /// # Returns
     ///
     /// The x coordinate of the column start
+    #[allow(dead_code)]
     #[must_use]
     pub fn column_start_x(&self, col_index: usize) -> usize {
         col_index * (self.column_width + self.column_spacing)
@@ -458,6 +456,7 @@ impl TxnGraph {
     ///
     /// `true` if the graph has no columns or rows
     #[must_use]
+    #[allow(dead_code)] // Part of TxnGraph public API
     pub fn is_empty(&self) -> bool {
         self.columns.is_empty() || self.rows.is_empty()
     }
@@ -467,6 +466,7 @@ impl TxnGraph {
     /// # Returns
     ///
     /// A complete SVG document as a string
+    #[allow(dead_code)]
     #[must_use]
     pub fn to_svg(&self) -> String {
         if self.columns.is_empty() || self.rows.is_empty() {

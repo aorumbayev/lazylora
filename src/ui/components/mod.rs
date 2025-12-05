@@ -42,11 +42,12 @@ pub use toast::render_toast;
 
 /// Common component configuration and utility functions.
 ///
-/// This module can be expanded to include shared helpers like:
-/// - Color theme helpers
-/// - Common layout calculations
-/// - Shared rendering patterns
-#[allow(dead_code)]
+/// This module provides layout helper functions intended for use by component
+/// implementations and external consumers of the library.
+///
+/// Note: These utilities are not currently used in the main application but are
+/// part of the public API and have comprehensive test coverage.
+#[allow(dead_code)] // Public API
 pub mod common {
     use ratatui::layout::Rect;
 

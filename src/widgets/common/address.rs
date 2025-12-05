@@ -2,8 +2,6 @@
 //!
 //! Renders truncated addresses with optional labels and colors.
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -37,6 +35,7 @@ use crate::widgets::helpers::truncate_address;
 ///     .truncate(20)
 ///     .with_color(Color::Yellow);
 /// ```
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AddressDisplay {
     address: String,
@@ -47,6 +46,7 @@ pub struct AddressDisplay {
 
 impl AddressDisplay {
     /// Default maximum length for address truncation.
+    #[allow(dead_code)] // Part of AddressDisplay public API
     pub const DEFAULT_MAX_LEN: usize = 20;
 
     /// Create a new address display.
@@ -59,6 +59,7 @@ impl AddressDisplay {
     ///
     /// A new `AddressDisplay` with default settings
     #[must_use]
+    #[allow(dead_code)] // Part of AddressDisplay public API
     pub fn new(address: &str) -> Self {
         Self {
             address: address.to_string(),
@@ -78,6 +79,7 @@ impl AddressDisplay {
     ///
     /// Self with the label set
     #[must_use]
+    #[allow(dead_code)] // Part of AddressDisplay public API
     pub fn with_label(mut self, label: &str) -> Self {
         self.label = Some(label.to_string());
         self
@@ -93,6 +95,7 @@ impl AddressDisplay {
     ///
     /// Self with the new truncation length
     #[must_use]
+    #[allow(dead_code)] // Part of AddressDisplay public API
     pub const fn truncate(mut self, max_len: usize) -> Self {
         self.max_len = max_len;
         self
@@ -108,6 +111,7 @@ impl AddressDisplay {
     ///
     /// Self with the new color
     #[must_use]
+    #[allow(dead_code)] // Part of AddressDisplay public API
     pub const fn with_color(mut self, color: Color) -> Self {
         self.color = color;
         self

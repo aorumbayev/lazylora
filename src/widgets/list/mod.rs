@@ -7,8 +7,6 @@
 //! - [`BlockListState`]: State management for block lists
 //! - [`TransactionListState`]: State management for transaction lists
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 mod block_list;
 mod state;
 mod txn_list;

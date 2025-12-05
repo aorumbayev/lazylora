@@ -3,9 +3,6 @@
 //! This module defines block-related types including basic block info
 //! and detailed block information with transactions.
 
-// Helper methods are part of the public API but not yet all used in the application
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 use super::transaction::{Transaction, TxnType};
@@ -68,6 +65,7 @@ impl AlgoBlock {
     ///
     /// A new `AlgoBlock` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of AlgoBlock public API
     pub fn new(id: u64, txn_count: u16, timestamp: String) -> Self {
         Self {
             id,
@@ -113,6 +111,7 @@ impl BlockInfo {
     ///
     /// A new `BlockInfo` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of BlockInfo public API
     pub fn new(id: u64, timestamp: String, txn_count: u16, proposer: String, seed: String) -> Self {
         Self {
             id,
@@ -154,6 +153,7 @@ impl BlockDetails {
     ///
     /// A new `BlockDetails` instance with computed transaction type counts.
     #[must_use]
+    #[allow(dead_code)] // Part of BlockDetails public API
     pub fn new(info: BlockInfo, transactions: Vec<Transaction>) -> Self {
         // Compute transaction type counts
         let mut txn_type_counts = HashMap::new();
@@ -174,6 +174,7 @@ impl BlockDetails {
     ///
     /// The count of transactions.
     #[must_use]
+    #[allow(dead_code)] // Part of BlockDetails public API
     pub fn transaction_count(&self) -> usize {
         self.transactions.len()
     }
@@ -188,6 +189,7 @@ impl BlockDetails {
     ///
     /// The number of transactions of the specified type.
     #[must_use]
+    #[allow(dead_code)] // Part of BlockDetails public API
     pub fn count_by_type(&self, txn_type: TxnType) -> usize {
         self.txn_type_counts.get(&txn_type).copied().unwrap_or(0)
     }

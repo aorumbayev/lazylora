@@ -43,19 +43,15 @@ pub struct BootScreen {
     animation_phase: AnimationPhase,
     /// Frame counter for smooth animations
     animation_frame: u32,
-    /// Terminal dimensions for responsive scaling
-    #[allow(dead_code)]
-    terminal_size: (u16, u16),
 }
 
 impl BootScreen {
     /// Create a new boot screen with the given terminal dimensions.
-    pub fn new(terminal_size: (u16, u16)) -> Self {
+    pub fn new(_terminal_size: (u16, u16)) -> Self {
         Self {
             start_time: Instant::now(),
             animation_phase: AnimationPhase::Pulsing,
             animation_frame: 0,
-            terminal_size,
         }
     }
 

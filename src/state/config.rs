@@ -24,9 +24,6 @@
 //! config.save().expect("Failed to save config");
 //! ```
 
-// TODO: Remove after full integration in Stage 2
-#![allow(dead_code)]
-
 use color_eyre::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -83,6 +80,7 @@ impl AppConfig {
     /// - `network`: `Network::MainNet`
     /// - `show_live`: `true`
     #[must_use]
+    #[allow(dead_code)] // Part of config API
     pub fn new() -> Self {
         Self::default()
     }
@@ -97,6 +95,7 @@ impl AppConfig {
     ///
     /// A new `AppConfig` instance with the specified network and live updates enabled.
     #[must_use]
+    #[allow(dead_code)] // Part of config API
     pub const fn with_network(network: Network) -> Self {
         Self {
             network,
@@ -132,6 +131,7 @@ impl AppConfig {
     /// # Returns
     ///
     /// The path to the configuration directory.
+    #[allow(dead_code)] // Part of config API
     pub fn config_dir() -> Result<PathBuf> {
         let mut path = dirs::config_dir()
             .ok_or_else(|| color_eyre::eyre::eyre!("Could not find config directory"))?;
@@ -194,6 +194,7 @@ impl AppConfig {
     ///
     /// This is useful for best-effort saves where failure is acceptable
     /// (e.g., during shutdown).
+    #[allow(dead_code)] // Part of config API
     pub fn save_silent(&self) {
         if let Err(e) = self.save() {
             eprintln!("Failed to save configuration: {e}");
@@ -209,6 +210,7 @@ impl AppConfig {
     /// # Errors
     ///
     /// Returns an error if the configuration cannot be saved.
+    #[allow(dead_code)] // Part of config API
     pub fn set_network(&mut self, network: Network) -> Result<()> {
         self.network = network;
         self.save()
@@ -223,6 +225,7 @@ impl AppConfig {
     /// # Errors
     ///
     /// Returns an error if the configuration cannot be saved.
+    #[allow(dead_code)] // Part of config API
     pub fn set_show_live(&mut self, show_live: bool) -> Result<()> {
         self.show_live = show_live;
         self.save()
@@ -237,6 +240,7 @@ impl AppConfig {
     /// # Returns
     ///
     /// The new value of `show_live`.
+    #[allow(dead_code)] // Part of config API
     pub fn toggle_show_live(&mut self) -> Result<bool> {
         self.show_live = !self.show_live;
         self.save()?;
@@ -249,6 +253,7 @@ impl AppConfig {
     ///
     /// `true` if the configuration file exists, `false` otherwise.
     #[must_use]
+    #[allow(dead_code)] // Part of config API
     pub fn exists() -> bool {
         Self::config_path().map(|p| p.exists()).unwrap_or(false)
     }
@@ -264,6 +269,7 @@ impl AppConfig {
     /// # Returns
     ///
     /// `Ok(())` on success (including if the file didn't exist).
+    #[allow(dead_code)] // Part of config API
     pub fn delete() -> Result<()> {
         let path = Self::config_path()?;
         if path.exists() {

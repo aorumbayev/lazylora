@@ -51,6 +51,9 @@ LazyLora is a terminal user interface for exploring the Algorand blockchain.
 It provides a simple and intuitive way to browse blocks and transactions.
 """
 
+[dev-dependencies]
+insta = "1.42"
+
 [features]
 default = []
 vendored-openssl = ["git2/vendored-openssl"]

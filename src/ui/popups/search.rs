@@ -3,9 +3,6 @@
 //! This module provides the search popup that allows users to enter search queries
 //! and select the type of entity to search for (Transaction, Block, Account, Asset).
 
-// TODO: Remove this allow when integrated in Stage 2
-#![allow(dead_code)]
-
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
@@ -14,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-use crate::algorand::AlgoClient;
+use crate::client::AlgoClient;
 use crate::state::SearchType;
 use crate::theme::{BORDER_STYLE, MUTED_COLOR, PRIMARY_COLOR, SUCCESS_COLOR, WARNING_COLOR};
 use crate::ui::helpers::create_popup_block;

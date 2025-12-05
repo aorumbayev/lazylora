@@ -19,8 +19,9 @@
 | **Stage 2** | `COMPLETE` | Coordinator | 1 day |
 | **Stage 2.5** | `COMPLETE` | A, B (parallel) | 3 days |
 | **Stage 3** | `COMPLETE` | All | 2 days |
+| **Stage 4** | `COMPLETE` | Cleanup | 1 day |
 
-**Total Timeline**: 12 days
+**Total Timeline**: 13 days
 
 ---
 
@@ -66,6 +67,12 @@
 | Role | Task | File |
 |------|------|------|
 | **Coordinator** | Final Integration | [COORDINATOR_STAGE_3.md](./COORDINATOR_STAGE_3.md) |
+
+### Stage 4 - Cleanup & Polish
+
+| Role | Task | File |
+|------|------|------|
+| **Cleanup** | Code Quality | [STAGE_4_CLEANUP.md](./STAGE_4_CLEANUP.md) |
 
 ---
 
@@ -204,7 +211,7 @@ refactor/stage3-final
 
 | Module | Before | After | Change |
 |--------|--------|-------|--------|
-| algorand.rs | 2,783 | 0 | Removed (split to domain/ + client/) |
+| algorand.rs | 2,783 | 0 | **Removed** (split to domain/ + client/algo.rs) |
 | widgets.rs | 4,112 | 2,670 | -35% |
 | app_state.rs | 2,054 | 1,330 | -35% |
 | ui.rs | 2,455 | 2,580 | +5% (better structure) |
@@ -278,12 +285,28 @@ src/
 
 - [x] Stage 2.5 integration verified (ui/ module structure complete)
 - [x] Old ui.rs already replaced by ui/ directory (no separate ui.rs exists)
-- [x] algorand.rs kept as API client facade (pragmatic decision - domain/ types ready for future migration)
+- [x] Domain types migration complete (all code imports from `crate::domain`)
+- [x] **AlgoClient migrated to `src/client/algo.rs`** (1,765 lines with all tests)
+- [x] **`src/algorand.rs` completely removed** - no longer exists
+- [x] All imports updated: `crate::client::AlgoClient` and `crate::domain::*`
 - [x] Backup files cleaned up (widgets.rs.bak removed)
 - [x] All 450 tests passing
 - [x] Clippy passes with no warnings
 - [x] Release build successful (7.0MB binary)
 - [x] Documentation updated
+
+### Stage 4 Progress (Cleanup & Polish)
+
+- [x] **Phase 1.1**: Removed 14 stale TODO comments referencing Stage 2
+- [x] **Phase 1.2**: Replaced magic numbers with constants in `state/mod.rs`
+  - Added `DEFAULT_TERMINAL_WIDTH`, `DEFAULT_VISIBLE_BLOCKS`, `DEFAULT_VISIBLE_TRANSACTIONS` to constants.rs
+  - Updated all hardcoded values to use named constants
+- [x] **Phase 1.3**: Audited `#![allow(dead_code)]` attributes
+  - Removed from 25 files where code is actually used
+  - Kept on 18 files with improved documentation
+- [x] All 450 tests passing
+- [x] Clippy passes with 0 warnings
+- [x] Build successful with 0 warnings
 
 ---
 
@@ -296,12 +319,11 @@ src/
 | theme.rs | 573 | 1 | Colors & styles |
 | constants.rs | 390 | 1 | App constants |
 | domain/ | 3,126 | 8 | Domain types |
-| client/ | 365 | 5 | HTTP clients |
+| client/ | 2,130 | 6 | HTTP clients + AlgoClient |
 | widgets/ | 5,059 | 17 | UI widgets |
 | ui/ | 5,015 | 18 | UI rendering |
 | state/ | 5,550 | 9 | Application state |
-| algorand.rs | 2,783 | 1 | API client (facade) |
-| **Total New Modules** | **20,078** | **59** | - |
+| **Total New Modules** | **21,843** | **60** | - |
 
 ### Test Count
 - **450 tests** passing (up from 275 at Stage 1)
@@ -310,7 +332,6 @@ src/
 
 ```
 src/
-├── algorand.rs     (2,783 lines)  - API client (to be migrated)
 ├── boot_screen.rs
 ├── commands.rs
 ├── constants.rs    (390 lines)    - App constants ✓
@@ -327,7 +348,8 @@ src/
 │   ├── network.rs
 │   ├── nfd.rs
 │   └── transaction.rs
-├── client/         (365 lines)    - HTTP clients ✓
+├── client/         (2,130 lines)  - HTTP clients + AlgoClient ✓
+│   ├── algo.rs     (1,765 lines)  - Main API client (migrated from algorand.rs)
 │   ├── http.rs
 │   ├── indexer.rs
 │   ├── mod.rs
@@ -371,4 +393,4 @@ If you encounter blocking issues:
 
 ---
 
-*Last updated: All stages complete - Dec 5, 2025*
+*Last updated: Stage 4 cleanup complete - Dec 5, 2025*

@@ -4,9 +4,6 @@
 //! a naming service on Algorand that provides human-readable names
 //! for Algorand addresses (e.g., "alice.algo").
 
-// Helper methods are part of the public API but not yet all used in the application
-#![allow(dead_code)]
-
 use serde_json::Value;
 
 // ============================================================================
@@ -46,6 +43,7 @@ impl NfdInfo {
     ///
     /// A new `NfdInfo` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of NfdInfo public API
     pub fn new(
         name: String,
         deposit_account: Option<String>,
@@ -103,6 +101,7 @@ impl NfdInfo {
     ///
     /// The primary address, or `None` if neither is set.
     #[must_use]
+    #[allow(dead_code)] // Part of NfdInfo public API
     pub fn primary_address(&self) -> Option<&str> {
         self.deposit_account.as_deref().or(self.owner.as_deref())
     }
@@ -113,6 +112,7 @@ impl NfdInfo {
     ///
     /// `true` if an avatar URL is available.
     #[must_use]
+    #[allow(dead_code)] // Part of NfdInfo public API
     pub fn has_avatar(&self) -> bool {
         self.avatar_url.is_some()
     }
@@ -130,6 +130,7 @@ impl NfdInfo {
     ///
     /// The NFD name, possibly truncated.
     #[must_use]
+    #[allow(dead_code)] // Part of NfdInfo public API
     pub fn short_name(&self, max_len: usize) -> String {
         if self.name.len() <= max_len {
             self.name.clone()
@@ -158,6 +159,7 @@ impl NfdInfo {
     ///
     /// The name without ".algo", or the full name if it doesn't end with ".algo".
     #[must_use]
+    #[allow(dead_code)] // Part of NfdInfo public API
     pub fn base_name(&self) -> &str {
         self.name.strip_suffix(".algo").unwrap_or(&self.name)
     }

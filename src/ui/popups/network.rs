@@ -3,9 +3,6 @@
 //! This module provides the network selector popup that allows users to switch
 //! between MainNet, TestNet, and LocalNet.
 
-// TODO: Remove this allow when integrated in Stage 2
-#![allow(dead_code)]
-
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Rect},
@@ -39,7 +36,7 @@ use crate::ui::layout::centered_popup_area;
 ///
 /// ```ignore
 /// use lazylora::ui::popups::network;
-/// use lazylora::algorand::Network;
+/// use lazylora::domain::Network;
 ///
 /// network::render(&mut frame, area, 0, Network::MainNet);
 /// ```

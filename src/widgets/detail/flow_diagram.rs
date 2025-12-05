@@ -3,8 +3,6 @@
 //! This module provides an ASCII art visualization of transaction flow,
 //! showing sender and receiver entities with an arrow between them.
 
-#![allow(dead_code)]
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -87,6 +85,7 @@ impl<'a> TxnFlowDiagram<'a> {
     /// # Returns
     ///
     /// Self with the new box width
+    #[allow(dead_code)]
     #[must_use]
     pub const fn with_box_width(mut self, width: usize) -> Self {
         self.box_width = width;

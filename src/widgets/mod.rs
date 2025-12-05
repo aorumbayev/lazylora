@@ -23,7 +23,6 @@
 //! };
 //! ```
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
 #![allow(unused_imports)] // Re-exports not yet used by main codebase
 
 pub mod common;

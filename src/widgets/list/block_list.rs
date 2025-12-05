@@ -2,8 +2,6 @@
 //!
 //! Displays a list of Algorand blocks with selection and scrolling support.
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -49,6 +47,7 @@ use super::state::{BlockListState, render_list_scrollbar};
 ///
 /// // Render with frame.render_stateful_widget(widget, area, &mut state);
 /// ```
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct BlockListWidget<'a> {
     /// Slice of blocks to display.
@@ -61,6 +60,7 @@ pub struct BlockListWidget<'a> {
 
 impl<'a> BlockListWidget<'a> {
     /// Height of each block item in the list (in rows).
+    #[allow(dead_code)] // Part of BlockListWidget public API
     pub const DEFAULT_ITEM_HEIGHT: u16 = 3;
 
     /// Creates a new `BlockListWidget` with the given blocks.
@@ -73,6 +73,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// A new `BlockListWidget` with default settings
     #[must_use]
+    #[allow(dead_code)] // Part of BlockListWidget public API
     pub const fn new(blocks: &'a [AlgoBlock]) -> Self {
         Self {
             blocks,
@@ -93,6 +94,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// Self with the focus state updated
     #[must_use]
+    #[allow(dead_code)] // Part of BlockListWidget public API
     pub const fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -108,6 +110,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// Self with the item height updated
     #[must_use]
+    #[allow(dead_code)] // Part of BlockListWidget public API
     pub const fn item_height(mut self, height: u16) -> Self {
         self.item_height = height;
         self
@@ -119,6 +122,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// The number of blocks in the list
     #[must_use]
+    #[allow(dead_code)] // Part of BlockListWidget public API
     pub fn len(&self) -> usize {
         self.blocks.len()
     }
@@ -129,6 +133,7 @@ impl<'a> BlockListWidget<'a> {
     ///
     /// `true` if the blocks slice is empty
     #[must_use]
+    #[allow(dead_code)] // Part of BlockListWidget public API
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()
     }

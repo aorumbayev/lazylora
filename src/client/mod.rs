@@ -16,10 +16,9 @@
 //! let nfd = NfdClient::mainnet();
 //! ```
 
-// TODO: Remove these allows after full integration in Stage 2
-#![allow(dead_code)]
 #![allow(unused_imports)]
 
+pub mod algo;
 pub mod http;
 pub mod indexer;
 pub mod nfd;
@@ -29,6 +28,7 @@ pub mod node;
 // Re-exports
 // ============================================================================
 
+pub use algo::AlgoClient;
 pub use http::{HttpClient, HttpConfig};
 pub use indexer::IndexerClient;
 pub use nfd::NfdClient;

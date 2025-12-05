@@ -2,8 +2,6 @@
 //!
 //! Renders formatted amounts with proper units for ALGO and ASA tokens.
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -39,6 +37,7 @@ use crate::widgets::helpers::{ALGO_SYMBOL, ASSET_SYMBOL, format_algo_amount, for
 /// let asset_display = AmountDisplay::asset(1000, Some(31566704), Some(6))
 ///     .with_unit_name("USDC");
 /// ```
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AmountDisplay {
     amount: u64,
@@ -59,6 +58,7 @@ impl AmountDisplay {
     ///
     /// A new `AmountDisplay` configured for ALGO
     #[must_use]
+    #[allow(dead_code)] // Part of AmountDisplay public API
     pub const fn algo(microalgos: u64) -> Self {
         Self {
             amount: microalgos,
@@ -81,6 +81,7 @@ impl AmountDisplay {
     ///
     /// A new `AmountDisplay` configured for an ASA
     #[must_use]
+    #[allow(dead_code)] // Part of AmountDisplay public API
     pub const fn asset(amount: u64, asset_id: Option<u64>, decimals: Option<u64>) -> Self {
         Self {
             amount,
@@ -101,6 +102,7 @@ impl AmountDisplay {
     ///
     /// Self with the unit name set
     #[must_use]
+    #[allow(dead_code)] // Part of AmountDisplay public API
     pub fn with_unit_name(mut self, name: impl Into<String>) -> Self {
         self.unit_name = Some(name.into());
         self

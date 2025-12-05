@@ -25,8 +25,6 @@
 //! let svg = graph.to_svg();
 //! ```
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 pub mod renderer;
 pub mod txn_graph;
 pub mod types;

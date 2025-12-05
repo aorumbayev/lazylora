@@ -2,7 +2,6 @@ use clap::{Parser, Subcommand, ValueEnum};
 use color_eyre::eyre::Result;
 use std::process::exit;
 
-mod algorand;
 mod boot_screen;
 mod client;
 mod commands;
@@ -15,8 +14,8 @@ mod ui;
 mod updater;
 mod widgets;
 
-use algorand::Network;
 use boot_screen::BootScreen;
+use domain::Network;
 use state::{App, StartupOptions, StartupSearch};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");

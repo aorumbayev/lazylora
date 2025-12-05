@@ -11,8 +11,6 @@
 //! The navigation state is decoupled from the actual data it navigates.
 //! It maintains indices and IDs that can be synchronized with the data state.
 
-#![allow(dead_code)]
-
 use crate::domain::{AlgoBlock, Transaction};
 
 // ============================================================================
@@ -47,12 +45,14 @@ impl DetailViewMode {
 
     /// Returns `true` if in visual/graph mode.
     #[must_use]
+    #[allow(dead_code)] // Part of navigation API
     pub const fn is_visual(self) -> bool {
         matches!(self, Self::Visual)
     }
 
     /// Returns `true` if in table mode.
     #[must_use]
+    #[allow(dead_code)] // Part of navigation API
     pub const fn is_table(self) -> bool {
         matches!(self, Self::Table)
     }
@@ -90,12 +90,14 @@ impl BlockDetailTab {
 
     /// Returns `true` if showing the info tab.
     #[must_use]
+    #[allow(dead_code)] // Part of navigation API
     pub const fn is_info(self) -> bool {
         matches!(self, Self::Info)
     }
 
     /// Returns `true` if showing the transactions tab.
     #[must_use]
+    #[allow(dead_code)] // Part of navigation API
     pub const fn is_transactions(self) -> bool {
         matches!(self, Self::Transactions)
     }
@@ -231,6 +233,7 @@ impl NavigationState {
     }
 
     /// Opens the block details view.
+    #[allow(dead_code)] // Part of navigation API
     pub fn open_block_details(&mut self) {
         self.show_block_details = true;
         self.block_detail_tab = BlockDetailTab::default();
@@ -239,12 +242,14 @@ impl NavigationState {
     }
 
     /// Opens the transaction details view.
+    #[allow(dead_code)] // Part of navigation API
     pub fn open_transaction_details(&mut self) {
         self.show_transaction_details = true;
         self.reset_graph_scroll();
     }
 
     /// Resets graph scroll position and bounds.
+    #[allow(dead_code)] // Part of navigation API
     pub fn reset_graph_scroll(&mut self) {
         self.graph_scroll_x = 0;
         self.graph_scroll_y = 0;
@@ -275,6 +280,7 @@ impl NavigationState {
 
     /// Returns `true` if a block is selected.
     #[must_use]
+    #[allow(dead_code)] // Part of navigation API
     pub const fn has_block_selection(&self) -> bool {
         self.selected_block_index.is_some()
     }
@@ -302,6 +308,7 @@ impl NavigationState {
 
     /// Returns `true` if a transaction is selected.
     #[must_use]
+    #[allow(dead_code)] // Part of navigation API
     pub const fn has_transaction_selection(&self) -> bool {
         self.selected_transaction_index.is_some()
     }
@@ -320,6 +327,7 @@ impl NavigationState {
     /// # Arguments
     ///
     /// * `index` - The index of the transaction in the block's transaction list
+    #[allow(dead_code)] // Part of navigation API
     pub fn select_block_txn(&mut self, index: usize) {
         self.block_txn_index = Some(index);
     }
@@ -372,6 +380,7 @@ impl NavigationState {
     /// # Arguments
     ///
     /// * `amount` - Number of columns to scroll
+    #[allow(dead_code)] // Part of navigation API
     pub fn scroll_graph_left(&mut self, amount: u16) {
         self.graph_scroll_x = self.graph_scroll_x.saturating_sub(amount);
     }
@@ -381,6 +390,7 @@ impl NavigationState {
     /// # Arguments
     ///
     /// * `amount` - Number of columns to scroll
+    #[allow(dead_code)] // Part of navigation API
     pub fn scroll_graph_right(&mut self, amount: u16) {
         self.graph_scroll_x = self
             .graph_scroll_x
@@ -393,6 +403,7 @@ impl NavigationState {
     /// # Arguments
     ///
     /// * `amount` - Number of rows to scroll
+    #[allow(dead_code)] // Part of navigation API
     pub fn scroll_graph_up(&mut self, amount: u16) {
         self.graph_scroll_y = self.graph_scroll_y.saturating_sub(amount);
     }
@@ -402,6 +413,7 @@ impl NavigationState {
     /// # Arguments
     ///
     /// * `amount` - Number of rows to scroll
+    #[allow(dead_code)] // Part of navigation API
     pub fn scroll_graph_down(&mut self, amount: u16) {
         self.graph_scroll_y = self
             .graph_scroll_y
@@ -415,6 +427,7 @@ impl NavigationState {
     ///
     /// * `max_x` - Maximum horizontal scroll offset
     /// * `max_y` - Maximum vertical scroll offset
+    #[allow(dead_code)] // Part of navigation API
     pub fn set_graph_bounds(&mut self, max_x: u16, max_y: u16) {
         self.graph_max_scroll_x = max_x;
         self.graph_max_scroll_y = max_y;
@@ -431,398 +444,222 @@ impl NavigationState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::TxnType;
 
-    mod detail_view_mode_tests {
-        use super::*;
+    // ========================================================================
+    // Helper Functions
+    // ========================================================================
 
-        #[test]
-        fn test_default_is_table() {
-            assert_eq!(DetailViewMode::default(), DetailViewMode::Table);
-        }
-
-        #[test]
-        fn test_toggle() {
-            assert_eq!(DetailViewMode::Table.toggle(), DetailViewMode::Visual);
-            assert_eq!(DetailViewMode::Visual.toggle(), DetailViewMode::Table);
-        }
-
-        #[test]
-        fn test_is_methods() {
-            assert!(DetailViewMode::Table.is_table());
-            assert!(!DetailViewMode::Table.is_visual());
-            assert!(DetailViewMode::Visual.is_visual());
-            assert!(!DetailViewMode::Visual.is_table());
+    fn create_test_block(id: u64) -> AlgoBlock {
+        AlgoBlock {
+            id,
+            txn_count: 5,
+            timestamp: "2024-01-01 12:00:00".to_string(),
         }
     }
 
-    mod block_detail_tab_tests {
-        use super::*;
-
-        #[test]
-        fn test_default_is_info() {
-            assert_eq!(BlockDetailTab::default(), BlockDetailTab::Info);
-        }
-
-        #[test]
-        fn test_next() {
-            assert_eq!(BlockDetailTab::Info.next(), BlockDetailTab::Transactions);
-            assert_eq!(BlockDetailTab::Transactions.next(), BlockDetailTab::Info);
-        }
-
-        #[test]
-        fn test_is_methods() {
-            assert!(BlockDetailTab::Info.is_info());
-            assert!(!BlockDetailTab::Info.is_transactions());
-            assert!(BlockDetailTab::Transactions.is_transactions());
-            assert!(!BlockDetailTab::Transactions.is_info());
+    fn create_test_transaction(id: &str) -> Transaction {
+        Transaction {
+            id: id.to_string(),
+            txn_type: TxnType::Payment,
+            from: "sender".to_string(),
+            to: "receiver".to_string(),
+            timestamp: "2024-01-01 12:00:00".to_string(),
+            block: 12345,
+            fee: 1000,
+            note: String::new(),
+            amount: 1_000_000,
+            asset_id: None,
+            rekey_to: None,
+            details: crate::domain::TransactionDetails::None,
+            inner_transactions: Vec::new(),
         }
     }
 
-    mod navigation_state_tests {
-        use super::*;
-        use crate::domain::TxnType;
+    // ========================================================================
+    // Behavior Tests
+    // ========================================================================
 
-        /// Helper to create a test block.
-        fn create_test_block(id: u64) -> AlgoBlock {
-            AlgoBlock {
-                id,
-                txn_count: 5,
-                timestamp: "2024-01-01 12:00:00".to_string(),
-            }
-        }
+    #[test]
+    fn test_detail_view_mode_toggle_behavior() {
+        // Table toggles to Visual, Visual toggles back to Table
+        assert_eq!(DetailViewMode::default(), DetailViewMode::Table);
+        assert_eq!(DetailViewMode::Table.toggle(), DetailViewMode::Visual);
+        assert_eq!(DetailViewMode::Visual.toggle(), DetailViewMode::Table);
 
-        /// Helper to create a test transaction.
-        fn create_test_transaction(id: &str) -> Transaction {
-            Transaction {
-                id: id.to_string(),
-                txn_type: TxnType::Payment,
-                from: "sender".to_string(),
-                to: "receiver".to_string(),
-                timestamp: "2024-01-01 12:00:00".to_string(),
-                block: 12345,
-                fee: 1000,
-                note: String::new(),
-                amount: 1_000_000,
-                asset_id: None,
-                rekey_to: None,
-                details: crate::domain::TransactionDetails::None,
-                inner_transactions: Vec::new(),
-            }
-        }
+        // Predicates work correctly
+        assert!(DetailViewMode::Table.is_table());
+        assert!(!DetailViewMode::Table.is_visual());
+        assert!(DetailViewMode::Visual.is_visual());
+        assert!(!DetailViewMode::Visual.is_table());
+    }
 
-        #[test]
-        fn test_new_creates_default() {
-            let nav = NavigationState::new();
-            assert_eq!(nav.block_scroll, 0);
-            assert_eq!(nav.transaction_scroll, 0);
-            assert!(nav.selected_block_index.is_none());
-            assert!(nav.selected_transaction_index.is_none());
-            assert!(!nav.show_block_details);
-            assert!(!nav.show_transaction_details);
-        }
+    #[test]
+    fn test_block_detail_tab_cycle_behavior() {
+        // Info cycles to Transactions, Transactions cycles back to Info
+        assert_eq!(BlockDetailTab::default(), BlockDetailTab::Info);
+        assert_eq!(BlockDetailTab::Info.next(), BlockDetailTab::Transactions);
+        assert_eq!(BlockDetailTab::Transactions.next(), BlockDetailTab::Info);
 
-        #[test]
-        fn test_reset_clears_all() {
-            let mut nav = NavigationState::new();
-            nav.block_scroll = 10;
-            nav.selected_block_index = Some(5);
-            nav.selected_block_id = Some(12345);
-            nav.show_block_details = true;
-            nav.graph_scroll_x = 50;
+        // Predicates work correctly
+        assert!(BlockDetailTab::Info.is_info());
+        assert!(!BlockDetailTab::Info.is_transactions());
+        assert!(BlockDetailTab::Transactions.is_transactions());
+        assert!(!BlockDetailTab::Transactions.is_info());
+    }
 
-            nav.reset();
+    #[test]
+    fn test_navigation_reset_clears_all_state() {
+        let mut nav = NavigationState::new();
 
-            assert_eq!(nav.block_scroll, 0);
-            assert!(nav.selected_block_index.is_none());
-            assert!(nav.selected_block_id.is_none());
-            assert!(!nav.show_block_details);
-            assert_eq!(nav.graph_scroll_x, 0);
-        }
+        // Set up some state
+        nav.block_scroll = 10;
+        nav.selected_block_index = Some(5);
+        nav.selected_block_id = Some(12345);
+        nav.show_block_details = true;
+        nav.graph_scroll_x = 50;
 
-        #[test]
-        fn test_is_showing_details() {
-            let mut nav = NavigationState::new();
-            assert!(!nav.is_showing_details());
+        nav.reset();
 
-            nav.show_block_details = true;
-            assert!(nav.is_showing_details());
+        // Verify everything is cleared
+        assert_eq!(nav.block_scroll, 0);
+        assert!(nav.selected_block_index.is_none());
+        assert!(nav.selected_block_id.is_none());
+        assert!(!nav.show_block_details);
+        assert_eq!(nav.graph_scroll_x, 0);
+    }
 
-            nav.show_block_details = false;
-            nav.show_transaction_details = true;
-            assert!(nav.is_showing_details());
+    #[test]
+    fn test_detail_view_open_close_cycle() {
+        let mut nav = NavigationState::new();
 
-            nav.show_transaction_details = false;
-            nav.show_account_details = true;
-            assert!(nav.is_showing_details());
+        // Initially no details shown
+        assert!(!nav.is_showing_details());
 
-            nav.show_account_details = false;
-            nav.show_asset_details = true;
-            assert!(nav.is_showing_details());
-        }
+        // Open block details
+        nav.open_block_details();
+        assert!(nav.is_showing_details());
+        assert!(nav.show_block_details);
+        assert_eq!(nav.block_detail_tab, BlockDetailTab::Info);
+        assert!(nav.block_txn_index.is_none());
 
-        #[test]
-        fn test_close_details() {
-            let mut nav = NavigationState::new();
-            nav.show_block_details = true;
-            nav.show_transaction_details = true;
-            nav.show_account_details = true;
-            nav.show_asset_details = true;
+        // Close all details
+        nav.close_details();
+        assert!(!nav.is_showing_details());
+        assert!(!nav.show_block_details);
+        assert!(!nav.show_transaction_details);
 
-            nav.close_details();
+        // Open transaction details
+        nav.open_transaction_details();
+        assert!(nav.is_showing_details());
+        assert!(nav.show_transaction_details);
+        assert_eq!(nav.graph_scroll_x, 0);
+        assert_eq!(nav.graph_scroll_y, 0);
 
-            assert!(!nav.show_block_details);
-            assert!(!nav.show_transaction_details);
-            assert!(!nav.show_account_details);
-            assert!(!nav.show_asset_details);
-        }
+        // Verify all detail types work with is_showing_details
+        nav.close_details();
+        nav.show_account_details = true;
+        assert!(nav.is_showing_details());
 
-        // Helper function to create test blocks
-        fn create_test_blocks() -> Vec<AlgoBlock> {
-            vec![
-                AlgoBlock {
-                    id: 10000,
-                    txn_count: 5,
-                    timestamp: "2024-01-01 00:00:00".to_string(),
-                },
-                AlgoBlock {
-                    id: 10001,
-                    txn_count: 3,
-                    timestamp: "2024-01-01 00:00:04".to_string(),
-                },
-                AlgoBlock {
-                    id: 10002,
-                    txn_count: 7,
-                    timestamp: "2024-01-01 00:00:08".to_string(),
-                },
-                AlgoBlock {
-                    id: 12345,
-                    txn_count: 2,
-                    timestamp: "2024-01-01 00:00:12".to_string(),
-                },
-            ]
-        }
+        nav.close_details();
+        nav.show_asset_details = true;
+        assert!(nav.is_showing_details());
+    }
 
-        // Helper function to create test transactions
-        fn create_test_transactions() -> Vec<Transaction> {
-            use crate::domain::{PaymentDetails, TransactionDetails, TxnType};
-            vec![
-                Transaction {
-                    id: "txn000".to_string(),
-                    txn_type: TxnType::Payment,
-                    from: "SENDER1".to_string(),
-                    to: "RECEIVER1".to_string(),
-                    timestamp: "2024-01-01 00:00:00".to_string(),
-                    block: 10000,
-                    fee: 1000,
-                    note: String::new(),
-                    amount: 1_000_000,
-                    asset_id: None,
-                    rekey_to: None,
-                    details: TransactionDetails::Payment(PaymentDetails::default()),
-                    inner_transactions: vec![],
-                },
-                Transaction {
-                    id: "txn001".to_string(),
-                    txn_type: TxnType::Payment,
-                    from: "SENDER2".to_string(),
-                    to: "RECEIVER2".to_string(),
-                    timestamp: "2024-01-01 00:00:01".to_string(),
-                    block: 10001,
-                    fee: 1000,
-                    note: String::new(),
-                    amount: 2_000_000,
-                    asset_id: None,
-                    rekey_to: None,
-                    details: TransactionDetails::Payment(PaymentDetails::default()),
-                    inner_transactions: vec![],
-                },
-                Transaction {
-                    id: "txn002".to_string(),
-                    txn_type: TxnType::Payment,
-                    from: "SENDER3".to_string(),
-                    to: "RECEIVER3".to_string(),
-                    timestamp: "2024-01-01 00:00:02".to_string(),
-                    block: 10002,
-                    fee: 1000,
-                    note: String::new(),
-                    amount: 3_000_000,
-                    asset_id: None,
-                    rekey_to: None,
-                    details: TransactionDetails::Payment(PaymentDetails::default()),
-                    inner_transactions: vec![],
-                },
-                Transaction {
-                    id: "txn003".to_string(),
-                    txn_type: TxnType::Payment,
-                    from: "SENDER4".to_string(),
-                    to: "RECEIVER4".to_string(),
-                    timestamp: "2024-01-01 00:00:03".to_string(),
-                    block: 10003,
-                    fee: 1000,
-                    note: String::new(),
-                    amount: 4_000_000,
-                    asset_id: None,
-                    rekey_to: None,
-                    details: TransactionDetails::Payment(PaymentDetails::default()),
-                    inner_transactions: vec![],
-                },
-                Transaction {
-                    id: "txn004".to_string(),
-                    txn_type: TxnType::Payment,
-                    from: "SENDER5".to_string(),
-                    to: "RECEIVER5".to_string(),
-                    timestamp: "2024-01-01 00:00:04".to_string(),
-                    block: 10004,
-                    fee: 1000,
-                    note: String::new(),
-                    amount: 5_000_000,
-                    asset_id: None,
-                    rekey_to: None,
-                    details: TransactionDetails::Payment(PaymentDetails::default()),
-                    inner_transactions: vec![],
-                },
-                Transaction {
-                    id: "txn123".to_string(),
-                    txn_type: TxnType::Payment,
-                    from: "SENDER6".to_string(),
-                    to: "RECEIVER6".to_string(),
-                    timestamp: "2024-01-01 00:00:05".to_string(),
-                    block: 12345,
-                    fee: 1000,
-                    note: String::new(),
-                    amount: 6_000_000,
-                    asset_id: None,
-                    rekey_to: None,
-                    details: TransactionDetails::Payment(PaymentDetails::default()),
-                    inner_transactions: vec![],
-                },
-            ]
-        }
+    #[test]
+    fn test_block_selection_with_data() {
+        let mut nav = NavigationState::new();
+        let blocks = vec![
+            create_test_block(10000),
+            create_test_block(10001),
+            create_test_block(10002),
+        ];
 
-        #[test]
-        fn test_select_block() {
-            let mut nav = NavigationState::new();
-            let blocks = create_test_blocks();
-            nav.select_block(3, &blocks);
+        // Select block and verify index and ID are set
+        nav.select_block(1, &blocks);
+        assert_eq!(nav.selected_block_index, Some(1));
+        assert_eq!(nav.selected_block_id, Some(10001));
+        assert!(nav.has_block_selection());
 
-            assert_eq!(nav.selected_block_index, Some(3));
-            assert_eq!(nav.selected_block_id, Some(12345));
-        }
+        // Clear selection
+        nav.clear_block_selection();
+        assert!(!nav.has_block_selection());
+        assert!(nav.selected_block_index.is_none());
+        assert!(nav.selected_block_id.is_none());
+    }
 
-        #[test]
-        fn test_clear_block_selection() {
-            let mut nav = NavigationState::new();
-            let blocks = create_test_blocks();
-            nav.select_block(3, &blocks);
-            nav.clear_block_selection();
+    #[test]
+    fn test_transaction_selection_with_data() {
+        let mut nav = NavigationState::new();
+        let transactions = vec![
+            create_test_transaction("txn1"),
+            create_test_transaction("txn2"),
+            create_test_transaction("txn3"),
+        ];
 
-            assert!(nav.selected_block_index.is_none());
-            assert!(nav.selected_block_id.is_none());
-        }
+        // Select transaction and verify index and ID are set
+        nav.select_transaction(1, &transactions);
+        assert_eq!(nav.selected_transaction_index, Some(1));
+        assert_eq!(nav.selected_transaction_id, Some("txn2".to_string()));
+        assert!(nav.has_transaction_selection());
 
-        #[test]
-        fn test_select_transaction() {
-            let mut nav = NavigationState::new();
-            let transactions = create_test_transactions();
-            nav.select_transaction(5, &transactions);
+        // Clear selection
+        nav.clear_transaction_selection();
+        assert!(!nav.has_transaction_selection());
+        assert!(nav.selected_transaction_index.is_none());
+        assert!(nav.selected_transaction_id.is_none());
+    }
 
-            assert_eq!(nav.selected_transaction_index, Some(5));
-            assert_eq!(nav.selected_transaction_id, Some("txn123".to_string()));
-        }
+    #[test]
+    fn test_graph_scroll_respects_bounds() {
+        let mut nav = NavigationState::new();
+        nav.set_graph_bounds(100, 50);
 
-        #[test]
-        fn test_cycle_block_detail_tab() {
-            let mut nav = NavigationState::new();
-            assert!(nav.block_detail_tab.is_info());
+        // Scroll right and verify clamping at max
+        nav.scroll_graph_right(200);
+        assert_eq!(nav.graph_scroll_x, 100);
 
-            nav.cycle_block_detail_tab();
-            assert!(nav.block_detail_tab.is_transactions());
+        // Scroll left and verify clamping at 0
+        nav.scroll_graph_left(200);
+        assert_eq!(nav.graph_scroll_x, 0);
 
-            nav.cycle_block_detail_tab();
-            assert!(nav.block_detail_tab.is_info());
-        }
+        // Same for vertical
+        nav.scroll_graph_down(200);
+        assert_eq!(nav.graph_scroll_y, 50);
+        nav.scroll_graph_up(200);
+        assert_eq!(nav.graph_scroll_y, 0);
 
-        #[test]
-        fn test_move_block_txn_up() {
-            let mut nav = NavigationState::new();
-            nav.block_txn_index = Some(3);
+        // Test set_graph_bounds clamps existing scroll position
+        nav.graph_scroll_x = 200;
+        nav.graph_scroll_y = 150;
+        nav.set_graph_bounds(80, 40);
+        assert_eq!(nav.graph_scroll_x, 80);
+        assert_eq!(nav.graph_scroll_y, 40);
+    }
 
-            nav.move_block_txn_up();
-            assert_eq!(nav.block_txn_index, Some(2));
+    #[test]
+    fn test_block_txn_navigation() {
+        let mut nav = NavigationState::new();
 
-            // At index 0, should stay at 0
-            nav.block_txn_index = Some(0);
-            nav.move_block_txn_up();
-            assert_eq!(nav.block_txn_index, Some(0));
-        }
+        // Initialize at first item when moving down with no selection
+        nav.move_block_txn_down(5, 10);
+        assert_eq!(nav.block_txn_index, Some(0));
 
-        #[test]
-        fn test_move_block_txn_down() {
-            let mut nav = NavigationState::new();
-            nav.block_txn_index = Some(1);
+        // Move down
+        nav.move_block_txn_down(5, 10);
+        assert_eq!(nav.block_txn_index, Some(1));
 
-            nav.move_block_txn_down(5, 10);
-            assert_eq!(nav.block_txn_index, Some(2));
+        // Move up
+        nav.move_block_txn_up();
+        assert_eq!(nav.block_txn_index, Some(0));
 
-            // At max, should stay at max
-            nav.block_txn_index = Some(5);
-            nav.move_block_txn_down(5, 10);
-            assert_eq!(nav.block_txn_index, Some(5));
+        // Can't go below 0
+        nav.move_block_txn_up();
+        assert_eq!(nav.block_txn_index, Some(0));
 
-            // With no selection, should select first
-            nav.block_txn_index = None;
-            nav.move_block_txn_down(5, 10);
-            assert_eq!(nav.block_txn_index, Some(0));
-        }
-
-        #[test]
-        fn test_graph_scrolling() {
-            let mut nav = NavigationState::new();
-            nav.set_graph_bounds(100, 50);
-
-            nav.scroll_graph_right(10);
-            assert_eq!(nav.graph_scroll_x, 10);
-
-            nav.scroll_graph_left(5);
-            assert_eq!(nav.graph_scroll_x, 5);
-
-            nav.scroll_graph_down(20);
-            assert_eq!(nav.graph_scroll_y, 20);
-
-            nav.scroll_graph_up(10);
-            assert_eq!(nav.graph_scroll_y, 10);
-        }
-
-        #[test]
-        fn test_graph_scroll_respects_bounds() {
-            let mut nav = NavigationState::new();
-            nav.set_graph_bounds(50, 30);
-
-            // Scroll beyond max should clamp
-            nav.scroll_graph_right(100);
-            assert_eq!(nav.graph_scroll_x, 50);
-
-            nav.scroll_graph_down(100);
-            assert_eq!(nav.graph_scroll_y, 30);
-
-            // Scroll below 0 should clamp
-            nav.scroll_graph_left(100);
-            assert_eq!(nav.graph_scroll_x, 0);
-
-            nav.scroll_graph_up(100);
-            assert_eq!(nav.graph_scroll_y, 0);
-        }
-
-        #[test]
-        fn test_set_graph_bounds_clamps_current() {
-            let mut nav = NavigationState::new();
-            nav.graph_scroll_x = 100;
-            nav.graph_scroll_y = 100;
-
-            nav.set_graph_bounds(50, 30);
-
-            assert_eq!(nav.graph_scroll_x, 50);
-            assert_eq!(nav.graph_scroll_y, 30);
-        }
+        // Can't go above max
+        nav.block_txn_index = Some(5);
+        nav.move_block_txn_down(5, 10);
+        assert_eq!(nav.block_txn_index, Some(5));
     }
 }

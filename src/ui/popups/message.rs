@@ -3,9 +3,6 @@
 //! This module provides a generic message popup for displaying informational
 //! messages, warnings, or errors to the user.
 
-// TODO: Remove this allow when integrated in Stage 2
-#![allow(dead_code)]
-
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},

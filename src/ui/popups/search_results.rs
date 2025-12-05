@@ -3,9 +3,6 @@
 //! This module provides the search results popup that displays the results
 //! of a search query with formatted information for each entity type.
 
-// TODO: Remove this allow when integrated in Stage 2
-#![allow(dead_code)]
-
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},

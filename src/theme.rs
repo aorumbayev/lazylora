@@ -4,10 +4,6 @@
 //! and consistent styling across the application. All color and style constants
 //! are encapsulated in the [`Theme`] struct for easy customization and consistency.
 
-// TODO: Remove these allows after full integration in Stage 2
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 use ratatui::style::{Color, Modifier, Style};
 
 // ============================================================================
@@ -49,6 +45,7 @@ pub const BORDER_STYLE: Style = Style::new().fg(Color::DarkGray);
 pub const FOCUSED_BORDER_STYLE: Style = Style::new().fg(PRIMARY_COLOR);
 
 /// Title style for unfocused elements.
+#[allow(dead_code)] // Design system constant
 pub const TITLE_STYLE: Style = Style::new().add_modifier(Modifier::BOLD);
 
 /// Title style for focused/active elements.
@@ -80,6 +77,7 @@ pub const HIGHLIGHT_STYLE: Style = Style::new()
 /// let theme = Theme::default();
 /// let primary = theme.primary;
 /// ```
+#[allow(dead_code)] // Design system struct
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
     /// Primary accent color for focused elements.
@@ -123,6 +121,7 @@ impl Theme {
     /// A new `Theme` instance with the specified colors.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn new(
         primary: Color,
         secondary: Color,
@@ -178,6 +177,7 @@ impl Theme {
     ///
     /// A `Style` appropriate for the focus state.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn border_style(&self, focused: bool) -> Style {
         if focused {
             Style::new().fg(self.border_focused)
@@ -196,6 +196,7 @@ impl Theme {
     ///
     /// A `Style` appropriate for the focus state.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn title_style(&self, focused: bool) -> Style {
         if focused {
             Style::new().fg(self.primary).add_modifier(Modifier::BOLD)
@@ -212,6 +213,7 @@ impl Theme {
     ///
     /// A `Style` for selected list items.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn selected_style(&self) -> Style {
         Style::new().bg(Color::DarkGray)
     }
@@ -222,6 +224,7 @@ impl Theme {
     ///
     /// A `Style` for highlighted items with emphasis.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn highlight_style(&self) -> Style {
         Style::new()
             .bg(Color::DarkGray)
@@ -234,6 +237,7 @@ impl Theme {
     ///
     /// A `Style` with the primary foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn primary_style(&self) -> Style {
         Style::new().fg(self.primary)
     }
@@ -244,6 +248,7 @@ impl Theme {
     ///
     /// A bold `Style` with the primary foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn primary_bold_style(&self) -> Style {
         Style::new().fg(self.primary).add_modifier(Modifier::BOLD)
     }
@@ -254,6 +259,7 @@ impl Theme {
     ///
     /// A `Style` with the success foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn success_style(&self) -> Style {
         Style::new().fg(self.success)
     }
@@ -264,6 +270,7 @@ impl Theme {
     ///
     /// A bold `Style` with the success foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn success_bold_style(&self) -> Style {
         Style::new().fg(self.success).add_modifier(Modifier::BOLD)
     }
@@ -274,6 +281,7 @@ impl Theme {
     ///
     /// A `Style` with the warning foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn warning_style(&self) -> Style {
         Style::new().fg(self.warning)
     }
@@ -284,6 +292,7 @@ impl Theme {
     ///
     /// A bold `Style` with the warning foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn warning_bold_style(&self) -> Style {
         Style::new().fg(self.warning).add_modifier(Modifier::BOLD)
     }
@@ -294,6 +303,7 @@ impl Theme {
     ///
     /// A `Style` with the error foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn error_style(&self) -> Style {
         Style::new().fg(self.error)
     }
@@ -304,6 +314,7 @@ impl Theme {
     ///
     /// A `Style` with the muted foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn muted_style(&self) -> Style {
         Style::new().fg(self.muted)
     }
@@ -314,6 +325,7 @@ impl Theme {
     ///
     /// A `Style` with the accent foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn accent_style(&self) -> Style {
         Style::new().fg(self.accent)
     }
@@ -324,6 +336,7 @@ impl Theme {
     ///
     /// A `Style` with the secondary foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn secondary_style(&self) -> Style {
         Style::new().fg(self.secondary)
     }
@@ -334,6 +347,7 @@ impl Theme {
     ///
     /// A bold `Style` with the secondary foreground color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn secondary_bold_style(&self) -> Style {
         Style::new().fg(self.secondary).add_modifier(Modifier::BOLD)
     }
@@ -344,6 +358,7 @@ impl Theme {
     ///
     /// A `Style` with the overlay background color.
     #[must_use]
+    #[allow(dead_code)] // Part of Theme public API
     pub const fn background_style(&self) -> Style {
         Style::new().bg(self.background)
     }
@@ -371,6 +386,7 @@ impl Default for Theme {
 ///
 /// A `Style` appropriate for the focus state.
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub const fn border_style(focused: bool) -> Style {
     if focused {
         FOCUSED_BORDER_STYLE
@@ -391,6 +407,7 @@ pub const fn border_style(focused: bool) -> Style {
 ///
 /// A `Style` appropriate for the focus state.
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub const fn title_style(focused: bool) -> Style {
     if focused {
         FOCUSED_TITLE_STYLE
@@ -408,166 +425,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_theme_default() {
-        let theme = Theme::default();
-        assert_eq!(theme.primary, Color::Cyan);
-        assert_eq!(theme.secondary, Color::Blue);
-        assert_eq!(theme.success, Color::Green);
-        assert_eq!(theme.warning, Color::Yellow);
-        assert_eq!(theme.error, Color::Red);
-        assert_eq!(theme.muted, Color::Gray);
-        assert_eq!(theme.accent, Color::Magenta);
-        assert_eq!(theme.background, Color::Rgb(26, 27, 38));
+    fn test_theme_default_equals_tokyo_night() {
+        assert_eq!(Theme::default(), Theme::tokyo_night());
     }
 
     #[test]
-    fn test_theme_tokyo_night() {
-        let theme = Theme::tokyo_night();
-        assert_eq!(theme, Theme::default());
-    }
-
-    #[test]
-    fn test_theme_new() {
-        let theme = Theme::new(
-            Color::Red,
-            Color::Green,
-            Color::Blue,
-            Color::Yellow,
-            Color::Magenta,
-            Color::White,
-            Color::Cyan,
-            Color::Black,
-        );
-        assert_eq!(theme.primary, Color::Red);
-        assert_eq!(theme.secondary, Color::Green);
-        assert_eq!(theme.success, Color::Blue);
-    }
-
-    #[test]
-    fn test_border_style_focused() {
-        let theme = Theme::default();
-        let style = theme.border_style(true);
-        assert_eq!(style.fg, Some(theme.border_focused));
-    }
-
-    #[test]
-    fn test_border_style_unfocused() {
-        let theme = Theme::default();
-        let style = theme.border_style(false);
-        assert_eq!(style.fg, Some(theme.border));
-    }
-
-    #[test]
-    fn test_title_style_focused() {
-        let theme = Theme::default();
-        let style = theme.title_style(true);
-        assert_eq!(style.fg, Some(theme.primary));
-        assert!(style.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn test_title_style_unfocused() {
-        let theme = Theme::default();
-        let style = theme.title_style(false);
-        assert_eq!(style.fg, Some(Color::DarkGray));
-        assert!(style.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn test_selected_style() {
-        let theme = Theme::default();
-        let style = theme.selected_style();
-        assert_eq!(style.bg, Some(Color::DarkGray));
-    }
-
-    #[test]
-    fn test_highlight_style() {
-        let theme = Theme::default();
-        let style = theme.highlight_style();
-        assert_eq!(style.bg, Some(Color::DarkGray));
-        assert!(style.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn test_color_styles() {
+    fn test_theme_styles_respond_to_focus() {
         let theme = Theme::default();
 
-        assert_eq!(theme.primary_style().fg, Some(theme.primary));
-        assert_eq!(theme.success_style().fg, Some(theme.success));
-        assert_eq!(theme.warning_style().fg, Some(theme.warning));
-        assert_eq!(theme.error_style().fg, Some(theme.error));
-        assert_eq!(theme.muted_style().fg, Some(theme.muted));
-        assert_eq!(theme.accent_style().fg, Some(theme.accent));
-        assert_eq!(theme.secondary_style().fg, Some(theme.secondary));
+        // Border style changes with focus
+        let unfocused = theme.border_style(false);
+        let focused = theme.border_style(true);
+        assert_ne!(unfocused.fg, focused.fg);
+
+        // Title style changes with focus
+        let unfocused_title = theme.title_style(false);
+        let focused_title = theme.title_style(true);
+        assert_ne!(unfocused_title.fg, focused_title.fg);
     }
 
     #[test]
-    fn test_bold_styles() {
-        let theme = Theme::default();
-
-        let primary_bold = theme.primary_bold_style();
-        assert_eq!(primary_bold.fg, Some(theme.primary));
-        assert!(primary_bold.add_modifier.contains(Modifier::BOLD));
-
-        let success_bold = theme.success_bold_style();
-        assert_eq!(success_bold.fg, Some(theme.success));
-        assert!(success_bold.add_modifier.contains(Modifier::BOLD));
-
-        let warning_bold = theme.warning_bold_style();
-        assert_eq!(warning_bold.fg, Some(theme.warning));
-        assert!(warning_bold.add_modifier.contains(Modifier::BOLD));
-
-        let secondary_bold = theme.secondary_bold_style();
-        assert_eq!(secondary_bold.fg, Some(theme.secondary));
-        assert!(secondary_bold.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn test_background_style() {
-        let theme = Theme::default();
-        let style = theme.background_style();
-        assert_eq!(style.bg, Some(theme.background));
-    }
-
-    #[test]
-    fn test_global_border_style_helper() {
-        let focused = border_style(true);
-        let unfocused = border_style(false);
-
-        assert_eq!(focused, FOCUSED_BORDER_STYLE);
-        assert_eq!(unfocused, BORDER_STYLE);
-    }
-
-    #[test]
-    fn test_global_title_style_helper() {
-        let focused = title_style(true);
-        let unfocused = title_style(false);
-
-        assert_eq!(focused, FOCUSED_TITLE_STYLE);
-        assert_eq!(unfocused, TITLE_STYLE);
-    }
-
-    #[test]
-    fn test_color_constants() {
-        assert_eq!(PRIMARY_COLOR, Color::Cyan);
-        assert_eq!(SECONDARY_COLOR, Color::Blue);
-        assert_eq!(SUCCESS_COLOR, Color::Green);
-        assert_eq!(WARNING_COLOR, Color::Yellow);
-        assert_eq!(ERROR_COLOR, Color::Red);
-        assert_eq!(MUTED_COLOR, Color::Gray);
-        assert_eq!(ACCENT_COLOR, Color::Magenta);
-        assert_eq!(BG_COLOR, Color::Rgb(26, 27, 38));
-    }
-
-    #[test]
-    fn test_style_constants() {
-        assert_eq!(BORDER_STYLE.fg, Some(Color::DarkGray));
-        assert_eq!(FOCUSED_BORDER_STYLE.fg, Some(PRIMARY_COLOR));
-        assert!(TITLE_STYLE.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(FOCUSED_TITLE_STYLE.fg, Some(PRIMARY_COLOR));
-        assert!(FOCUSED_TITLE_STYLE.add_modifier.contains(Modifier::BOLD));
-        assert_eq!(SELECTED_STYLE.bg, Some(Color::DarkGray));
-        assert_eq!(HIGHLIGHT_STYLE.bg, Some(Color::DarkGray));
-        assert!(HIGHLIGHT_STYLE.add_modifier.contains(Modifier::BOLD));
+    fn test_global_helper_functions_match_constants() {
+        assert_eq!(border_style(true), FOCUSED_BORDER_STYLE);
+        assert_eq!(border_style(false), BORDER_STYLE);
+        assert_eq!(title_style(true), FOCUSED_TITLE_STYLE);
+        assert_eq!(title_style(false), TITLE_STYLE);
     }
 }

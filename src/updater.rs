@@ -291,396 +291,348 @@ mod tests {
     use std::path::PathBuf;
 
     // -------------------------------------------------------------------------
-    // InstallSource enum tests
+    // InstallSource properties - Table-driven tests
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_install_source_update_instructions_cargo() {
-        let source = InstallSource::Cargo;
-        let instructions = source.update_instructions();
-        assert!(instructions.is_some());
-        assert!(instructions.unwrap().contains("cargo install"));
-        assert!(instructions.unwrap().contains("lazylora"));
+    fn test_install_source_properties() {
+        // Test cases: (source, has_instructions, supports_self_update, instruction_contains)
+        let cases = [
+            (InstallSource::Cargo, true, false, "cargo install"),
+            (InstallSource::Homebrew, true, false, "brew upgrade"),
+            (InstallSource::AUR, true, false, "AUR"),
+            (InstallSource::Nixpkgs, true, false, "nix"),
+            (InstallSource::Binary, false, true, ""),
+        ];
+
+        for (source, has_instructions, supports_self_update, instruction_contains) in cases {
+            // Test update instructions
+            let instructions = source.update_instructions();
+            if has_instructions {
+                assert!(
+                    instructions.is_some(),
+                    "Expected instructions for {:?}",
+                    source
+                );
+                let instr = instructions.unwrap().to_lowercase();
+                assert!(
+                    instr.contains(&instruction_contains.to_lowercase()),
+                    "Instructions for {:?} should contain '{}', got '{}'",
+                    source,
+                    instruction_contains,
+                    instr
+                );
+            } else {
+                assert!(
+                    instructions.is_none(),
+                    "Expected no instructions for {:?}",
+                    source
+                );
+            }
+
+            // Test self-update support
+            assert_eq!(
+                source.supports_self_update(),
+                supports_self_update,
+                "Self-update support mismatch for {:?}",
+                source
+            );
+
+            // Test description exists and Display trait
+            assert!(
+                !source.description().is_empty(),
+                "Empty description for {:?}",
+                source
+            );
+            assert_eq!(
+                format!("{source}"),
+                source.description(),
+                "Display mismatch for {:?}",
+                source
+            );
+        }
     }
 
     #[test]
-    fn test_install_source_update_instructions_homebrew() {
-        let source = InstallSource::Homebrew;
-        let instructions = source.update_instructions();
-        assert!(instructions.is_some());
-        assert!(instructions.unwrap().contains("brew upgrade"));
-    }
-
-    #[test]
-    fn test_install_source_update_instructions_aur() {
-        let source = InstallSource::AUR;
-        let instructions = source.update_instructions();
-        assert!(instructions.is_some());
-        assert!(instructions.unwrap().contains("yay") || instructions.unwrap().contains("AUR"));
-    }
-
-    #[test]
-    fn test_install_source_update_instructions_nixpkgs() {
-        let source = InstallSource::Nixpkgs;
-        let instructions = source.update_instructions();
-        assert!(instructions.is_some());
-        assert!(instructions.unwrap().contains("nix") || instructions.unwrap().contains("Nix"));
-    }
-
-    #[test]
-    fn test_install_source_update_instructions_binary() {
-        let source = InstallSource::Binary;
-        assert!(source.update_instructions().is_none());
-    }
-
-    #[test]
-    fn test_install_source_supports_self_update() {
-        // Only Binary should support self-update
-        assert!(!InstallSource::Cargo.supports_self_update());
-        assert!(!InstallSource::Homebrew.supports_self_update());
-        assert!(!InstallSource::AUR.supports_self_update());
-        assert!(!InstallSource::Nixpkgs.supports_self_update());
-        assert!(InstallSource::Binary.supports_self_update());
-    }
-
-    #[test]
-    fn test_install_source_description() {
-        assert!(!InstallSource::Cargo.description().is_empty());
-        assert!(!InstallSource::Homebrew.description().is_empty());
-        assert!(!InstallSource::AUR.description().is_empty());
-        assert!(!InstallSource::Nixpkgs.description().is_empty());
-        assert!(!InstallSource::Binary.description().is_empty());
-    }
-
-    #[test]
-    fn test_install_source_display() {
-        // Display should return the description
-        assert_eq!(
-            format!("{}", InstallSource::Cargo),
-            InstallSource::Cargo.description()
-        );
-        assert_eq!(
-            format!("{}", InstallSource::Binary),
-            InstallSource::Binary.description()
-        );
-    }
-
-    #[test]
-    fn test_install_source_equality() {
-        assert_eq!(InstallSource::Cargo, InstallSource::Cargo);
-        assert_ne!(InstallSource::Cargo, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_install_source_clone() {
+    fn test_install_source_traits() {
+        // Test Debug, Clone, PartialEq, Eq traits
         let source = InstallSource::Homebrew;
         let cloned = source;
-        assert_eq!(source, cloned);
-    }
 
-    #[test]
-    fn test_install_source_debug() {
-        // Ensure Debug is implemented
+        // Clone (Copy)
+        assert_eq!(source, cloned);
+
+        // PartialEq and Eq
+        assert_eq!(InstallSource::Cargo, InstallSource::Cargo);
+        assert_ne!(InstallSource::Cargo, InstallSource::Binary);
+
+        // Debug
         let debug_str = format!("{:?}", InstallSource::AUR);
         assert!(debug_str.contains("AUR"));
     }
 
     // -------------------------------------------------------------------------
-    // Path detection tests - Cargo installation
+    // Path detection - Cargo installation (table-driven)
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_detect_cargo_unix_style() {
-        let home = PathBuf::from("/home/user");
-        let exe_path = PathBuf::from("/home/user/.cargo/bin/lazylora");
+    fn test_cargo_path_detection() {
+        // Test cases: (exe_path, home_path, expected)
+        let cases = [
+            // Unix-style paths
+            (
+                "/home/user/.cargo/bin/lazylora",
+                "/home/user",
+                InstallSource::Cargo,
+            ),
+            (
+                "/Users/developer/.cargo/bin/lazylora",
+                "/Users/developer",
+                InstallSource::Cargo,
+            ),
+            // Windows-style paths
+            (
+                "C:\\Users\\Developer\\.cargo\\bin\\lazylora.exe",
+                "C:\\Users\\Developer",
+                InstallSource::Cargo,
+            ),
+            // Not in cargo bin
+            (
+                "/home/user/projects/lazylora/target/debug/lazylora",
+                "/home/user",
+                InstallSource::Binary,
+            ),
+            (
+                "/home/user/projects/lazylora/target/release/lazylora",
+                "/home/user",
+                InstallSource::Binary,
+            ),
+            // Different user (should not match)
+            (
+                "/home/bob/.cargo/bin/lazylora",
+                "/home/alice",
+                InstallSource::Binary,
+            ),
+        ];
 
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Cargo);
-    }
-
-    #[test]
-    fn test_detect_cargo_macos_style() {
-        let home = PathBuf::from("/Users/developer");
-        let exe_path = PathBuf::from("/Users/developer/.cargo/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Cargo);
-    }
-
-    #[test]
-    fn test_detect_cargo_windows_style() {
-        let home = PathBuf::from("C:\\Users\\Developer");
-        let exe_path = PathBuf::from("C:\\Users\\Developer\\.cargo\\bin\\lazylora.exe");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Cargo);
-    }
-
-    #[test]
-    fn test_detect_cargo_not_in_cargo_bin() {
-        let home = PathBuf::from("/home/user");
-        let exe_path = PathBuf::from("/home/user/projects/lazylora/target/debug/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_cargo_different_user_home() {
-        // Binary in one user's cargo, but home is different user
-        let home = PathBuf::from("/home/alice");
-        let exe_path = PathBuf::from("/home/bob/.cargo/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        // Should NOT match because it's not in alice's cargo bin
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_no_home_dir() {
-        let exe_path = PathBuf::from("/home/user/.cargo/bin/lazylora");
-
-        // No home directory provided
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
+        for (exe_path, home_path, expected) in cases {
+            let result = detect_install_source_from_path(
+                PathBuf::from(exe_path),
+                Some(&PathBuf::from(home_path)),
+                false,
+            );
+            assert_eq!(result, expected, "Path: {exe_path}, Home: {home_path}");
+        }
     }
 
     // -------------------------------------------------------------------------
-    // Path detection tests - Homebrew installation (macOS)
+    // Path detection - Homebrew installation (table-driven)
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_detect_homebrew_cellar_path() {
-        let exe_path = PathBuf::from("/usr/local/Cellar/lazylora/1.0.0/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Homebrew);
-    }
-
-    #[test]
-    fn test_detect_homebrew_opt_path() {
-        let exe_path = PathBuf::from("/opt/homebrew/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Homebrew);
-    }
-
-    #[test]
-    fn test_detect_homebrew_arm64_cellar() {
-        // Apple Silicon Macs use /opt/homebrew
-        let exe_path = PathBuf::from("/opt/homebrew/Cellar/lazylora/1.0.0/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Homebrew);
-    }
-
-    #[test]
-    fn test_detect_homebrew_case_insensitive() {
-        // Test case variations
-        let paths = [
+    fn test_homebrew_path_detection() {
+        let cases = [
+            "/usr/local/Cellar/lazylora/1.0.0/bin/lazylora",
+            "/opt/homebrew/bin/lazylora",
+            "/opt/homebrew/Cellar/lazylora/1.0.0/bin/lazylora",
+            // Case insensitive variants
             "/usr/local/CELLAR/lazylora/bin/lazylora",
             "/opt/HOMEBREW/bin/lazylora",
             "/usr/local/cellar/lazylora/bin/lazylora",
         ];
 
-        for path in paths {
-            let exe_path = PathBuf::from(path);
-            let result = detect_install_source_from_path(&exe_path, None, false);
-            assert_eq!(result, InstallSource::Homebrew, "Failed for path: {}", path);
+        for path in cases {
+            let result = detect_install_source_from_path(PathBuf::from(path), None, false);
+            assert_eq!(result, InstallSource::Homebrew, "Path: {path}");
         }
     }
 
     // -------------------------------------------------------------------------
-    // Path detection tests - Nix installation
+    // Path detection - Nix installation (table-driven)
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_detect_nix_store() {
-        let exe_path = PathBuf::from("/nix/store/abc123-lazylora-1.0.0/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Nixpkgs);
-    }
-
-    #[test]
-    fn test_detect_nix_store_with_hash() {
-        let exe_path = PathBuf::from(
+    fn test_nix_path_detection() {
+        let cases = [
+            "/nix/store/abc123-lazylora-1.0.0/bin/lazylora",
             "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-lazylora-1.0.0/bin/lazylora",
-        );
+            "/nix/store/xyz789-profile/bin/lazylora",
+            "/nix/store/hash-lazylora/bin/lazylora",
+        ];
 
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Nixpkgs);
-    }
-
-    #[test]
-    fn test_detect_nix_profile() {
-        // Nix profile paths also contain /nix/store/
-        let exe_path = PathBuf::from("/nix/store/xyz789-profile/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Nixpkgs);
+        for path in cases {
+            let result = detect_install_source_from_path(PathBuf::from(path), None, false);
+            assert_eq!(result, InstallSource::Nixpkgs, "Path: {path}");
+        }
     }
 
     // -------------------------------------------------------------------------
-    // Path detection tests - Binary (direct download)
+    // Path detection - Binary installation (table-driven)
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_detect_binary_usr_local_bin() {
-        let exe_path = PathBuf::from("/usr/local/bin/lazylora");
+    fn test_binary_path_detection() {
+        let cases = [
+            // Unix-style paths
+            "/usr/local/bin/lazylora",
+            "/home/user/bin/lazylora",
+            "/opt/lazylora/lazylora",
+            "/usr/bin/lazylora", // Without pacman check
+            "/Applications/lazylora",
+            // Windows-style paths
+            "C:\\Program Files\\LazyLora\\lazylora.exe",
+            "C:\\Users\\Dev\\AppData\\Local\\lazylora\\lazylora.exe",
+            "C:\\Program Files\\lazylora\\lazylora.exe",
+            // Relative paths
+            "./lazylora",
+            // Empty path
+            "",
+        ];
 
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_binary_home_bin() {
-        let home = PathBuf::from("/home/user");
-        let exe_path = PathBuf::from("/home/user/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_binary_opt() {
-        let exe_path = PathBuf::from("/opt/lazylora/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_binary_windows_program_files() {
-        let exe_path = PathBuf::from("C:\\Program Files\\LazyLora\\lazylora.exe");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_binary_windows_appdata() {
-        let exe_path = PathBuf::from("C:\\Users\\Dev\\AppData\\Local\\lazylora\\lazylora.exe");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_binary_current_directory() {
-        let exe_path = PathBuf::from("./lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_binary_target_debug() {
-        // Development build
-        let home = PathBuf::from("/home/user");
-        let exe_path = PathBuf::from("/home/user/projects/lazylora/target/debug/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_detect_binary_target_release() {
-        // Release build
-        let home = PathBuf::from("/home/user");
-        let exe_path = PathBuf::from("/home/user/projects/lazylora/target/release/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Binary);
+        for path in cases {
+            let result = detect_install_source_from_path(PathBuf::from(path), None, false);
+            assert_eq!(result, InstallSource::Binary, "Path: {path}");
+        }
     }
 
     // -------------------------------------------------------------------------
-    // Path detection tests - AUR (Arch Linux)
-    // Note: AUR detection requires pacman check, which we skip in tests
+    // Path detection - Priority and edge cases (table-driven)
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_detect_usr_bin_without_pacman_check() {
-        // Without pacman check, /usr/bin should be detected as Binary
-        let exe_path = PathBuf::from("/usr/bin/lazylora");
+    fn test_path_detection_priority() {
+        // Test cases: (exe_path, home_path, expected, description)
+        let cases = [
+            // Cargo takes priority over generic paths
+            (
+                "/home/user/.cargo/bin/lazylora",
+                Some("/home/user"),
+                InstallSource::Cargo,
+                "Cargo priority",
+            ),
+            // Homebrew takes priority
+            (
+                "/opt/homebrew/bin/lazylora",
+                Some("/home/user"),
+                InstallSource::Homebrew,
+                "Homebrew priority",
+            ),
+            // Nix takes priority
+            (
+                "/nix/store/hash-lazylora/bin/lazylora",
+                None,
+                InstallSource::Nixpkgs,
+                "Nix priority",
+            ),
+            // No home dir provided (cargo check skipped)
+            (
+                "/home/user/.cargo/bin/lazylora",
+                None,
+                InstallSource::Binary,
+                "No home dir",
+            ),
+        ];
 
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
+        for (exe_path, home_path, expected, description) in cases {
+            let result = detect_install_source_from_path(
+                PathBuf::from(exe_path),
+                home_path.map(PathBuf::from).as_deref(),
+                false,
+            );
+            assert_eq!(result, expected, "{description}: {exe_path}");
+        }
+    }
+
+    #[test]
+    fn test_special_path_cases() {
+        // Test cases: (exe_path, home_path, expected, description)
+        let cases = [
+            // Paths with spaces
+            (
+                "/home/user name/.cargo/bin/lazylora",
+                Some("/home/user name"),
+                InstallSource::Cargo,
+                "Path with spaces",
+            ),
+            // Paths with unicode
+            (
+                "/home/用户/.cargo/bin/lazylora",
+                Some("/home/用户"),
+                InstallSource::Cargo,
+                "Path with unicode",
+            ),
+            // Empty path
+            ("", None, InstallSource::Binary, "Empty path"),
+        ];
+
+        for (exe_path, home_path, expected, description) in cases {
+            let result = detect_install_source_from_path(
+                PathBuf::from(exe_path),
+                home_path.map(PathBuf::from).as_deref(),
+                false,
+            );
+            assert_eq!(result, expected, "{description}: {exe_path}");
+        }
     }
 
     // -------------------------------------------------------------------------
-    // Edge cases and priority tests
+    // Cross-platform availability tests (table-driven)
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_priority_cargo_over_binary() {
-        // Cargo paths should be detected before falling through to Binary
-        let home = PathBuf::from("/home/user");
-        let exe_path = PathBuf::from("/home/user/.cargo/bin/lazylora");
+    fn test_cross_platform_availability() {
+        // Test cases: (exe_path, home_path, expected, platform)
+        let cases = [
+            // Cargo - available on all platforms
+            (
+                "/home/user/.cargo/bin/lazylora",
+                Some("/home/user"),
+                InstallSource::Cargo,
+                "Linux",
+            ),
+            (
+                "/Users/user/.cargo/bin/lazylora",
+                Some("/Users/user"),
+                InstallSource::Cargo,
+                "macOS",
+            ),
+            (
+                "C:\\Users\\User\\.cargo\\bin\\lazylora.exe",
+                Some("C:\\Users\\User"),
+                InstallSource::Cargo,
+                "Windows",
+            ),
+            // Binary - available on all platforms
+            (
+                "/usr/local/bin/lazylora",
+                None,
+                InstallSource::Binary,
+                "Linux",
+            ),
+            (
+                "/Applications/lazylora",
+                None,
+                InstallSource::Binary,
+                "macOS",
+            ),
+            (
+                "C:\\Program Files\\lazylora\\lazylora.exe",
+                None,
+                InstallSource::Binary,
+                "Windows",
+            ),
+        ];
 
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Cargo);
-    }
+        for (exe_path, home_path, expected, platform) in cases {
+            let result = detect_install_source_from_path(
+                PathBuf::from(exe_path),
+                home_path.map(PathBuf::from).as_deref(),
+                false,
+            );
+            assert_eq!(result, expected, "{platform}: {exe_path}");
+        }
 
-    #[test]
-    fn test_priority_homebrew_over_binary() {
-        // Homebrew paths should be detected before falling through to Binary
-        let home = PathBuf::from("/Users/user");
-        let exe_path = PathBuf::from("/opt/homebrew/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Homebrew);
-    }
-
-    #[test]
-    fn test_priority_nix_over_binary() {
-        // Nix paths should be detected before falling through to Binary
-        let exe_path = PathBuf::from("/nix/store/hash-lazylora/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Nixpkgs);
-    }
-
-    #[test]
-    fn test_empty_path() {
-        let exe_path = PathBuf::from("");
-
-        let result = detect_install_source_from_path(&exe_path, None, false);
-        assert_eq!(result, InstallSource::Binary);
-    }
-
-    #[test]
-    fn test_path_with_spaces() {
-        let home = PathBuf::from("/home/user name");
-        let exe_path = PathBuf::from("/home/user name/.cargo/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Cargo);
-    }
-
-    #[test]
-    fn test_path_with_unicode() {
-        let home = PathBuf::from("/home/用户");
-        let exe_path = PathBuf::from("/home/用户/.cargo/bin/lazylora");
-
-        let result = detect_install_source_from_path(&exe_path, Some(&home), false);
-        assert_eq!(result, InstallSource::Cargo);
-    }
-
-    // -------------------------------------------------------------------------
-    // Platform-specific distribution availability tests
-    // These document which install sources are available on each platform
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn test_available_sources_documented() {
-        // Document distribution availability:
-        // - Cargo: Linux, macOS, Windows
-        // - AUR: Linux (Arch only)
-        // - Homebrew: macOS only (we don't support linuxbrew)
-        // - Binary: Linux, macOS, Windows
-
-        // All sources should have valid descriptions
+        // Verify all sources have valid descriptions (documentation check)
         let all_sources = [
             InstallSource::Cargo,
             InstallSource::Homebrew,
@@ -690,61 +642,10 @@ mod tests {
         ];
 
         for source in all_sources {
-            assert!(!source.description().is_empty());
+            assert!(
+                !source.description().is_empty(),
+                "{source:?} should have a description"
+            );
         }
-    }
-
-    #[test]
-    fn test_cargo_available_all_platforms() {
-        // Cargo installation works on all platforms
-        // Test Linux-style path
-        let home = PathBuf::from("/home/user");
-        let exe_path = PathBuf::from("/home/user/.cargo/bin/lazylora");
-        assert_eq!(
-            detect_install_source_from_path(&exe_path, Some(&home), false),
-            InstallSource::Cargo
-        );
-
-        // Test macOS-style path
-        let home = PathBuf::from("/Users/user");
-        let exe_path = PathBuf::from("/Users/user/.cargo/bin/lazylora");
-        assert_eq!(
-            detect_install_source_from_path(&exe_path, Some(&home), false),
-            InstallSource::Cargo
-        );
-
-        // Test Windows-style path
-        let home = PathBuf::from("C:\\Users\\User");
-        let exe_path = PathBuf::from("C:\\Users\\User\\.cargo\\bin\\lazylora.exe");
-        assert_eq!(
-            detect_install_source_from_path(&exe_path, Some(&home), false),
-            InstallSource::Cargo
-        );
-    }
-
-    #[test]
-    fn test_binary_available_all_platforms() {
-        // Direct binary download works on all platforms
-        // Test Linux-style path
-        assert_eq!(
-            detect_install_source_from_path(PathBuf::from("/usr/local/bin/lazylora"), None, false),
-            InstallSource::Binary
-        );
-
-        // Test macOS-style path
-        assert_eq!(
-            detect_install_source_from_path(PathBuf::from("/Applications/lazylora"), None, false),
-            InstallSource::Binary
-        );
-
-        // Test Windows-style path
-        assert_eq!(
-            detect_install_source_from_path(
-                PathBuf::from("C:\\Program Files\\lazylora\\lazylora.exe"),
-                None,
-                false
-            ),
-            InstallSource::Binary
-        );
     }
 }

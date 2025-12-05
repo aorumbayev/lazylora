@@ -3,8 +3,6 @@
 //! This module provides the `TxnGraphWidget` which renders a transaction graph
 //! as ASCII art in the terminal using Ratatui.
 
-#![allow(dead_code)]
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -46,6 +44,7 @@ impl<'a> TxnGraphWidget<'a> {
     }
 
     /// Hide column headers
+    #[allow(dead_code)]
     #[must_use]
     pub const fn without_headers(mut self) -> Self {
         self.show_headers = false;
@@ -53,6 +52,7 @@ impl<'a> TxnGraphWidget<'a> {
     }
 
     /// Hide row labels
+    #[allow(dead_code)]
     #[must_use]
     pub const fn without_labels(mut self) -> Self {
         self.show_labels = false;
@@ -60,6 +60,7 @@ impl<'a> TxnGraphWidget<'a> {
     }
 
     /// Disable centering
+    #[allow(dead_code)]
     #[must_use]
     pub const fn without_centering(mut self) -> Self {
         self.center = false;

@@ -162,7 +162,7 @@ pub fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
     let content_area = content_layout[2];
 
     if is_visual {
-        render_visual_mode(app, &graph, &graph_widget, frame, content_area);
+        render_visual_mode(app, &txn, &graph, &graph_widget, frame, content_area);
     } else {
         render_table_mode(&txn, app, frame, content_area);
     }
@@ -208,12 +208,14 @@ pub fn render_transaction_details(app: &App, frame: &mut Frame, area: Rect) {
 /// # Arguments
 ///
 /// * `app` - Application state for scroll position
+/// * `txn` - Transaction to render (used as fallback when graph is empty)
 /// * `graph` - Transaction graph structure
 /// * `graph_widget` - Graph widget for rendering
 /// * `frame` - Ratatui frame
 /// * `area` - Content area for the graph
 fn render_visual_mode(
     app: &App,
+    txn: &Transaction,
     graph: &TxnGraph,
     graph_widget: &TxnGraphWidget,
     frame: &mut Frame,
@@ -337,7 +339,7 @@ fn render_visual_mode(
         }
     } else {
         // Fallback to TxnVisualCard for edge cases
-        let visual_card = TxnVisualCard::new(app.data.viewed_transaction.as_ref().unwrap());
+        let visual_card = TxnVisualCard::new(txn);
         let lines = visual_card.to_lines();
 
         let visual_content = Paragraph::new(lines).alignment(Alignment::Left);
@@ -493,7 +495,7 @@ fn render_payment_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    pay_details: &crate::algorand::PaymentDetails,
+    pay_details: &crate::domain::PaymentDetails,
 ) {
     details.push(("To:".to_string(), txn.to.clone()));
     details.push((
@@ -520,7 +522,7 @@ fn render_asset_transfer_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    axfer_details: &crate::algorand::AssetTransferDetails,
+    axfer_details: &crate::domain::AssetTransferDetails,
 ) {
     details.push(("To:".to_string(), txn.to.clone()));
     details.push(("Amount:".to_string(), format!("{} units", txn.amount)));
@@ -550,7 +552,7 @@ fn render_asset_config_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    acfg_details: &crate::algorand::AssetConfigDetails,
+    acfg_details: &crate::domain::AssetConfigDetails,
 ) {
     details.push(("Fee:".to_string(), formatted_fee.to_string()));
     details.push(("Block:".to_string(), format!("#{}", txn.block)));
@@ -597,7 +599,7 @@ fn render_asset_freeze_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    afrz_details: &crate::algorand::AssetFreezeDetails,
+    afrz_details: &crate::domain::AssetFreezeDetails,
 ) {
     details.push((
         "Freeze Target:".to_string(),
@@ -620,7 +622,7 @@ fn render_app_call_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    app_details: &crate::algorand::AppCallDetails,
+    app_details: &crate::domain::AppCallDetails,
     app: &App,
 ) {
     let app_id_str = if app_details.app_id == 0 {
@@ -729,7 +731,7 @@ fn render_keyreg_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    keyreg_details: &crate::algorand::KeyRegDetails,
+    keyreg_details: &crate::domain::KeyRegDetails,
 ) {
     details.push(("Fee:".to_string(), formatted_fee.to_string()));
     details.push(("Block:".to_string(), format!("#{}", txn.block)));
@@ -772,7 +774,7 @@ fn render_state_proof_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    sp_details: &crate::algorand::StateProofDetails,
+    sp_details: &crate::domain::StateProofDetails,
 ) {
     if let Some(sp_type) = sp_details.state_proof_type {
         details.push(("State Proof Type:".to_string(), format!("{}", sp_type)));
@@ -787,7 +789,7 @@ fn render_heartbeat_details(
     details: &mut Vec<(String, String)>,
     txn: &Transaction,
     formatted_fee: &str,
-    hb_details: &crate::algorand::HeartbeatDetails,
+    hb_details: &crate::domain::HeartbeatDetails,
 ) {
     details.push(("Fee:".to_string(), formatted_fee.to_string()));
     details.push(("Block:".to_string(), format!("#{}", txn.block)));

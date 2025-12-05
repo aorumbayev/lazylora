@@ -6,8 +6,6 @@
 //! - [`AmountDisplay`]: Formatted display for ALGO or ASA amounts
 //! - [`AddressDisplay`]: Truncated address display with optional labels
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 mod address;
 mod amount;
 mod badge;

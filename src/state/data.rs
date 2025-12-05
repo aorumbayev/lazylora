@@ -10,8 +10,6 @@
 //! The data state is separate from navigation state, allowing the data
 //! to be updated independently of what's currently selected or visible.
 
-#![allow(dead_code)]
-
 use crate::domain::{
     AccountDetails, AlgoBlock, AssetDetails, BlockDetails, SearchResultItem, Transaction,
 };
@@ -87,6 +85,7 @@ impl DataState {
     }
 
     /// Clears viewed entity details (when closing detail popups).
+    #[allow(dead_code)] // Part of data state API
     pub fn clear_viewed_details(&mut self) {
         self.viewed_transaction = None;
         self.viewed_account = None;
@@ -99,12 +98,14 @@ impl DataState {
 
     /// Returns `true` if there are no blocks.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn has_no_blocks(&self) -> bool {
         self.blocks.is_empty()
     }
 
     /// Returns the number of blocks.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn block_count(&self) -> usize {
         self.blocks.len()
     }
@@ -133,6 +134,7 @@ impl DataState {
     ///
     /// Reference to the block if the index is valid.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn get_block(&self, index: usize) -> Option<&AlgoBlock> {
         self.blocks.get(index)
     }
@@ -147,6 +149,7 @@ impl DataState {
     ///
     /// The block ID if the index is valid.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn get_block_id(&self, index: usize) -> Option<u64> {
         self.blocks.get(index).map(|b| b.id)
     }
@@ -157,12 +160,14 @@ impl DataState {
 
     /// Returns `true` if there are no transactions.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn has_no_transactions(&self) -> bool {
         self.transactions.is_empty()
     }
 
     /// Returns the number of transactions.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn transaction_count(&self) -> usize {
         self.transactions.len()
     }
@@ -191,6 +196,7 @@ impl DataState {
     ///
     /// Reference to the transaction if the index is valid.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn get_transaction(&self, index: usize) -> Option<&Transaction> {
         self.transactions.get(index)
     }
@@ -205,6 +211,7 @@ impl DataState {
     ///
     /// The transaction ID if the index is valid.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn get_transaction_id(&self, index: usize) -> Option<&str> {
         self.transactions.get(index).map(|t| t.id.as_str())
     }
@@ -215,19 +222,22 @@ impl DataState {
 
     /// Returns `true` if there are no search results.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn has_no_search_results(&self) -> bool {
         self.filtered_search_results.is_empty()
     }
 
     /// Returns the number of search results.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn search_results_count(&self) -> usize {
         self.filtered_search_results.len()
     }
 
     /// Clears search results.
+    #[allow(dead_code)] // Part of data state API
     pub fn clear_search_results(&mut self) {
-        self.filtered_search_results.clear();
+        self.filtered_search_results.clear()
     }
 
     /// Sets search results from a list of items.
@@ -235,6 +245,7 @@ impl DataState {
     /// # Arguments
     ///
     /// * `results` - The search result items to store
+    #[allow(dead_code)] // Part of data state API
     pub fn set_search_results(&mut self, results: Vec<SearchResultItem>) {
         self.filtered_search_results = results.into_iter().enumerate().collect();
     }
@@ -249,6 +260,7 @@ impl DataState {
     ///
     /// Reference to the transaction if found in search results.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn find_search_result_transaction(&self, txn_id: &str) -> Option<&Transaction> {
         self.filtered_search_results
             .iter()
@@ -264,6 +276,7 @@ impl DataState {
     ///
     /// Reference to the first search result item, if any.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn first_search_result(&self) -> Option<&SearchResultItem> {
         self.filtered_search_results.first().map(|(_, item)| item)
     }
@@ -274,6 +287,7 @@ impl DataState {
 
     /// Returns `true` if block details are loaded.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn has_block_details(&self) -> bool {
         self.block_details.is_some()
     }
@@ -284,6 +298,7 @@ impl DataState {
     ///
     /// The count of transactions if block details are loaded, otherwise 0.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn block_details_txn_count(&self) -> usize {
         self.block_details
             .as_ref()
@@ -300,6 +315,7 @@ impl DataState {
     ///
     /// Reference to the transaction if found.
     #[must_use]
+    #[allow(dead_code)] // Part of data state API
     pub fn get_block_details_txn(&self, index: usize) -> Option<&Transaction> {
         self.block_details
             .as_ref()

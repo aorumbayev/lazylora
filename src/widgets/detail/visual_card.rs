@@ -3,8 +3,6 @@
 //! Provides a comprehensive card view of transaction details including
 //! header, type badge, flow diagram, and type-specific details.
 
-#![allow(dead_code)]
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -59,6 +57,7 @@ impl<'a> TxnVisualCard<'a> {
     }
 
     /// Hide the flow diagram.
+    #[allow(dead_code)]
     #[must_use]
     pub const fn without_flow(mut self) -> Self {
         self.show_flow = false;
@@ -66,6 +65,7 @@ impl<'a> TxnVisualCard<'a> {
     }
 
     /// Hide the details section.
+    #[allow(dead_code)]
     #[must_use]
     pub const fn without_details(mut self) -> Self {
         self.show_details = false;
@@ -73,6 +73,7 @@ impl<'a> TxnVisualCard<'a> {
     }
 
     /// Enable compact mode.
+    #[allow(dead_code)]
     #[must_use]
     pub const fn compact(mut self) -> Self {
         self.compact = true;

@@ -2,8 +2,6 @@
 //!
 //! Displays a colored badge showing the transaction type with an icon.
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -38,6 +36,7 @@ use crate::widgets::helpers::txn_type_icon;
 /// let badge = TxnTypeBadge::new(TxnType::Payment);
 /// let compact_badge = TxnTypeBadge::new(TxnType::AppCall).compact();
 /// ```
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TxnTypeBadge {
     txn_type: TxnType,
@@ -55,6 +54,7 @@ impl TxnTypeBadge {
     ///
     /// A new `TxnTypeBadge` instance
     #[must_use]
+    #[allow(dead_code)] // Part of TxnTypeBadge public API
     pub const fn new(txn_type: TxnType) -> Self {
         Self {
             txn_type,
@@ -68,6 +68,7 @@ impl TxnTypeBadge {
     ///
     /// Self with compact mode enabled
     #[must_use]
+    #[allow(dead_code)] // Part of TxnTypeBadge public API
     pub const fn compact(mut self) -> Self {
         self.compact = true;
         self

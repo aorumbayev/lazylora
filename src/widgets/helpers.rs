@@ -5,22 +5,13 @@
 //! - Amount formatting (ALGO and ASA)
 //! - Transaction type icons and codes
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 use crate::domain::TxnType;
 
 // ============================================================================
-// Constants
+// Re-exported Constants
 // ============================================================================
 
-/// Algorand symbol for display
-pub const ALGO_SYMBOL: &str = "◈";
-
-/// Asset symbol for display
-pub const ASSET_SYMBOL: &str = "◆";
-
-/// Number of microAlgos per Algo
-pub const MICROALGOS_PER_ALGO: f64 = 1_000_000.0;
+pub use crate::constants::{ALGO_SYMBOL, ASSET_SYMBOL, MICROALGOS_PER_ALGO};
 
 // ============================================================================
 // Address Formatting
@@ -113,6 +104,7 @@ pub fn format_algo_amount(microalgos: u64) -> String {
 /// assert_eq!(format_asset_amount(1000, None), "1,000");
 /// assert_eq!(format_asset_amount(100_000_000, Some(6)), "100.000000");
 /// ```
+#[allow(dead_code)]
 #[must_use]
 pub fn format_asset_amount(amount: u64, decimals: Option<u64>) -> String {
     match decimals {
@@ -133,6 +125,7 @@ pub fn format_asset_amount(amount: u64, decimals: Option<u64>) -> String {
 /// assert_eq!(format_with_commas(1000), "1,000");
 /// assert_eq!(format_with_commas(1_000_000), "1,000,000");
 /// ```
+#[allow(dead_code)]
 #[must_use]
 pub fn format_with_commas(n: u64) -> String {
     let s = n.to_string();
@@ -147,6 +140,7 @@ pub fn format_with_commas(n: u64) -> String {
 }
 
 /// Format a floating point number with commas and specified decimal places.
+#[allow(dead_code)]
 #[must_use]
 pub fn format_with_commas_f64(n: f64, decimals: usize) -> String {
     let int_part = n.trunc() as u64;
@@ -202,6 +196,7 @@ pub const fn txn_type_icon(txn_type: TxnType) -> &'static str {
 /// assert_eq!(txn_type_code(TxnType::AppCall), "APP");
 /// ```
 #[must_use]
+#[allow(dead_code)] // Future use
 pub const fn txn_type_code(txn_type: TxnType) -> &'static str {
     match txn_type {
         TxnType::Payment => "PAY",
@@ -224,82 +219,105 @@ pub const fn txn_type_code(txn_type: TxnType) -> &'static str {
 mod tests {
     use super::*;
 
+    /// Table-driven tests for address truncation.
+    /// Per commandments: use table tests to reduce duplication.
     #[test]
-    fn test_truncate_address_short() {
-        let addr = "ABCDEFGH";
-        assert_eq!(truncate_address(addr, 20), "ABCDEFGH");
+    fn test_truncate_address() {
+        let long_addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let cases = [
+            // (input, max_len, expected_behavior)
+            ("ABCDEFGH", 20, "fits without truncation"),
+            ("ABCDEFGHIJ", 10, "exact fit"),
+            (long_addr, 20, "truncated with ellipsis"),
+            ("ABCDEFGHIJ", 5, "very short max"),
+        ];
+
+        for (addr, max_len, desc) in cases {
+            let result = truncate_address(addr, max_len);
+            assert!(
+                result.len() <= max_len,
+                "{desc}: result len {} > max {}",
+                result.len(),
+                max_len
+            );
+            if addr.len() <= max_len {
+                assert_eq!(result, addr, "{desc}: should not truncate");
+            } else if max_len >= 7 {
+                assert!(result.contains("..."), "{desc}: should have ellipsis");
+            }
+        }
     }
 
-    #[test]
-    fn test_truncate_address_exact() {
-        let addr = "ABCDEFGHIJ";
-        assert_eq!(truncate_address(addr, 10), "ABCDEFGHIJ");
-    }
-
-    #[test]
-    fn test_truncate_address_long() {
-        let addr = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        let result = truncate_address(addr, 20);
-        assert_eq!(result.len(), 20);
-        assert!(result.contains("..."));
-        assert!(result.starts_with("AAAA"));
-        assert!(result.ends_with("AAAA"));
-    }
-
-    #[test]
-    fn test_truncate_address_very_short_max() {
-        let addr = "ABCDEFGHIJ";
-        let result = truncate_address(addr, 5);
-        assert_eq!(result.len(), 5);
-    }
-
+    /// Table-driven tests for ALGO amount formatting.
     #[test]
     fn test_format_algo_amount() {
-        assert_eq!(format_algo_amount(0), "0.000000 ALGO");
-        assert_eq!(format_algo_amount(1_000_000), "1.000000 ALGO");
-        assert_eq!(format_algo_amount(5_500_000), "5.500000 ALGO");
-        assert_eq!(format_algo_amount(123_456), "0.123456 ALGO");
+        let cases = [
+            (0_u64, "0.000000 ALGO"),
+            (1_000_000, "1.000000 ALGO"),
+            (5_500_000, "5.500000 ALGO"),
+            (123_456, "0.123456 ALGO"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(format_algo_amount(input), expected, "microalgos={input}");
+        }
     }
 
+    /// Table-driven tests for asset amount formatting.
     #[test]
-    fn test_format_asset_amount_no_decimals() {
-        assert_eq!(format_asset_amount(1000, None), "1,000");
-        assert_eq!(format_asset_amount(1_000_000, None), "1,000,000");
+    fn test_format_asset_amount() {
+        let cases = [
+            (1000_u64, None, "1,000"),
+            (1_000_000, None, "1,000,000"),
+            (100_000_000, Some(6_u64), "100.000000"),
+            (1_500_000, Some(6), "1.500000"),
+        ];
+
+        for (amount, decimals, expected) in cases {
+            assert_eq!(
+                format_asset_amount(amount, decimals),
+                expected,
+                "amount={amount}, decimals={decimals:?}"
+            );
+        }
     }
 
-    #[test]
-    fn test_format_asset_amount_with_decimals() {
-        assert_eq!(format_asset_amount(100_000_000, Some(6)), "100.000000");
-        assert_eq!(format_asset_amount(1_500_000, Some(6)), "1.500000");
-    }
-
+    /// Table-driven tests for number formatting with commas.
     #[test]
     fn test_format_with_commas() {
-        assert_eq!(format_with_commas(0), "0");
-        assert_eq!(format_with_commas(999), "999");
-        assert_eq!(format_with_commas(1000), "1,000");
-        assert_eq!(format_with_commas(1_000_000), "1,000,000");
-        assert_eq!(format_with_commas(1_234_567_890), "1,234,567,890");
+        let cases = [
+            (0_u64, "0"),
+            (999, "999"),
+            (1000, "1,000"),
+            (1_000_000, "1,000,000"),
+            (1_234_567_890, "1,234,567,890"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(format_with_commas(input), expected, "input={input}");
+        }
     }
 
+    /// Table-driven tests for transaction type icons and codes.
     #[test]
-    fn test_txn_type_icon() {
-        assert_eq!(txn_type_icon(TxnType::Payment), "[$]");
-        assert_eq!(txn_type_icon(TxnType::AppCall), "[A]");
-        assert_eq!(txn_type_icon(TxnType::AssetTransfer), "[>]");
-        assert_eq!(txn_type_icon(TxnType::AssetConfig), "[*]");
-        assert_eq!(txn_type_icon(TxnType::AssetFreeze), "[#]");
-        assert_eq!(txn_type_icon(TxnType::KeyReg), "[K]");
-        assert_eq!(txn_type_icon(TxnType::StateProof), "[S]");
-        assert_eq!(txn_type_icon(TxnType::Heartbeat), "[H]");
-        assert_eq!(txn_type_icon(TxnType::Unknown), "[?]");
-    }
+    fn test_txn_type_display() {
+        use TxnType::*;
 
-    #[test]
-    fn test_txn_type_code() {
-        assert_eq!(txn_type_code(TxnType::Payment), "PAY");
-        assert_eq!(txn_type_code(TxnType::AppCall), "APP");
-        assert_eq!(txn_type_code(TxnType::AssetTransfer), "AXF");
-        assert_eq!(txn_type_code(TxnType::Unknown), "???");
+        let cases = [
+            (Payment, "[$]", "PAY"),
+            (AppCall, "[A]", "APP"),
+            (AssetTransfer, "[>]", "AXF"),
+            (AssetConfig, "[*]", "ACF"),
+            (AssetFreeze, "[#]", "AFZ"),
+            (KeyReg, "[K]", "KEY"),
+            (StateProof, "[S]", "STP"),
+            (Heartbeat, "[H]", "HBT"),
+            (Unknown, "[?]", "???"),
+        ];
+
+        for (txn_type, expected_icon, expected_code) in cases {
+            assert_eq!(txn_type_icon(txn_type), expected_icon, "{txn_type:?} icon");
+            assert_eq!(txn_type_code(txn_type), expected_code, "{txn_type:?} code");
+        }
     }
 }

@@ -4,8 +4,6 @@
 //! transaction graphs, including entity types, columns, rows, and
 //! visual representation styles.
 
-#![allow(dead_code)]
-
 use ratatui::style::Color;
 
 use crate::domain::TxnType;
@@ -35,6 +33,7 @@ impl GraphEntityType {
     /// # Returns
     ///
     /// A static string prefix used when displaying the entity header
+    #[allow(dead_code)]
     #[must_use]
     pub const fn header_prefix(&self) -> &'static str {
         match self {
@@ -208,6 +207,7 @@ pub enum GraphRepresentation {
 #[derive(Debug, Clone)]
 pub struct GraphRow {
     /// Transaction ID
+    #[allow(dead_code)] // Part of GraphRow public API
     pub txn_id: String,
     /// Transaction type
     pub txn_type: TxnType,
@@ -226,6 +226,7 @@ pub struct GraphRow {
     /// Display label (amount, action, etc.)
     pub label: String,
     /// Whether this row has children (inner transactions)
+    #[allow(dead_code)] // Part of GraphRow public API
     pub has_children: bool,
     /// Whether this is the last child in its parent group
     pub is_last_child: bool,

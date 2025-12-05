@@ -1,72 +1,31 @@
-//! Algorand API client and domain type facade.
+//! Algorand API client for interacting with Algorand networks.
 //!
-//! This module provides a facade that re-exports domain types from `crate::domain`
-//! and provides the `AlgoClient` for interacting with Algorand networks.
+//! This module provides the unified `AlgoClient` for making requests to:
+//! - Algorand Node (algod) - for current blockchain state
+//! - Algorand Indexer - for historical data queries
+//! - NFD API - for human-readable address names
 //!
-//! # Migration Note
+//! # Example
 //!
-//! This file is transitioning to a thin facade. Eventually (Stage 3), it will be deleted
-//! and all code will import from `crate::domain` and `crate::client` directly.
+//! ```ignore
+//! use crate::client::AlgoClient;
+//! use crate::domain::Network;
 //!
-//! For now:
-//! - Domain types are re-exported from `crate::domain` for compatibility
-//! - `AlgoClient` remains here (will move to `crate::client` in Stage 3)
+//! let client = AlgoClient::new(Network::MainNet);
+//! let blocks = client.get_latest_blocks(10).await?;
+//! ```
 
-use crate::state::SearchType;
 use color_eyre::Result;
 use reqwest::Client;
 use serde_json::Value;
 
-// ============================================================================
-// Re-export Domain Types
-// ============================================================================
-
-// Re-export all domain types so existing code using `crate::algorand::Type` continues to work
-pub use crate::domain::{
-    AccountAssetHolding,
-    // Account types
-    AccountDetails,
-    AccountInfo,
-    // Block types
-    AlgoBlock,
-    // Error types
-    AlgoError,
-
-    AppCallDetails,
-    AppLocalState,
-    AssetConfigDetails,
-    // Asset types
-    AssetDetails,
-    AssetFreezeDetails,
-    AssetInfo,
-
-    AssetTransferDetails,
-    BlockDetails,
-    BlockInfo,
-
-    CreatedAppInfo,
-
-    CreatedAssetInfo,
-    HeartbeatDetails,
-
-    KeyRegDetails,
-    // Network type (from domain)
-    Network,
-
-    // NFD types
-    NfdInfo,
-    ParticipationInfo,
-    PaymentDetails,
-    // Search result types
-    SearchResultItem,
-
-    StateProofDetails,
-    // Transaction types
-    Transaction,
-    count_transactions,
-    // Utility functions (used internally by AlgoClient)
+use crate::domain::{
+    AccountAssetHolding, AccountDetails, AccountInfo, AlgoBlock, AlgoError, AppLocalState,
+    AssetDetails, AssetInfo, BlockDetails, BlockInfo, CreatedAppInfo, CreatedAssetInfo, Network,
+    NfdInfo, ParticipationInfo, SearchResultItem, Transaction, count_transactions,
     format_timestamp,
 };
+use crate::state::SearchType;
 
 // ============================================================================
 // Algorand API Client
@@ -78,6 +37,24 @@ pub struct AlgoClient {
     client: Client,
 }
 impl AlgoClient {
+    /// Create a new `AlgoClient` for the specified network.
+    ///
+    /// # Arguments
+    ///
+    /// * `network` - The Algorand network to connect to (MainNet, TestNet, or LocalNet)
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `AlgoClient` instance configured for the given network.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use crate::client::AlgoClient;
+    /// use crate::domain::Network;
+    ///
+    /// let client = AlgoClient::new(Network::MainNet);
+    /// ```
     #[must_use]
     pub fn new(network: Network) -> Self {
         Self {
@@ -112,6 +89,31 @@ impl AlgoClient {
         request
     }
 
+    /// Check the health status of the network's algod and indexer services.
+    ///
+    /// Attempts to connect to both the algod node and indexer service with a 2-second timeout.
+    /// For LocalNet, ensures both services are available before reporting success.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Both services are reachable and healthy
+    /// * `Err(String)` - Connection failed with error details
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The algod service is unreachable
+    /// - The indexer service is unreachable (LocalNet only)
+    /// - Network timeout occurs (> 2 seconds)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let client = AlgoClient::new(Network::MainNet);
+    /// if let Err(e) = client.get_network_status().await {
+    ///     eprintln!("Network error: {}", e);
+    /// }
+    /// ```
     pub async fn get_network_status(&self) -> std::result::Result<(), String> {
         let algod_url = format!("{}/health", self.network.algod_url());
         let indexer_url = format!("{}/health", self.network.indexer_url());
@@ -151,7 +153,6 @@ impl AlgoClient {
     /// # Errors
     ///
     /// Returns an error if the network request fails or JSON parsing fails.
-    #[allow(dead_code)]
     pub async fn get_transaction_by_id(&self, txid: &str) -> Result<Option<Transaction>> {
         let url = format!("{}/v2/transactions/{}", self.network.indexer_url(), txid);
         let response = self
@@ -691,7 +692,39 @@ impl AlgoClient {
     }
 
     /// Get detailed account information from algod.
-    /// Also fetches NFD info for the address on MainNet/TestNet.
+    ///
+    /// Fetches comprehensive account details including balance, assets, applications,
+    /// participation information, and optionally NFD (NFDomains) information for MainNet/TestNet.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The 58-character Algorand address to query
+    ///
+    /// # Returns
+    ///
+    /// Returns `AccountDetails` containing:
+    /// - Balance and rewards information
+    /// - Asset holdings (up to 10)
+    /// - Created assets (up to 10)
+    /// - Opted-in applications (up to 10)
+    /// - Created applications (up to 10)
+    /// - Participation (consensus) information if online
+    /// - NFD information if available
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The address format is invalid (not 58 characters or contains invalid characters)
+    /// - The account is not found (404)
+    /// - The network request fails
+    /// - JSON parsing fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let details = client.get_account_details("ADDR...").await?;
+    /// println!("Balance: {} microALGOs", details.balance);
+    /// ```
     pub async fn get_account_details(&self, address: &str) -> Result<AccountDetails> {
         // Validate address format
         if address.len() != 58
@@ -898,7 +931,30 @@ impl AlgoClient {
         }
     }
 
-    /// Get search suggestions based on the current query and search type
+    /// Get search suggestions based on the current query and search type.
+    ///
+    /// Provides real-time hints and validation feedback as the user types in the search bar.
+    /// Helps guide users to enter valid inputs for different search types.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The current search query text
+    /// * `search_type` - The type of search being performed (Account, Transaction, Block, Asset)
+    ///
+    /// # Returns
+    ///
+    /// Returns a hint string describing:
+    /// - What input is expected (if empty)
+    /// - Validation status (too short, too long, invalid format)
+    /// - NFD name detection (for accounts)
+    /// - Confirmation message when input is valid
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let hint = AlgoClient::get_search_suggestions("alice.algo", SearchType::Account);
+    /// // Returns: "NFD name 'alice.algo'. Press Enter to search."
+    /// ```
     #[must_use]
     pub fn get_search_suggestions(query: &str, search_type: SearchType) -> String {
         let trimmed = query.trim();
@@ -979,8 +1035,40 @@ impl AlgoClient {
     // NFD (NFDomains) API Methods
     // ========================================================================
 
-    /// Look up an NFD by name (e.g., "alice.algo").
-    /// Returns None if the NFD doesn't exist or if NFD is not supported on this network.
+    /// Look up an NFD (NFDomains) by name.
+    ///
+    /// Queries the NFD API to resolve a human-readable name to account information.
+    /// Only works on MainNet and TestNet where NFD is supported.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The NFD name to look up (e.g., "alice.algo" or "alice")
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(NfdInfo))` - NFD found with owner and deposit account information
+    /// * `Ok(None)` - NFD not found or not supported on this network
+    /// * `Err(_)` - Network or parsing error occurred
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The network request fails
+    /// - JSON parsing fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// if let Some(nfd) = client.get_nfd_by_name("alice.algo").await? {
+    ///     println!("Owner: {}", nfd.owner.unwrap_or_default());
+    /// }
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// - Automatically appends ".algo" suffix if not present
+    /// - Returns `None` on LocalNet (NFD not supported)
+    /// - Uses a 5-second timeout for the request
     pub async fn get_nfd_by_name(&self, name: &str) -> Result<Option<NfdInfo>> {
         let Some(nfd_url) = self.network.nfd_api_url() else {
             return Ok(None); // NFD not supported on this network
@@ -1017,7 +1105,41 @@ impl AlgoClient {
     }
 
     /// Reverse lookup - get the primary NFD for an Algorand address.
-    /// Returns None if no NFD is linked to this address or if NFD is not supported.
+    ///
+    /// Queries the NFD API to find the primary NFD name associated with an address.
+    /// Only works on MainNet and TestNet where NFD is supported.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The 58-character Algorand address to look up
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(NfdInfo))` - Primary NFD found for this address
+    /// * `Ok(None)` - No NFD linked to this address, address invalid, or NFD not supported
+    /// * `Err(_)` - Network or parsing error occurred
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The network request fails
+    /// - JSON parsing fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let address = "ADDR...";
+    /// if let Some(nfd) = client.get_nfd_for_address(address).await? {
+    ///     println!("Primary NFD: {}", nfd.name);
+    /// }
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// - Validates address format (58 uppercase alphanumeric characters)
+    /// - Returns `None` on LocalNet (NFD not supported)
+    /// - Uses `allowUnverified=true` to include unverified NFDs
+    /// - Uses a 5-second timeout for the request
     pub async fn get_nfd_for_address(&self, address: &str) -> Result<Option<NfdInfo>> {
         let Some(nfd_url) = self.network.nfd_api_url() else {
             return Ok(None); // NFD not supported on this network
@@ -1118,12 +1240,6 @@ fn parse_transactions_array(json: &Value) -> Result<Vec<Transaction>> {
 
     Ok(transactions)
 }
-
-/// Format a Unix timestamp into a human-readable string
-// ============================================================================
-// Tests
-// ============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1223,27 +1339,7 @@ mod tests {
         assert!(!Network::LocalNet.supports_nfd());
     }
 
-    #[test]
-    fn test_txn_type_as_str() {
-        assert_eq!(TxnType::Payment.as_str(), "Payment");
-        assert_eq!(TxnType::AppCall.as_str(), "App Call");
-        assert_eq!(TxnType::AssetTransfer.as_str(), "Asset Transfer");
-        assert_eq!(TxnType::Unknown.as_str(), "Unknown");
-    }
 
-    #[test]
-    fn test_network_as_str() {
-        assert_eq!(Network::MainNet.as_str(), "MainNet");
-        assert_eq!(Network::TestNet.as_str(), "TestNet");
-        assert_eq!(Network::LocalNet.as_str(), "LocalNet");
-    }
-
-    #[test]
-    fn test_network_urls() {
-        assert!(Network::MainNet.indexer_url().contains("mainnet"));
-        assert!(Network::TestNet.algod_url().contains("testnet"));
-        assert!(Network::LocalNet.algod_url().contains("localhost"));
-    }
 
     #[test]
     fn test_transaction_from_json_payment() {
@@ -1754,59 +1850,5 @@ mod tests {
         assert_eq!(txn.details, TransactionDetails::None);
     }
 
-    #[test]
-    fn test_on_complete_as_str() {
-        assert_eq!(OnComplete::NoOp.as_str(), "NoOp");
-        assert_eq!(OnComplete::OptIn.as_str(), "OptIn");
-        assert_eq!(OnComplete::CloseOut.as_str(), "CloseOut");
-        assert_eq!(OnComplete::ClearState.as_str(), "ClearState");
-        assert_eq!(OnComplete::UpdateApplication.as_str(), "Update");
-        assert_eq!(OnComplete::DeleteApplication.as_str(), "Delete");
-    }
 
-    #[test]
-    fn test_transaction_details_default() {
-        let details = TransactionDetails::default();
-        assert_eq!(details, TransactionDetails::None);
-        assert!(!details.is_creation());
-        assert!(details.created_id().is_none());
-    }
-
-    #[test]
-    fn test_algo_error_display() {
-        let parse_err = AlgoError::parse("test error");
-        assert_eq!(format!("{}", parse_err), "Parse error: test error");
-
-        let not_found_err = AlgoError::not_found("transaction", "abc123");
-        assert_eq!(
-            format!("{}", not_found_err),
-            "transaction 'abc123' not found"
-        );
-
-        let invalid_err = AlgoError::invalid_input("bad input");
-        assert_eq!(format!("{}", invalid_err), "Invalid input: bad input");
-    }
-
-    #[test]
-    fn test_format_timestamp() {
-        assert_eq!(format_timestamp(0), "Timestamp not available");
-        // Non-zero timestamp should produce a formatted string
-        let result = format_timestamp(1700000000);
-        assert!(result.contains("2023")); // Should be a date in 2023
-    }
-
-    #[test]
-    fn test_count_transactions() {
-        let block_with_txns = serde_json::json!({
-            "txns": [
-                {"id": "tx1"},
-                {"id": "tx2"},
-                {"id": "tx3"}
-            ]
-        });
-        assert_eq!(count_transactions(&block_with_txns), 3);
-
-        let empty_block = serde_json::json!({});
-        assert_eq!(count_transactions(&empty_block), 0);
-    }
 }

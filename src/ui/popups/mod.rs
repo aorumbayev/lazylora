@@ -4,7 +4,6 @@
 //! search, search results, and message popups. Popups are modal overlays that
 //! appear on top of the main UI and require user interaction to dismiss.
 
-// TODO: Remove this allow when popups are integrated in Stage 2
 #![allow(unused_imports)]
 
 pub mod message;

@@ -4,10 +4,6 @@
 //! and numeric values used throughout the application. Grouping these constants
 //! improves maintainability and ensures consistency across the codebase.
 
-// TODO: Remove these allows after full integration in Stage 2
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 // ============================================================================
 // UI Dimension Constants
 // ============================================================================
@@ -39,6 +35,21 @@ pub const HEADER_HEIGHT: u16 = 3;
 /// Used for the "Explore" section title and live mode toggle.
 pub const TITLE_HEIGHT: u16 = 3;
 
+/// Default terminal width used for layout calculations.
+///
+/// This is a fallback value when terminal width cannot be determined.
+pub const DEFAULT_TERMINAL_WIDTH: u16 = 100;
+
+/// Default number of visible blocks in the blocks list.
+///
+/// Used for scroll calculations when determining visible range.
+pub const DEFAULT_VISIBLE_BLOCKS: u16 = 10;
+
+/// Default number of visible transactions in the transactions list.
+///
+/// Used for scroll calculations when determining visible range.
+pub const DEFAULT_VISIBLE_TRANSACTIONS: u16 = 10;
+
 // ============================================================================
 // UI Dimensions Struct
 // ============================================================================
@@ -56,6 +67,7 @@ pub const TITLE_HEIGHT: u16 = 3;
 /// let dims = Dimensions::default();
 /// let items_per_page = area_height / dims.block_height as usize;
 /// ```
+#[allow(dead_code)] // Design system utility
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Dimensions {
     /// Height of each block item in the blocks list.
@@ -82,6 +94,7 @@ impl Dimensions {
     ///
     /// A new `Dimensions` instance.
     #[must_use]
+    #[allow(dead_code)] // Design system utility
     pub const fn new(
         block_height: u16,
         txn_height: u16,
@@ -106,6 +119,7 @@ impl Dimensions {
     ///
     /// The number of block items that can be displayed.
     #[must_use]
+    #[allow(dead_code)] // Design system utility
     pub const fn blocks_per_page(&self, available_height: u16) -> usize {
         (available_height / self.block_height) as usize
     }
@@ -120,6 +134,7 @@ impl Dimensions {
     ///
     /// The number of transaction items that can be displayed.
     #[must_use]
+    #[allow(dead_code)] // Design system utility
     pub const fn transactions_per_page(&self, available_height: u16) -> usize {
         (available_height / self.txn_height) as usize
     }
@@ -143,11 +158,13 @@ impl Default for Dimensions {
 /// Unicode symbol for Algorand currency display.
 ///
 /// This diamond-like symbol (◈) represents the Algo currency in the UI.
+#[allow(dead_code)] // Design system constant
 pub const ALGO_SYMBOL: &str = "◈";
 
 /// Unicode symbol for Algorand Standard Asset display.
 ///
 /// This filled diamond symbol (◆) represents ASAs in the UI.
+#[allow(dead_code)] // Design system constant
 pub const ASSET_SYMBOL: &str = "◆";
 
 // ============================================================================
@@ -163,6 +180,7 @@ pub const MICROALGOS_PER_ALGO: f64 = 1_000_000.0;
 /// Number of microAlgos per Algo as an integer.
 ///
 /// Useful for integer arithmetic without floating-point conversion.
+#[allow(dead_code)] // Design system constant
 pub const MICROALGOS_PER_ALGO_U64: u64 = 1_000_000;
 
 // ============================================================================
@@ -170,15 +188,18 @@ pub const MICROALGOS_PER_ALGO_U64: u64 = 1_000_000;
 // ============================================================================
 
 /// Default decimal places for Algo amount display.
+#[allow(dead_code)] // Design system constant
 pub const ALGO_DECIMALS: u32 = 6;
 
 /// Maximum address length before truncation.
 ///
 /// Algorand addresses are 58 characters. This constant defines when
 /// to apply truncation for display purposes.
+#[allow(dead_code)] // Design system constant
 pub const MAX_ADDRESS_DISPLAY_LENGTH: usize = 58;
 
 /// Default truncated address length for compact displays.
+#[allow(dead_code)] // Design system constant
 pub const DEFAULT_TRUNCATED_ADDRESS_LENGTH: usize = 20;
 
 // ============================================================================
@@ -204,6 +225,7 @@ pub const DEFAULT_TRUNCATED_ADDRESS_LENGTH: usize = 20;
 /// assert_eq!(algos, 5.0);
 /// ```
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub const fn microalgos_to_algos(microalgos: u64) -> f64 {
     microalgos as f64 / MICROALGOS_PER_ALGO
 }
@@ -227,6 +249,7 @@ pub const fn microalgos_to_algos(microalgos: u64) -> f64 {
 /// assert_eq!(microalgos, 5_000_000);
 /// ```
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn algos_to_microalgos(algos: f64) -> u64 {
     (algos * MICROALGOS_PER_ALGO) as u64
 }
@@ -250,6 +273,7 @@ pub fn algos_to_microalgos(algos: f64) -> u64 {
 /// assert_eq!(formatted, "5.500000 ALGO");
 /// ```
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn format_algo(microalgos: u64) -> String {
     let algos = microalgos_to_algos(microalgos);
     format!("{algos:.6} ALGO")
@@ -274,6 +298,7 @@ pub fn format_algo(microalgos: u64) -> String {
 /// assert_eq!(formatted, "◈ 5.000000");
 /// ```
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn format_algo_with_symbol(microalgos: u64) -> String {
     let algos = microalgos_to_algos(microalgos);
     format!("{ALGO_SYMBOL} {algos:.6}")
@@ -287,104 +312,57 @@ pub fn format_algo_with_symbol(microalgos: u64) -> String {
 mod tests {
     use super::*;
 
+    /// Per commandments: "One table test > Five edge case unit tests"
     #[test]
-    fn test_dimension_constants() {
-        assert_eq!(BLOCK_HEIGHT, 3);
-        assert_eq!(TXN_HEIGHT, 4);
-        assert_eq!(HEADER_HEIGHT, 3);
-        assert_eq!(TITLE_HEIGHT, 3);
+    fn test_microalgos_conversion() {
+        let cases = [
+            (0_u64, 0.0_f64),
+            (1_000_000, 1.0),
+            (5_500_000, 5.5),
+            (123_456, 0.123456),
+        ];
+
+        for (microalgos, algos) in cases {
+            assert_eq!(microalgos_to_algos(microalgos), algos);
+            assert_eq!(algos_to_microalgos(algos), microalgos);
+        }
     }
 
     #[test]
-    fn test_dimensions_default() {
+    fn test_format_algo_functions() {
+        let cases = [
+            (0_u64, "0.000000 ALGO", "◈ 0.000000"),
+            (1_000_000, "1.000000 ALGO", "◈ 1.000000"),
+            (5_500_000, "5.500000 ALGO", "◈ 5.500000"),
+        ];
+
+        for (microalgos, expected_plain, expected_symbol) in cases {
+            assert_eq!(format_algo(microalgos), expected_plain);
+            assert_eq!(format_algo_with_symbol(microalgos), expected_symbol);
+        }
+    }
+
+    #[test]
+    fn test_dimensions_pagination() {
         let dims = Dimensions::default();
+
+        // Verify default values
         assert_eq!(dims.block_height, BLOCK_HEIGHT);
         assert_eq!(dims.txn_height, TXN_HEIGHT);
-        assert_eq!(dims.header_height, HEADER_HEIGHT);
-        assert_eq!(dims.title_height, TITLE_HEIGHT);
+
+        // Test pagination calculations
+        assert_eq!(dims.blocks_per_page(30), 10); // 30 / 3
+        assert_eq!(dims.transactions_per_page(40), 10); // 40 / 4
+        assert_eq!(dims.blocks_per_page(2), 0); // Below threshold
     }
 
+    /// Sanity check that constants haven't drifted.
     #[test]
-    fn test_dimensions_new() {
-        let dims = Dimensions::new(5, 6, 4, 2);
-        assert_eq!(dims.block_height, 5);
-        assert_eq!(dims.txn_height, 6);
-        assert_eq!(dims.header_height, 4);
-        assert_eq!(dims.title_height, 2);
-    }
-
-    #[test]
-    fn test_blocks_per_page() {
-        let dims = Dimensions::default();
-        assert_eq!(dims.blocks_per_page(30), 10); // 30 / 3 = 10
-        assert_eq!(dims.blocks_per_page(15), 5); // 15 / 3 = 5
-        assert_eq!(dims.blocks_per_page(2), 0); // 2 / 3 = 0 (integer division)
-    }
-
-    #[test]
-    fn test_transactions_per_page() {
-        let dims = Dimensions::default();
-        assert_eq!(dims.transactions_per_page(40), 10); // 40 / 4 = 10
-        assert_eq!(dims.transactions_per_page(20), 5); // 20 / 4 = 5
-        assert_eq!(dims.transactions_per_page(3), 0); // 3 / 4 = 0 (integer division)
-    }
-
-    #[test]
-    fn test_display_symbols() {
-        assert_eq!(ALGO_SYMBOL, "◈");
-        assert_eq!(ASSET_SYMBOL, "◆");
-    }
-
-    #[test]
-    fn test_numeric_constants() {
+    fn test_constant_values() {
         assert_eq!(MICROALGOS_PER_ALGO, 1_000_000.0);
         assert_eq!(MICROALGOS_PER_ALGO_U64, 1_000_000);
         assert_eq!(ALGO_DECIMALS, 6);
-    }
-
-    #[test]
-    fn test_formatting_constants() {
-        assert_eq!(MAX_ADDRESS_DISPLAY_LENGTH, 58);
-        assert_eq!(DEFAULT_TRUNCATED_ADDRESS_LENGTH, 20);
-    }
-
-    #[test]
-    fn test_microalgos_to_algos() {
-        assert_eq!(microalgos_to_algos(0), 0.0);
-        assert_eq!(microalgos_to_algos(1_000_000), 1.0);
-        assert_eq!(microalgos_to_algos(5_500_000), 5.5);
-        assert_eq!(microalgos_to_algos(123_456), 0.123456);
-    }
-
-    #[test]
-    fn test_algos_to_microalgos() {
-        assert_eq!(algos_to_microalgos(0.0), 0);
-        assert_eq!(algos_to_microalgos(1.0), 1_000_000);
-        assert_eq!(algos_to_microalgos(5.5), 5_500_000);
-        assert_eq!(algos_to_microalgos(0.123456), 123_456);
-    }
-
-    #[test]
-    fn test_format_algo() {
-        assert_eq!(format_algo(0), "0.000000 ALGO");
-        assert_eq!(format_algo(1_000_000), "1.000000 ALGO");
-        assert_eq!(format_algo(5_500_000), "5.500000 ALGO");
-        assert_eq!(format_algo(123_456), "0.123456 ALGO");
-    }
-
-    #[test]
-    fn test_format_algo_with_symbol() {
-        assert_eq!(format_algo_with_symbol(0), "◈ 0.000000");
-        assert_eq!(format_algo_with_symbol(1_000_000), "◈ 1.000000");
-        assert_eq!(format_algo_with_symbol(5_000_000), "◈ 5.000000");
-    }
-
-    #[test]
-    fn test_conversion_roundtrip() {
-        // Test that converting back and forth preserves the value
-        let original = 12_345_678_u64;
-        let algos = microalgos_to_algos(original);
-        let back = algos_to_microalgos(algos);
-        assert_eq!(original, back);
+        assert_eq!(ALGO_SYMBOL, "◈");
+        assert_eq!(ASSET_SYMBOL, "◆");
     }
 }

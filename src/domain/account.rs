@@ -3,9 +3,6 @@
 //! This module defines account-related types including basic account info
 //! for search results and detailed account information for popups.
 
-// Helper methods are part of the public API but not yet all used in the application
-#![allow(dead_code)]
-
 use super::nfd::NfdInfo;
 
 // ============================================================================
@@ -50,6 +47,7 @@ impl AccountInfo {
     ///
     /// A new `AccountInfo` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of AccountInfo public API
     pub fn new(
         address: String,
         balance: u64,
@@ -76,6 +74,7 @@ impl AccountInfo {
     ///
     /// The balance in Algos as a floating point number.
     #[must_use]
+    #[allow(dead_code)] // Part of AccountInfo public API
     pub fn balance_in_algos(&self) -> f64 {
         self.balance as f64 / 1_000_000.0
     }
@@ -138,6 +137,7 @@ impl AccountDetails {
     ///
     /// The balance in Algos as a floating point number.
     #[must_use]
+    #[allow(dead_code)] // Part of AccountDetails public API
     pub fn balance_in_algos(&self) -> f64 {
         self.balance as f64 / 1_000_000.0
     }
@@ -148,6 +148,7 @@ impl AccountDetails {
     ///
     /// The minimum balance in Algos as a floating point number.
     #[must_use]
+    #[allow(dead_code)] // Part of AccountDetails public API
     pub fn min_balance_in_algos(&self) -> f64 {
         self.min_balance as f64 / 1_000_000.0
     }
@@ -158,6 +159,7 @@ impl AccountDetails {
     ///
     /// `true` if the account status is "Online", `false` otherwise.
     #[must_use]
+    #[allow(dead_code)] // Part of AccountDetails public API
     pub fn is_online(&self) -> bool {
         self.status == "Online"
     }
@@ -168,6 +170,7 @@ impl AccountDetails {
     ///
     /// `true` if the account has an authorized address, `false` otherwise.
     #[must_use]
+    #[allow(dead_code)] // Part of AccountDetails public API
     pub fn is_rekeyed(&self) -> bool {
         self.auth_addr.is_some()
     }
@@ -207,6 +210,7 @@ impl ParticipationInfo {
     ///
     /// `true` if current_round is within the valid range.
     #[must_use]
+    #[allow(dead_code)] // Part of ParticipationInfo public API
     pub fn is_valid_at(&self, current_round: u64) -> bool {
         current_round >= self.vote_first && current_round <= self.vote_last
     }
@@ -221,6 +225,7 @@ impl ParticipationInfo {
     ///
     /// The number of rounds until expiration, or 0 if already expired.
     #[must_use]
+    #[allow(dead_code)] // Part of ParticipationInfo public API
     pub fn rounds_remaining(&self, current_round: u64) -> u64 {
         self.vote_last.saturating_sub(current_round)
     }
@@ -256,6 +261,7 @@ impl AccountAssetHolding {
     ///
     /// A new `AccountAssetHolding` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of AccountAssetHolding public API
     pub fn new(asset_id: u64, amount: u64, is_frozen: bool) -> Self {
         Self {
             asset_id,
@@ -295,6 +301,7 @@ impl CreatedAssetInfo {
     ///
     /// A new `CreatedAssetInfo` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of CreatedAssetInfo public API
     pub fn new(asset_id: u64, name: String, unit_name: String) -> Self {
         Self {
             asset_id,
@@ -334,6 +341,7 @@ impl AppLocalState {
     ///
     /// A new `AppLocalState` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of AppLocalState public API
     pub fn new(app_id: u64, schema_num_uint: u64, schema_num_byte_slice: u64) -> Self {
         Self {
             app_id,
@@ -348,6 +356,7 @@ impl AppLocalState {
     ///
     /// The sum of uint and byte slice entries.
     #[must_use]
+    #[allow(dead_code)] // Part of AppLocalState public API
     pub fn total_entries(&self) -> u64 {
         self.schema_num_uint + self.schema_num_byte_slice
     }
@@ -377,6 +386,7 @@ impl CreatedAppInfo {
     ///
     /// A new `CreatedAppInfo` instance.
     #[must_use]
+    #[allow(dead_code)] // Part of CreatedAppInfo public API
     pub fn new(app_id: u64) -> Self {
         Self { app_id }
     }

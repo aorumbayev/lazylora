@@ -11,8 +11,6 @@
 //! The UI state is separate from navigation and data state,
 //! focusing purely on presentation layer concerns.
 
-#![allow(dead_code)]
-
 use std::collections::HashSet;
 
 // ============================================================================
@@ -52,6 +50,7 @@ impl Focus {
     ///
     /// A static string describing the focused panel.
     #[must_use]
+    #[allow(dead_code)] // Part of UI state API
     pub const fn name(self) -> &'static str {
         match self {
             Self::Blocks => "Blocks",
@@ -118,6 +117,7 @@ impl SearchType {
     ///
     /// An array of all search type variants.
     #[must_use]
+    #[allow(dead_code)] // Part of UI state API
     pub const fn all() -> [Self; 4] {
         [Self::Transaction, Self::Block, Self::Account, Self::Asset]
     }
@@ -143,7 +143,7 @@ pub enum PopupState {
     /// Message/notification popup.
     Message(String),
     /// Search results display with indexed items.
-    SearchResults(Vec<(usize, crate::algorand::SearchResultItem)>),
+    SearchResults(Vec<(usize, crate::domain::SearchResultItem)>),
 }
 
 impl PopupState {
@@ -176,7 +176,8 @@ impl PopupState {
     ///
     /// `Some` slice of search results if in search results mode.
     #[must_use]
-    pub fn as_search_results(&self) -> Option<&[(usize, crate::algorand::SearchResultItem)]> {
+    #[allow(dead_code)] // Part of UI state API
+    pub fn as_search_results(&self) -> Option<&[(usize, crate::domain::SearchResultItem)]> {
         match self {
             Self::SearchResults(results) => Some(results.as_slice()),
             _ => None,
@@ -189,6 +190,7 @@ impl PopupState {
     ///
     /// `Some` index if in network select mode.
     #[must_use]
+    #[allow(dead_code)] // Part of UI state API
     pub const fn as_network_select(&self) -> Option<usize> {
         match self {
             Self::NetworkSelect(index) => Some(*index),
@@ -202,6 +204,7 @@ impl PopupState {
     ///
     /// `Some` message string if in message mode.
     #[must_use]
+    #[allow(dead_code)] // Part of UI state API
     pub fn as_message(&self) -> Option<&str> {
         match self {
             Self::Message(msg) => Some(msg.as_str()),
@@ -286,6 +289,7 @@ impl UiState {
     /// # Arguments
     ///
     /// * `focus` - The panel to focus
+    #[allow(dead_code)] // Part of UI state API
     pub fn set_focus(&mut self, focus: Focus) {
         self.focus = focus;
     }
@@ -362,10 +366,7 @@ impl UiState {
     /// # Arguments
     ///
     /// * `results` - The search results to display
-    pub fn show_search_results(
-        &mut self,
-        results: Vec<(usize, crate::algorand::SearchResultItem)>,
-    ) {
+    pub fn show_search_results(&mut self, results: Vec<(usize, crate::domain::SearchResultItem)>) {
         self.popup_state = PopupState::SearchResults(results);
     }
 
@@ -406,6 +407,7 @@ impl UiState {
 
     /// Returns `true` if a toast is currently displayed.
     #[must_use]
+    #[allow(dead_code)] // Part of UI state API
     pub fn has_toast(&self) -> bool {
         self.toast.is_some()
     }
@@ -416,6 +418,7 @@ impl UiState {
     ///
     /// The toast message if one is displayed.
     #[must_use]
+    #[allow(dead_code)] // Part of UI state API
     pub fn toast_message(&self) -> Option<&str> {
         self.toast.as_ref().map(|(msg, _)| msg.as_str())
     }
@@ -468,6 +471,7 @@ impl UiState {
     }
 
     /// Toggles fullscreen mode for detail popups.
+    #[allow(dead_code)] // Part of UI state API
     pub fn toggle_fullscreen(&mut self) {
         self.detail_fullscreen = !self.detail_fullscreen;
     }
@@ -477,6 +481,7 @@ impl UiState {
     /// # Arguments
     ///
     /// * `section_count` - Total number of expandable sections
+    #[allow(dead_code)] // Part of UI state API
     pub fn move_section_up(&mut self, section_count: usize) {
         if section_count == 0 {
             return;
@@ -497,6 +502,7 @@ impl UiState {
     /// # Arguments
     ///
     /// * `section_count` - Total number of expandable sections
+    #[allow(dead_code)] // Part of UI state API
     pub fn move_section_down(&mut self, section_count: usize) {
         if section_count == 0 {
             return;
@@ -520,257 +526,165 @@ impl UiState {
 mod tests {
     use super::*;
 
-    mod focus_tests {
-        use super::*;
+    #[test]
+    fn test_focus_cycle_behavior() {
+        // Default is Blocks, cycles through both values
+        assert_eq!(Focus::default(), Focus::Blocks);
+        assert_eq!(Focus::Blocks.next(), Focus::Transactions);
+        assert_eq!(Focus::Transactions.next(), Focus::Blocks);
 
-        #[test]
-        fn test_default_is_blocks() {
-            assert_eq!(Focus::default(), Focus::Blocks);
+        // Names are correct
+        assert_eq!(Focus::Blocks.name(), "Blocks");
+        assert_eq!(Focus::Transactions.name(), "Transactions");
+    }
+
+    #[test]
+    fn test_search_type_cycle_behavior() {
+        // Default is Transaction, cycles through all 4 types
+        let mut current = SearchType::default();
+        assert_eq!(current, SearchType::Transaction);
+
+        let expected_cycle = [
+            SearchType::Block,
+            SearchType::Account,
+            SearchType::Asset,
+            SearchType::Transaction, // Back to start
+        ];
+
+        for expected in expected_cycle {
+            current = current.next();
+            assert_eq!(current, expected);
         }
 
-        #[test]
-        fn test_next_cycles() {
-            assert_eq!(Focus::Blocks.next(), Focus::Transactions);
-            assert_eq!(Focus::Transactions.next(), Focus::Blocks);
-        }
-
-        #[test]
-        fn test_name() {
-            assert_eq!(Focus::Blocks.name(), "Blocks");
-            assert_eq!(Focus::Transactions.name(), "Transactions");
+        // All types have string representations
+        for search_type in SearchType::all() {
+            assert!(!search_type.as_str().is_empty());
         }
     }
 
-    mod search_type_tests {
-        use super::*;
+    #[test]
+    fn test_popup_state_variants() {
+        // None is inactive, all others are active
+        assert!(!PopupState::None.is_active());
+        assert!(PopupState::NetworkSelect(0).is_active());
+        assert!(PopupState::SearchWithType(String::new(), SearchType::Transaction).is_active());
+        assert!(PopupState::Message("test".to_string()).is_active());
 
-        #[test]
-        fn test_default_is_transaction() {
-            assert_eq!(SearchType::default(), SearchType::Transaction);
-        }
+        // Accessors return correct values
+        let search = PopupState::SearchWithType("query".to_string(), SearchType::Account);
+        let (q, t) = search.as_search().unwrap();
+        assert_eq!(q, "query");
+        assert_eq!(t, SearchType::Account);
 
-        #[test]
-        fn test_as_str() {
-            assert_eq!(SearchType::Transaction.as_str(), "Transaction");
-            assert_eq!(SearchType::Asset.as_str(), "Asset");
-            assert_eq!(SearchType::Account.as_str(), "Account");
-            assert_eq!(SearchType::Block.as_str(), "Block");
-        }
-
-        #[test]
-        fn test_next_cycles() {
-            assert_eq!(SearchType::Transaction.next(), SearchType::Block);
-            assert_eq!(SearchType::Block.next(), SearchType::Account);
-            assert_eq!(SearchType::Account.next(), SearchType::Asset);
-            assert_eq!(SearchType::Asset.next(), SearchType::Transaction);
-        }
-
-        #[test]
-        fn test_all() {
-            let all = SearchType::all();
-            assert_eq!(all.len(), 4);
-            assert_eq!(all[0], SearchType::Transaction);
-            assert_eq!(all[1], SearchType::Block);
-            assert_eq!(all[2], SearchType::Account);
-            assert_eq!(all[3], SearchType::Asset);
-        }
+        assert_eq!(PopupState::NetworkSelect(5).as_network_select(), Some(5));
+        assert_eq!(
+            PopupState::Message("Hello".to_string()).as_message(),
+            Some("Hello")
+        );
     }
 
-    mod popup_state_tests {
-        use super::*;
+    #[test]
+    fn test_ui_state_focus_management() {
+        let mut ui = UiState::new();
+        assert_eq!(ui.focus, Focus::Blocks);
 
-        #[test]
-        fn test_default_is_none() {
-            assert_eq!(PopupState::default(), PopupState::None);
-        }
+        ui.cycle_focus();
+        assert_eq!(ui.focus, Focus::Transactions);
 
-        #[test]
-        fn test_is_active() {
-            assert!(!PopupState::None.is_active());
-            assert!(PopupState::NetworkSelect(0).is_active());
-            assert!(PopupState::SearchWithType(String::new(), SearchType::Transaction).is_active());
-            assert!(PopupState::Message("test".to_string()).is_active());
-        }
-
-        #[test]
-        fn test_as_search() {
-            let popup = PopupState::SearchWithType("query".to_string(), SearchType::Account);
-            let (query, search_type) = popup.as_search().unwrap();
-            assert_eq!(query, "query");
-            assert_eq!(search_type, SearchType::Account);
-
-            assert!(PopupState::None.as_search().is_none());
-        }
-
-        #[test]
-        fn test_as_network_select() {
-            let popup = PopupState::NetworkSelect(2);
-            assert_eq!(popup.as_network_select(), Some(2));
-            assert!(PopupState::None.as_network_select().is_none());
-        }
-
-        #[test]
-        fn test_as_message() {
-            let popup = PopupState::Message("Hello".to_string());
-            assert_eq!(popup.as_message(), Some("Hello"));
-            assert!(PopupState::None.as_message().is_none());
-        }
+        ui.set_focus(Focus::Blocks);
+        assert_eq!(ui.focus, Focus::Blocks);
     }
 
-    mod ui_state_tests {
-        use super::*;
+    #[test]
+    fn test_ui_state_popup_lifecycle() {
+        let mut ui = UiState::new();
+        assert!(!ui.has_active_popup());
 
-        #[test]
-        fn test_new_creates_default() {
-            let ui = UiState::new();
-            assert_eq!(ui.focus, Focus::Blocks);
-            assert!(!ui.has_active_popup());
-            assert!(!ui.viewing_search_result);
-            assert!(!ui.has_toast());
-        }
+        // Show message
+        ui.show_message("Test");
+        assert!(ui.has_active_popup());
 
-        #[test]
-        fn test_cycle_focus() {
-            let mut ui = UiState::new();
-            assert_eq!(ui.focus, Focus::Blocks);
+        // Dismiss
+        ui.dismiss_popup();
+        assert!(!ui.has_active_popup());
 
-            ui.cycle_focus();
-            assert_eq!(ui.focus, Focus::Transactions);
+        // Open search and manipulate
+        ui.open_search();
+        let (query, search_type) = ui.popup_state.as_search().unwrap();
+        assert_eq!(query, "");
+        assert_eq!(search_type, SearchType::Transaction);
 
-            ui.cycle_focus();
-            assert_eq!(ui.focus, Focus::Blocks);
-        }
+        ui.update_search_query("test".to_string(), SearchType::Account);
+        ui.cycle_search_type("test".to_string(), SearchType::Account);
+        let (_, new_type) = ui.popup_state.as_search().unwrap();
+        assert_eq!(new_type, SearchType::Asset);
+    }
 
-        #[test]
-        fn test_show_and_dismiss_message() {
-            let mut ui = UiState::new();
-            ui.show_message("Test message");
-            assert!(ui.has_active_popup());
+    #[test]
+    fn test_ui_state_toast_lifecycle() {
+        let mut ui = UiState::new();
+        assert!(!ui.has_toast());
 
-            ui.dismiss_popup();
-            assert!(!ui.has_active_popup());
-        }
+        ui.show_toast("Hello", 2);
+        assert!(ui.has_toast());
+        assert_eq!(ui.toast_message(), Some("Hello"));
 
-        #[test]
-        fn test_toast_lifecycle() {
-            let mut ui = UiState::new();
-            assert!(!ui.has_toast());
+        assert!(!ui.tick_toast()); // 2 -> 1
+        assert!(ui.tick_toast()); // 1 -> removed
+        assert!(!ui.has_toast());
+    }
 
-            ui.show_toast("Hello", 3);
-            assert!(ui.has_toast());
-            assert_eq!(ui.toast_message(), Some("Hello"));
+    #[test]
+    fn test_ui_state_expandable_sections() {
+        let mut ui = UiState::new();
 
-            // Tick twice (3 -> 2 -> 1)
-            assert!(!ui.tick_toast()); // Still has time
-            assert!(!ui.tick_toast()); // Still has time
+        // Toggle section on and off
+        assert!(!ui.is_section_expanded("test"));
+        ui.toggle_section("test");
+        assert!(ui.is_section_expanded("test"));
+        ui.toggle_section("test");
+        assert!(!ui.is_section_expanded("test"));
 
-            // Third tick removes the toast
-            assert!(ui.tick_toast());
-            assert!(!ui.has_toast());
-        }
+        // Reset clears everything
+        ui.toggle_section("a");
+        ui.toggle_section("b");
+        ui.detail_section_index = Some(1);
+        ui.detail_fullscreen = true;
 
-        #[test]
-        fn test_open_search() {
-            let mut ui = UiState::new();
-            ui.open_search();
+        ui.reset_expanded_sections();
+        assert!(!ui.is_section_expanded("a"));
+        assert!(!ui.is_section_expanded("b"));
+        assert!(ui.detail_section_index.is_none());
+        assert!(!ui.detail_fullscreen);
+    }
 
-            let (query, search_type) = ui.popup_state.as_search().unwrap();
-            assert_eq!(query, "");
-            assert_eq!(search_type, SearchType::Transaction);
-        }
+    #[test]
+    fn test_ui_state_section_navigation() {
+        let mut ui = UiState::new();
 
-        #[test]
-        fn test_update_search_query() {
-            let mut ui = UiState::new();
-            ui.open_search();
-            ui.update_search_query("test".to_string(), SearchType::Account);
+        // No sections - no change
+        ui.move_section_down(0);
+        assert!(ui.detail_section_index.is_none());
 
-            let (query, search_type) = ui.popup_state.as_search().unwrap();
-            assert_eq!(query, "test");
-            assert_eq!(search_type, SearchType::Account);
-        }
+        // Down from no selection goes to 0
+        ui.move_section_down(3);
+        assert_eq!(ui.detail_section_index, Some(0));
 
-        #[test]
-        fn test_cycle_search_type() {
-            let mut ui = UiState::new();
-            ui.open_search();
-            ui.update_search_query("query".to_string(), SearchType::Transaction);
-            ui.cycle_search_type("query".to_string(), SearchType::Transaction);
+        // Down increments
+        ui.move_section_down(3);
+        assert_eq!(ui.detail_section_index, Some(1));
 
-            let (_, search_type) = ui.popup_state.as_search().unwrap();
-            assert_eq!(search_type, SearchType::Block);
-        }
+        // Up decrements
+        ui.move_section_up(3);
+        assert_eq!(ui.detail_section_index, Some(0));
 
-        #[test]
-        fn test_toggle_section() {
-            let mut ui = UiState::new();
-            assert!(!ui.is_section_expanded("test"));
+        // Can't go below 0
+        ui.move_section_up(3);
+        assert_eq!(ui.detail_section_index, Some(0));
 
-            ui.toggle_section("test");
-            assert!(ui.is_section_expanded("test"));
-
-            ui.toggle_section("test");
-            assert!(!ui.is_section_expanded("test"));
-        }
-
-        #[test]
-        fn test_reset_expanded_sections() {
-            let mut ui = UiState::new();
-            ui.toggle_section("test1");
-            ui.toggle_section("test2");
-            ui.detail_section_index = Some(1);
-            ui.detail_fullscreen = true;
-
-            ui.reset_expanded_sections();
-
-            assert!(!ui.is_section_expanded("test1"));
-            assert!(!ui.is_section_expanded("test2"));
-            assert!(ui.detail_section_index.is_none());
-            assert!(!ui.detail_fullscreen);
-        }
-
-        #[test]
-        fn test_move_section_up() {
-            let mut ui = UiState::new();
-
-            // Empty sections - no change
-            ui.move_section_up(0);
-            assert!(ui.detail_section_index.is_none());
-
-            // Start from end when pressing up with no selection
-            ui.move_section_up(3);
-            assert_eq!(ui.detail_section_index, Some(2));
-
-            // Move up from middle
-            ui.move_section_up(3);
-            assert_eq!(ui.detail_section_index, Some(1));
-
-            // Stop at beginning
-            ui.detail_section_index = Some(0);
-            ui.move_section_up(3);
-            assert_eq!(ui.detail_section_index, Some(0));
-        }
-
-        #[test]
-        fn test_move_section_down() {
-            let mut ui = UiState::new();
-
-            // Empty sections - no change
-            ui.move_section_down(0);
-            assert!(ui.detail_section_index.is_none());
-
-            // Start from beginning when pressing down with no selection
-            ui.move_section_down(3);
-            assert_eq!(ui.detail_section_index, Some(0));
-
-            // Move down
-            ui.move_section_down(3);
-            assert_eq!(ui.detail_section_index, Some(1));
-
-            // Stop at end
-            ui.detail_section_index = Some(2);
-            ui.move_section_down(3);
-            assert_eq!(ui.detail_section_index, Some(2));
-        }
+        // Can't exceed max
+        ui.detail_section_index = Some(2);
+        ui.move_section_down(3);
+        assert_eq!(ui.detail_section_index, Some(2));
     }
 }

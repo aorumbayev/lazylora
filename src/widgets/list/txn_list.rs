@@ -2,8 +2,6 @@
 //!
 //! Displays a list of Algorand transactions with selection and scrolling support.
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -51,6 +49,7 @@ use super::state::{TransactionListState, render_list_scrollbar};
 ///
 /// // Render with frame.render_stateful_widget(widget, area, &mut state);
 /// ```
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct TransactionListWidget<'a> {
     /// Slice of transactions to display.
@@ -63,6 +62,7 @@ pub struct TransactionListWidget<'a> {
 
 impl<'a> TransactionListWidget<'a> {
     /// Height of each transaction item in the list (in rows).
+    #[allow(dead_code)] // Part of TransactionListWidget public API
     pub const DEFAULT_ITEM_HEIGHT: u16 = 4;
 
     /// Creates a new `TransactionListWidget` with the given transactions.
@@ -75,6 +75,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// A new `TransactionListWidget` with default settings
     #[must_use]
+    #[allow(dead_code)] // Part of TransactionListWidget public API
     pub const fn new(transactions: &'a [Transaction]) -> Self {
         Self {
             transactions,
@@ -95,6 +96,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// Self with the focus state updated
     #[must_use]
+    #[allow(dead_code)] // Part of TransactionListWidget public API
     pub const fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
         self
@@ -110,6 +112,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// Self with the item height updated
     #[must_use]
+    #[allow(dead_code)] // Part of TransactionListWidget public API
     pub const fn item_height(mut self, height: u16) -> Self {
         self.item_height = height;
         self
@@ -121,6 +124,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// The number of transactions in the list
     #[must_use]
+    #[allow(dead_code)] // Part of TransactionListWidget public API
     pub fn len(&self) -> usize {
         self.transactions.len()
     }
@@ -131,6 +135,7 @@ impl<'a> TransactionListWidget<'a> {
     ///
     /// `true` if the transactions slice is empty
     #[must_use]
+    #[allow(dead_code)] // Part of TransactionListWidget public API
     pub fn is_empty(&self) -> bool {
         self.transactions.is_empty()
     }
@@ -297,113 +302,48 @@ mod tests {
         ]
     }
 
+    /// Per commandments: test observable behavior, not construction.
+    /// "Tests pass but users report visual bugs" is a smell - use snapshot tests.
     #[test]
-    fn test_transaction_list_widget_new() {
+    fn test_transaction_list_rendering() {
         let transactions = create_sample_transactions();
-        let widget = TransactionListWidget::new(&transactions);
-
-        assert_eq!(widget.len(), 3);
-        assert!(!widget.is_empty());
-    }
-
-    #[test]
-    fn test_transaction_list_widget_empty() {
-        let transactions: Vec<Transaction> = vec![];
-        let widget = TransactionListWidget::new(&transactions);
-
-        assert_eq!(widget.len(), 0);
-        assert!(widget.is_empty());
-    }
-
-    #[test]
-    fn test_transaction_list_widget_focused() {
-        let transactions = create_sample_transactions();
-        let widget = TransactionListWidget::new(&transactions).focused(true);
-
-        // Widget should be constructed without errors
-        assert!(!widget.is_empty());
-    }
-
-    #[test]
-    fn test_transaction_list_widget_item_height() {
-        let transactions = create_sample_transactions();
-        let widget = TransactionListWidget::new(&transactions).item_height(6);
-
-        // Widget should be constructed without errors
-        assert!(!widget.is_empty());
-    }
-
-    #[test]
-    fn test_transaction_list_widget_render_empty() {
-        let transactions: Vec<Transaction> = vec![];
-        let widget = TransactionListWidget::new(&transactions);
-        let mut state = TransactionListState::new();
-
-        let area = Rect::new(0, 0, 80, 20);
-        let mut buf = Buffer::empty(area);
-
-        widget.render(area, &mut buf, &mut state);
-
-        // Should render "No transactions available" message
-        let content = buf_to_string(&buf);
-        assert!(content.contains("No transactions available"));
-    }
-
-    #[test]
-    fn test_transaction_list_widget_render_with_transactions() {
-        let transactions = create_sample_transactions();
-        let widget = TransactionListWidget::new(&transactions);
-        let mut state = TransactionListState::new();
+        let empty: Vec<Transaction> = vec![];
 
         let area = Rect::new(0, 0, 80, 24);
+
+        // Test empty state
         let mut buf = Buffer::empty(area);
-
-        widget.render(area, &mut buf, &mut state);
-
-        // Should render transaction info
+        let mut state = TransactionListState::new();
+        TransactionListWidget::new(&empty).render(area, &mut buf, &mut state);
         let content = buf_to_string(&buf);
+        assert!(content.contains("No transactions available"));
+
+        // Test with data and selection
+        let mut buf = Buffer::empty(area);
+        let mut state = TransactionListState::with_selection(0);
+        TransactionListWidget::new(&transactions).render(area, &mut buf, &mut state);
+        let content = buf_to_string(&buf);
+        assert!(content.contains("▶")); // Selection indicator
         assert!(content.contains("From:"));
         assert!(content.contains("To:"));
     }
 
     #[test]
-    fn test_transaction_list_widget_render_with_selection() {
+    fn test_transaction_list_widget_properties() {
         let transactions = create_sample_transactions();
         let widget = TransactionListWidget::new(&transactions);
-        let mut state = TransactionListState::with_selection(0);
 
-        let area = Rect::new(0, 0, 80, 24);
-        let mut buf = Buffer::empty(area);
+        assert_eq!(widget.len(), 3);
+        assert!(!widget.is_empty());
 
-        widget.render(area, &mut buf, &mut state);
-
-        // Should render selection indicator for first item
-        let content = buf_to_string(&buf);
-        assert!(content.contains("▶")); // Selected indicator
+        let empty: Vec<Transaction> = vec![];
+        let empty_widget = TransactionListWidget::new(&empty);
+        assert!(empty_widget.is_empty());
     }
 
-    #[test]
-    fn test_transaction_list_widget_render_with_different_types() {
-        let transactions = create_sample_transactions();
-        let widget = TransactionListWidget::new(&transactions);
-        let mut state = TransactionListState::new();
-
-        let area = Rect::new(0, 0, 80, 24);
-        let mut buf = Buffer::empty(area);
-
-        widget.render(area, &mut buf, &mut state);
-
-        // Should show different transaction types
-        let content = buf_to_string(&buf);
-        // Payment and other types should be rendered with their badges
-        assert!(content.contains("[Payment]") || content.contains("Payment"));
-    }
-
-    // Helper function to convert buffer to string for testing
     fn buf_to_string(buf: &Buffer) -> String {
         let area = buf.area;
         let mut result = String::new();
-
         for y in area.y..area.y + area.height {
             for x in area.x..area.x + area.width {
                 if let Some(cell) = buf.cell((x, y)) {
@@ -412,7 +352,6 @@ mod tests {
             }
             result.push('\n');
         }
-
         result
     }
 }

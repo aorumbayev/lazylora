@@ -185,7 +185,7 @@ impl TransactionDetails {
     ///
     /// `true` if this is a creation transaction, `false` otherwise.
     #[must_use]
-    #[allow(dead_code)] // Public API for external use
+    #[allow(dead_code)] // Public API
     pub fn is_creation(&self) -> bool {
         match self {
             Self::AssetConfig(details) => details.asset_id.is_none() && details.total.is_some(),
@@ -200,7 +200,7 @@ impl TransactionDetails {
     ///
     /// `Some(id)` if an entity was created, `None` otherwise.
     #[must_use]
-    #[allow(dead_code)] // Public API for external use
+    #[allow(dead_code)] // Public API
     pub fn created_id(&self) -> Option<u64> {
         match self {
             Self::AssetConfig(details) => details.created_asset_id,
@@ -365,7 +365,7 @@ impl OnComplete {
     ///
     /// A static string describing the on-complete action.
     #[must_use]
-    #[allow(dead_code)] // Public API for external use
+    #[allow(dead_code)] // Public API
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::NoOp => "NoOp",

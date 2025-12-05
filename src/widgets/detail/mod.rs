@@ -23,8 +23,6 @@
 //! frame.render_widget(card, area);
 //! ```
 
-#![allow(dead_code)] // Transitional phase - items will be used after integration
-
 pub mod flow_diagram;
 pub mod visual_card;
 

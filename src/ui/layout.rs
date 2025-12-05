@@ -3,9 +3,6 @@
 //! This module provides layout structs and helper functions for
 //! calculating UI element positions and sizes.
 
-// TODO: Remove this allow when layout functions are integrated in Stage 2
-#![allow(dead_code)]
-
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 // ============================================================================
@@ -19,12 +16,15 @@ pub const HEADER_HEIGHT: u16 = 3;
 pub const TITLE_HEIGHT: u16 = 3;
 
 /// Height of the footer area in terminal rows
+#[allow(dead_code)] // Design system constant
 pub const FOOTER_HEIGHT: u16 = 1;
 
 /// Height of each block item in the list
+#[allow(dead_code)] // Design system constant
 pub const BLOCK_HEIGHT: u16 = 3;
 
 /// Height of each transaction item in the list
+#[allow(dead_code)] // Design system constant
 pub const TXN_HEIGHT: u16 = 4;
 
 // ============================================================================
@@ -32,6 +32,7 @@ pub const TXN_HEIGHT: u16 = 4;
 // ============================================================================
 
 /// Main application layout areas
+#[allow(dead_code)] // Design system struct
 #[derive(Debug, Clone, Copy)]
 pub struct AppLayout {
     /// Header area (logo, network status)
@@ -43,6 +44,7 @@ pub struct AppLayout {
 }
 
 /// Two-panel layout for main content area
+#[allow(dead_code)] // Design system struct
 #[derive(Debug, Clone, Copy)]
 pub struct MainLayout {
     /// Title/explore section with live toggle
@@ -52,6 +54,7 @@ pub struct MainLayout {
 }
 
 /// Left/right panel layout for content
+#[allow(dead_code)] // Design system struct
 #[derive(Debug, Clone, Copy)]
 pub struct PanelLayout {
     /// Left panel (blocks)
@@ -61,6 +64,7 @@ pub struct PanelLayout {
 }
 
 /// Popup layout with optional tab bar
+#[allow(dead_code)] // Design system struct
 #[derive(Debug, Clone, Copy)]
 pub struct PopupLayout {
     /// Tab bar area (if present)
@@ -81,6 +85,7 @@ pub struct PopupLayout {
 
 /// Calculate the main application layout from the terminal area
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn calculate_app_layout(area: Rect) -> AppLayout {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -100,6 +105,7 @@ pub fn calculate_app_layout(area: Rect) -> AppLayout {
 
 /// Calculate the main content layout (title + content areas)
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn calculate_main_layout(area: Rect) -> MainLayout {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -114,6 +120,7 @@ pub fn calculate_main_layout(area: Rect) -> MainLayout {
 
 /// Calculate the two-panel layout for blocks and transactions
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn calculate_panel_layout(area: Rect) -> PanelLayout {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -128,6 +135,7 @@ pub fn calculate_panel_layout(area: Rect) -> PanelLayout {
 
 /// Calculate a popup layout with tabs, content, actions, and help
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn calculate_popup_layout(area: Rect, has_tabs: bool, has_actions: bool) -> PopupLayout {
     let mut constraints = Vec::new();
 
@@ -213,6 +221,7 @@ pub fn centered_popup_area(parent: Rect, width: u16, height: u16) -> Rect {
 /// * `percent_y` - Height as percentage of parent (0-100)
 /// * `area` - Parent area
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn centered_rect_percent(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let width = area.width * percent_x / 100;
     let height = area.height * percent_y / 100;
@@ -221,6 +230,7 @@ pub fn centered_rect_percent(percent_x: u16, percent_y: u16, area: Rect) -> Rect
 
 /// Calculate the display width of a string in characters
 #[must_use]
+#[allow(dead_code)] // Design system utility
 pub fn string_width(s: &str) -> u16 {
     s.chars().count() as u16
 }
