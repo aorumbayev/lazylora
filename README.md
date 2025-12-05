@@ -28,16 +28,35 @@ iwr -useb https://raw.githubusercontent.com/aorumbayev/lazylora/main/install.ps1
 ## Features
 
 - Browse latest blocks and transactions
-- Search transactions by address, transaction ID, or asset ID
-- View detailed transaction information
+- Search by transaction ID, account address, block number, or asset ID
+- View detailed transaction information with visual graph view
 - Live updates of new blocks and transactions
 - Support for MainNet, TestNet, and LocalNet
+- Direct CLI lookups for transactions, accounts, blocks, and assets
 
 ## Usage
 
 ```bash
-# Run with default settings
+# Run with default settings (mainnet)
 lazylora
+
+# Look up a transaction
+lazylora -t <TXID>
+
+# Look up an account
+lazylora -a <ADDRESS>
+
+# Look up a block
+lazylora -b <BLOCK_NUMBER>
+
+# Look up an asset
+lazylora -s <ASSET_ID>
+
+# Connect to testnet
+lazylora -n testnet
+
+# Open transaction in graph view
+lazylora -t <TXID> -g
 
 # Check for updates
 lazylora update
@@ -45,6 +64,19 @@ lazylora update
 # Update to the latest version
 lazylora update --install
 ```
+
+## CLI Reference
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--tx <TXID>` | `-t` | Look up a transaction by ID |
+| `--account <ADDRESS>` | `-a` | Look up an account by address |
+| `--block <NUMBER>` | `-b` | Look up a block by number |
+| `--asset <ID>` | `-s` | Look up an asset by ID |
+| `--network <NETWORK>` | `-n` | Network to connect to (mainnet, testnet, localnet) |
+| `--graph` | `-g` | Open transaction in graph view |
+| `--help` | `-h` | Display help information |
+| `--version` | `-V` | Display version information |
 
 ## Key Bindings
 
@@ -56,6 +88,8 @@ lazylora update --install
 - `Tab`: Switch between blocks and transactions
 - `Enter`: View selected item details
 - `Esc`: Close popup or details view
+- `v`: Toggle between table and graph view (in transaction details)
+- `c`: Copy transaction ID to clipboard
 
 ## Building from Source
 

@@ -179,10 +179,12 @@ fn detect_install_source_from_path<P: AsRef<Path>>(
 
     // Check for AUR installation (Arch Linux)
     // Typically installed to /usr/bin/ and managed by pacman
-    if cfg!(target_os = "linux") && check_pacman && path_str.starts_with("/usr/bin/") {
-        if is_pacman_managed(exe_path) {
-            return InstallSource::AUR;
-        }
+    if cfg!(target_os = "linux")
+        && check_pacman
+        && path_str.starts_with("/usr/bin/")
+        && is_pacman_managed(exe_path)
+    {
+        return InstallSource::AUR;
     }
 
     // Default to Binary (self-managed/direct download)

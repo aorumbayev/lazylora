@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use color_eyre::eyre::Result;
 use std::process::exit;
 
@@ -11,7 +11,8 @@ mod ui;
 mod updater;
 mod widgets;
 
-use app_state::App;
+use algorand::Network;
+use app_state::{App, StartupOptions, StartupSearch};
 use boot_screen::BootScreen;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -25,11 +26,73 @@ const LOGO: &str = r#"
 ╚══════╝╚═╝  ╚═╝╚══════╝   ╚═╝   ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
 "#;
 
+/// Network selection for CLI
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum NetworkArg {
+    Mainnet,
+    Testnet,
+    Localnet,
+}
+
+impl From<NetworkArg> for Network {
+    fn from(arg: NetworkArg) -> Self {
+        match arg {
+            NetworkArg::Mainnet => Network::MainNet,
+            NetworkArg::Testnet => Network::TestNet,
+            NetworkArg::Localnet => Network::LocalNet,
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(version = VERSION, about, long_about = None, disable_version_flag = true, disable_help_flag = true)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// Transaction ID to look up
+    #[arg(short = 't', long = "tx")]
+    transaction: Option<String>,
+
+    /// Account address to look up
+    #[arg(short = 'a', long = "account")]
+    account: Option<String>,
+
+    /// Block number to look up
+    #[arg(short = 'b', long = "block")]
+    block: Option<u64>,
+
+    /// Asset ID to look up
+    #[arg(short = 's', long = "asset")]
+    asset: Option<u64>,
+
+    /// Network to connect to
+    #[arg(short = 'n', long = "network", value_enum)]
+    network: Option<NetworkArg>,
+
+    /// Open transaction in graph view
+    #[arg(short = 'g', long = "graph")]
+    graph: bool,
+}
+
+impl Cli {
+    fn into_startup_options(self) -> StartupOptions {
+        let search = if let Some(tx) = self.transaction {
+            Some(StartupSearch::Transaction(tx))
+        } else if let Some(account) = self.account {
+            Some(StartupSearch::Account(account))
+        } else if let Some(block) = self.block {
+            Some(StartupSearch::Block(block))
+        } else {
+            self.asset.map(StartupSearch::Asset)
+        };
+
+        StartupOptions {
+            network: self.network.map(Network::from),
+            search,
+            graph_view: self.graph,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -101,7 +164,7 @@ async fn main() -> Result<()> {
                         exit(1)
                     }
                 }
-            },
+            }
             Commands::Version => {
                 println!("{}", LOGO);
                 println!("LazyLora v{}", VERSION);
@@ -111,35 +174,22 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Run boot screen animation before initializing the main app
-    // Get terminal size for boot screen
-    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    let startup_options = cli.into_startup_options();
 
-    // Run boot screen
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let mut boot = BootScreen::new((cols, rows));
     let should_continue = boot.run(|screen, frame| screen.draw(frame)).await;
 
-    match should_continue {
-        Ok(false) => {
-            // User pressed Ctrl+C during boot
-            return Ok(());
-        }
-        Err(_) => {
-            // Boot screen error, continue anyway
-        }
-        Ok(true) => {
-            // Continue to main app
-        }
+    if let Ok(false) = should_continue {
+        return Ok(());
     }
 
     color_eyre::install()?;
 
     let mut terminal = tui::init()?;
-
-    let mut app = App::new().await?;
+    let mut app = App::new(startup_options).await?;
     let app_result = app.run(&mut terminal).await;
 
-    if let Err(_err) = tui::restore() {}
-
+    let _ = tui::restore();
     app_result
 }

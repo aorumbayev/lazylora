@@ -18,6 +18,27 @@ use crate::commands::{AppCommand, KeyMapper};
 use crate::ui;
 
 // ============================================================================
+// Startup Options
+// ============================================================================
+
+/// Startup search type
+#[derive(Debug, Clone)]
+pub enum StartupSearch {
+    Transaction(String),
+    Account(String),
+    Block(u64),
+    Asset(u64),
+}
+
+/// Options to pass to the app on startup
+#[derive(Debug, Clone, Default)]
+pub struct StartupOptions {
+    pub network: Option<Network>,
+    pub search: Option<StartupSearch>,
+    pub graph_view: bool,
+}
+
+// ============================================================================
 // Configuration
 // ============================================================================
 
@@ -606,6 +627,9 @@ pub struct App {
 
     // === Client ===
     client: AlgoClient,
+
+    // === Startup Options ===
+    startup_options: Option<StartupOptions>,
 }
 
 impl App {
@@ -613,14 +637,16 @@ impl App {
     ///
     /// # Errors
     /// Returns an error if initialization fails.
-    pub async fn new() -> Result<Self> {
+    pub async fn new(startup_options: StartupOptions) -> Result<Self> {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let (live_updates_tx, _live_updates_rx) = watch::channel(true);
         let (network_tx, _network_rx) = watch::channel(Network::MainNet);
 
         // Load configuration
         let config = AppConfig::load();
-        let network = config.network;
+        
+        // Use startup network if provided, otherwise use config
+        let network = startup_options.network.unwrap_or(config.network);
         let show_live = config.show_live;
         let client = AlgoClient::new(network);
 
@@ -641,6 +667,7 @@ impl App {
             live_updates_tx,
             network_tx,
             client,
+            startup_options: Some(startup_options),
         })
     }
 
@@ -651,6 +678,9 @@ impl App {
     pub async fn run(&mut self, terminal: &mut crate::tui::Tui) -> Result<()> {
         self.start_background_tasks().await;
         self.initial_data_fetch().await;
+        
+        // Process startup search if provided
+        self.process_startup_search().await;
 
         let tick_rate = Duration::from_millis(100);
         let mut last_tick = Instant::now();
@@ -925,6 +955,78 @@ impl App {
 
             if let Ok(transactions) = client.get_latest_transactions(5).await {
                 let _ = message_tx.send(AppMessage::TransactionsUpdated(transactions));
+            }
+        });
+    }
+
+    /// Process startup search options (transaction, account, block, or asset lookup).
+    async fn process_startup_search(&mut self) {
+        let startup_options = match self.startup_options.take() {
+            Some(opts) => opts,
+            None => return,
+        };
+
+        let Some(search) = startup_options.search else {
+            return;
+        };
+
+        let graph_view = startup_options.graph_view;
+
+        match search {
+            StartupSearch::Transaction(txn_id) => {
+                // Set graph view mode if requested
+                if graph_view {
+                    self.ui.detail_view_mode = DetailViewMode::Visual;
+                }
+                self.load_transaction_details(&txn_id).await;
+            }
+            StartupSearch::Account(address) => {
+                self.load_account_details(&address);
+                self.nav.show_account_details = true;
+            }
+            StartupSearch::Block(block_num) => {
+                self.load_block_details_by_query(block_num);
+            }
+            StartupSearch::Asset(asset_id) => {
+                self.load_asset_details_by_query(asset_id);
+            }
+        }
+    }
+
+    /// Loads block details by block number (for startup query).
+    fn load_block_details_by_query(&self, round: u64) {
+        let client = self.client.clone();
+        let message_tx = self.message_tx.clone();
+
+        tokio::spawn(async move {
+            match client.get_block_details(round).await {
+                Ok(Some(details)) => {
+                    let _ = message_tx.send(AppMessage::BlockDetailsLoaded(details));
+                }
+                Ok(None) => {
+                    let _ =
+                        message_tx.send(AppMessage::NetworkError("Block not found".to_string()));
+                }
+                Err(e) => {
+                    let _ = message_tx.send(AppMessage::NetworkError(e.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Loads asset details by asset ID (for startup query).
+    fn load_asset_details_by_query(&self, asset_id: u64) {
+        let message_tx = self.message_tx.clone();
+        let client = self.client.clone();
+
+        tokio::spawn(async move {
+            match client.get_asset_details(asset_id).await {
+                Ok(details) => {
+                    let _ = message_tx.send(AppMessage::AssetDetailsLoaded(Box::new(details)));
+                }
+                Err(e) => {
+                    let _ = message_tx.send(AppMessage::AssetDetailsFailed(e.to_string()));
+                }
             }
         });
     }

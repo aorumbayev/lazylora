@@ -452,6 +452,8 @@ pub struct Transaction {
     pub amount: u64,
     /// Asset ID for asset-related transactions
     pub asset_id: Option<u64>,
+    /// Rekey-to address (if this transaction rekeys the sender)
+    pub rekey_to: Option<String>,
     /// Type-specific transaction details
     pub details: TransactionDetails,
     /// Inner transactions (for app calls)
@@ -486,6 +488,7 @@ impl Transaction {
 
         let note = Self::extract_note(txn_json);
         let (amount, asset_id) = Self::extract_amount_and_asset(txn_json, &txn_type);
+        let rekey_to = txn_json["rekey-to"].as_str().map(String::from);
         let details = Self::extract_details(txn_json, &txn_type);
 
         // Parse inner transactions recursively
@@ -502,6 +505,7 @@ impl Transaction {
             note,
             amount,
             asset_id,
+            rekey_to,
             details,
             inner_transactions,
         })

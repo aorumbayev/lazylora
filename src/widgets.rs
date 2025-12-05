@@ -1903,6 +1903,8 @@ pub struct GraphRow {
     pub has_children: bool,
     /// Whether this is the last child in its parent group
     pub is_last_child: bool,
+    /// Column index for rekey target (if transaction is a rekey)
+    pub rekey_col: Option<usize>,
 }
 
 /// Complete transaction graph structure
@@ -2002,6 +2004,11 @@ impl TxnGraph {
         let has_children = !txn.inner_transactions.is_empty();
         let current_row_index = self.rows.len();
 
+        // Handle rekey_to - create column for rekey target if present
+        let rekey_col = txn.rekey_to.as_ref().map(|rekey_addr| {
+            self.get_or_create_account_column(rekey_addr)
+        });
+
         let row = GraphRow {
             txn_id: txn.id.clone(),
             txn_type: txn.txn_type,
@@ -2014,6 +2021,7 @@ impl TxnGraph {
             label,
             has_children,
             is_last_child,
+            rekey_col,
         };
 
         self.rows.push(row);
@@ -2285,6 +2293,7 @@ impl TxnGraph {
         const ARROW_APPCALL: &str = "#7dcfff";
         const POINT_COLOR: &str = "#f7768e";
         const GRID_COLOR: &str = "#24283b";
+        const REKEY_COLOR: &str = "#e0af68";
 
         let num_cols = self.columns.len();
         let num_rows = self.rows.len();
@@ -2308,6 +2317,9 @@ impl TxnGraph {
   <marker id="arrowhead-app" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
     <polygon points="0 0, 10 3.5, 0 7" fill="{}"/>
   </marker>
+  <marker id="arrowhead-rekey" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+    <polygon points="0 0, 10 3.5, 0 7" fill="{}"/>
+  </marker>
 </defs>
 <rect width="100%" height="100%" fill="{}"/>
 "#,
@@ -2318,6 +2330,7 @@ impl TxnGraph {
             ARROW_PAYMENT,
             ARROW_ASSET,
             ARROW_APPCALL,
+            REKEY_COLOR,
             BG_COLOR
         ));
 
@@ -2489,6 +2502,29 @@ impl TxnGraph {
                         svg.push('\n');
                     }
                 }
+            }
+
+            // Draw rekey indicator if present (dashed yellow line with key symbol)
+            if let Some(rekey_col) = row.rekey_col {
+                let from_col = row.from_col.unwrap_or(0);
+                let x1 = LABEL_WIDTH + from_col * (COL_WIDTH + COL_SPACING) + COL_WIDTH / 2;
+                let x2 = LABEL_WIDTH + rekey_col * (COL_WIDTH + COL_SPACING) + COL_WIDTH / 2;
+                let rekey_y = y + 12; // Offset below main arrow
+
+                // Dashed line
+                svg.push_str(&format!(
+                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-width="2" stroke-dasharray="4,2" marker-end="url(#arrowhead-rekey)"/>"#,
+                    x1, rekey_y, x2, rekey_y, REKEY_COLOR
+                ));
+                svg.push('\n');
+
+                // Key symbol
+                let key_x = (x1 + x2) / 2;
+                svg.push_str(&format!(
+                    r#"<text x="{}" y="{}" fill="{}" font-family="sans-serif" font-size="10" text-anchor="middle">🔑</text>"#,
+                    key_x, rekey_y - 2, REKEY_COLOR
+                ));
+                svg.push('\n');
             }
         }
 
@@ -3223,6 +3259,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3245,6 +3282,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3267,6 +3305,7 @@ mod tests {
             note: "".to_string(),
             amount: 100,
             asset_id: Some(31566704),
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3425,6 +3464,7 @@ mod tests {
                 note: "Test payment".to_string(),
                 amount: 5_000_000,
                 asset_id: None,
+            rekey_to: None,
                 details: TransactionDetails::default(),
                 inner_transactions: Vec::new(),
             },
@@ -3439,6 +3479,7 @@ mod tests {
                 note: "".to_string(),
                 amount: 100,
                 asset_id: Some(31566704),
+            rekey_to: None,
                 details: TransactionDetails::default(),
                 inner_transactions: Vec::new(),
             },
@@ -3453,6 +3494,7 @@ mod tests {
                 note: "".to_string(),
                 amount: 0,
                 asset_id: None,
+            rekey_to: None,
                 details: TransactionDetails::default(),
                 inner_transactions: Vec::new(),
             },
@@ -3729,6 +3771,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3757,6 +3800,7 @@ mod tests {
             note: "".to_string(),
             amount: 0,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3782,6 +3826,7 @@ mod tests {
             note: "".to_string(),
             amount: 0,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3807,6 +3852,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3845,6 +3891,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3870,6 +3917,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3898,6 +3946,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3944,6 +3993,7 @@ mod tests {
             note: "".to_string(),
             amount: 5_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -3977,6 +4027,7 @@ mod tests {
             note: "".to_string(),
             amount: 1_000_000,
             asset_id: None,
+            rekey_to: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         };
@@ -4000,5 +4051,62 @@ mod tests {
     fn test_txn_graph_truncate_label() {
         assert_eq!(TxnGraph::truncate_label("short", 10), "short");
         assert_eq!(TxnGraph::truncate_label("a_very_long_label", 10), "a_very_lo…");
+    }
+
+    #[test]
+    fn test_txn_graph_with_rekey() {
+        let txn = Transaction {
+            id: "rekey-txn".to_string(),
+            txn_type: TxnType::Payment,
+            from: "SENDER".to_string(),
+            to: "RECEIVER".to_string(),
+            timestamp: "2024-01-01".to_string(),
+            block: 12345,
+            fee: 1000,
+            note: "".to_string(),
+            amount: 1_000_000,
+            asset_id: None,
+            rekey_to: Some("AUTH_ADDRESS".to_string()),
+            details: TransactionDetails::default(),
+            inner_transactions: Vec::new(),
+        };
+
+        let graph = TxnGraph::from_transaction(&txn);
+        
+        // Should have 3 columns: sender, receiver, and rekey target
+        assert_eq!(graph.columns.len(), 3);
+        
+        // Row should have rekey_col set
+        assert_eq!(graph.rows.len(), 1);
+        assert!(graph.rows[0].rekey_col.is_some());
+    }
+
+    #[test]
+    fn test_txn_graph_to_svg_with_rekey() {
+        let txn = Transaction {
+            id: "rekey-txn".to_string(),
+            txn_type: TxnType::Payment,
+            from: "SENDER".to_string(),
+            to: "RECEIVER".to_string(),
+            timestamp: "2024-01-01".to_string(),
+            block: 12345,
+            fee: 1000,
+            note: "".to_string(),
+            amount: 1_000_000,
+            asset_id: None,
+            rekey_to: Some("AUTH_ADDRESS".to_string()),
+            details: TransactionDetails::default(),
+            inner_transactions: Vec::new(),
+        };
+
+        let graph = TxnGraph::from_transaction(&txn);
+        let svg = graph.to_svg();
+
+        // Should have rekey marker
+        assert!(svg.contains("arrowhead-rekey"));
+        // Should have dashed line for rekey
+        assert!(svg.contains("stroke-dasharray"));
+        // Should have key symbol
+        assert!(svg.contains("🔑"));
     }
 }
