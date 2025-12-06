@@ -8,6 +8,8 @@ mod commands;
 mod constants;
 mod domain;
 mod state;
+#[cfg(test)]
+mod test_utils;
 mod theme;
 mod tui;
 mod ui;

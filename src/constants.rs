@@ -48,104 +48,15 @@ pub const DEFAULT_TERMINAL_WIDTH: u16 = 100;
 
 /// Default number of visible blocks in the blocks list.
 ///
+/// Set to 10 for reasonable scroll behavior on typical 80x24 terminals.
 /// Used for scroll calculations when determining visible range.
 pub const DEFAULT_VISIBLE_BLOCKS: u16 = 10;
 
 /// Default number of visible transactions in the transactions list.
 ///
+/// Set to 10 to match block list behavior and fit typical terminal height.
 /// Used for scroll calculations when determining visible range.
 pub const DEFAULT_VISIBLE_TRANSACTIONS: u16 = 10;
-
-// ============================================================================
-// UI Dimensions Struct
-// ============================================================================
-
-/// Grouped UI dimension constants for layout calculations.
-///
-/// This struct provides a convenient way to access related dimension constants
-/// and can be extended to support different layout configurations.
-///
-/// # Example
-///
-/// ```rust
-/// use lazylora::constants::Dimensions;
-///
-/// let dims = Dimensions::default();
-/// let items_per_page = area_height / dims.block_height as usize;
-/// ```
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Dimensions {
-    /// Height of each block item in the blocks list.
-    pub block_height: u16,
-    /// Height of each transaction item in the transactions list.
-    pub txn_height: u16,
-    /// Height of the application header (includes search bar).
-    pub header_height: u16,
-}
-
-impl Dimensions {
-    /// Creates a new `Dimensions` instance with custom values.
-    ///
-    /// # Arguments
-    ///
-    /// * `block_height` - Height for block list items
-    /// * `txn_height` - Height for transaction list items
-    /// * `header_height` - Height for the application header
-    ///
-    /// # Returns
-    ///
-    /// A new `Dimensions` instance.
-    #[must_use]
-    #[allow(dead_code)]
-    pub const fn new(block_height: u16, txn_height: u16, header_height: u16) -> Self {
-        Self {
-            block_height,
-            txn_height,
-            header_height,
-        }
-    }
-
-    /// Calculates the number of block items that fit in a given height.
-    ///
-    /// # Arguments
-    ///
-    /// * `available_height` - The available height in rows
-    ///
-    /// # Returns
-    ///
-    /// The number of block items that can be displayed.
-    #[must_use]
-    #[allow(dead_code)]
-    pub const fn blocks_per_page(&self, available_height: u16) -> usize {
-        (available_height / self.block_height) as usize
-    }
-
-    /// Calculates the number of transaction items that fit in a given height.
-    ///
-    /// # Arguments
-    ///
-    /// * `available_height` - The available height in rows
-    ///
-    /// # Returns
-    ///
-    /// The number of transaction items that can be displayed.
-    #[must_use]
-    #[allow(dead_code)]
-    pub const fn transactions_per_page(&self, available_height: u16) -> usize {
-        (available_height / self.txn_height) as usize
-    }
-}
-
-impl Default for Dimensions {
-    fn default() -> Self {
-        Self {
-            block_height: BLOCK_HEIGHT,
-            txn_height: TXN_HEIGHT,
-            header_height: HEADER_HEIGHT,
-        }
-    }
-}
 
 // ============================================================================
 // Display Symbols
@@ -178,25 +89,6 @@ pub const MICROALGOS_PER_ALGO: f64 = 1_000_000.0;
 /// Useful for integer arithmetic without floating-point conversion.
 #[allow(dead_code)]
 pub const MICROALGOS_PER_ALGO_U64: u64 = 1_000_000;
-
-// ============================================================================
-// Formatting Constants
-// ============================================================================
-
-/// Default decimal places for Algo amount display.
-#[allow(dead_code)]
-pub const ALGO_DECIMALS: u32 = 6;
-
-/// Maximum address length before truncation.
-///
-/// Algorand addresses are 58 characters. This constant defines when
-/// to apply truncation for display purposes.
-#[allow(dead_code)]
-pub const MAX_ADDRESS_DISPLAY_LENGTH: usize = 58;
-
-/// Default truncated address length for compact displays.
-#[allow(dead_code)]
-pub const DEFAULT_TRUNCATED_ADDRESS_LENGTH: usize = 20;
 
 // ============================================================================
 // Helper Functions
@@ -330,29 +222,5 @@ mod tests {
     ) {
         assert_eq!(format_algo(microalgos), expected_plain);
         assert_eq!(format_algo_with_symbol(microalgos), expected_symbol);
-    }
-
-    #[test]
-    fn test_dimensions_pagination() {
-        let dims = Dimensions::default();
-
-        // Verify default values
-        assert_eq!(dims.block_height, BLOCK_HEIGHT);
-        assert_eq!(dims.txn_height, TXN_HEIGHT);
-
-        // Test pagination calculations
-        assert_eq!(dims.blocks_per_page(30), 10); // 30 / 3
-        assert_eq!(dims.transactions_per_page(40), 10); // 40 / 4
-        assert_eq!(dims.blocks_per_page(2), 0); // Below threshold
-    }
-
-    /// Sanity check that constants haven't drifted.
-    #[test]
-    fn test_constant_values() {
-        assert_eq!(MICROALGOS_PER_ALGO, 1_000_000.0);
-        assert_eq!(MICROALGOS_PER_ALGO_U64, 1_000_000);
-        assert_eq!(ALGO_DECIMALS, 6);
-        assert_eq!(ALGO_SYMBOL, "◈");
-        assert_eq!(ASSET_SYMBOL, "◆");
     }
 }

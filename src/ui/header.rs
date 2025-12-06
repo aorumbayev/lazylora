@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use crate::domain::NetworkConfig;
 use crate::state::App;
 use crate::state::ui_state::SearchType;
 use crate::theme::{BORDER_STYLE, FOCUSED_BORDER_STYLE, MUTED_COLOR, PRIMARY_COLOR, SUCCESS_COLOR};
@@ -117,6 +118,7 @@ fn build_search_line(app: &App) -> Line<'static> {
             Some(SearchType::Block) => "B",
             Some(SearchType::Account) => "A",
             Some(SearchType::Asset) => "$",
+            Some(SearchType::Application) => "@",
             None => "?",
         };
 
@@ -146,6 +148,7 @@ fn build_focused_search_line(app: &App) -> Line<'static> {
         Some(SearchType::Block) => "B",
         Some(SearchType::Account) => "A",
         Some(SearchType::Asset) => "$",
+        Some(SearchType::Application) => "@",
         None => "?",
     };
 
@@ -154,6 +157,7 @@ fn build_focused_search_line(app: &App) -> Line<'static> {
         Some(SearchType::Block) => Color::Yellow,
         Some(SearchType::Account) => Color::Magenta,
         Some(SearchType::Asset) => Color::Green,
+        Some(SearchType::Application) => Color::Blue,
         None => Color::Gray,
     };
 
@@ -293,16 +297,29 @@ fn create_static_logo() -> Line<'static> {
 
 /// Render the network indicator on the right side
 fn render_network_indicator(frame: &mut Frame, area: Rect, row_y: u16, app: &App) {
-    let network_text = app.network.as_str();
-    let network_style = Style::default()
-        .fg(SUCCESS_COLOR)
-        .add_modifier(Modifier::BOLD);
+    let is_custom = matches!(app.network_config, NetworkConfig::Custom(_));
+    let label = if is_custom {
+        format!("{}*", app.network_config.as_str())
+    } else {
+        app.network_config.as_str().to_string()
+    };
+    let network_style = if is_custom {
+        Style::default()
+            .fg(PRIMARY_COLOR)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(SUCCESS_COLOR)
+            .add_modifier(Modifier::BOLD)
+    };
 
-    let network_label = Paragraph::new(network_text)
+    let network_label = Paragraph::new(label)
         .style(network_style)
         .alignment(Alignment::Right);
 
-    let network_area = Rect::new(area.right() - 12, row_y, 10, 1);
+    let width = 20.min(area.width);
+    let x = area.right().saturating_sub(width + 2);
+    let network_area = Rect::new(x, row_y, width, 1);
     frame.render_widget(network_label, network_area);
 }
 
@@ -313,27 +330,13 @@ fn render_network_indicator(frame: &mut Frame, area: Rect, row_y: u16, app: &App
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Network;
-    use crate::state::{App, StartupOptions};
+    use crate::test_utils::mock_app;
     use ratatui::{Terminal, backend::TestBackend};
     use rstest::*;
 
     #[fixture]
     fn test_terminal() -> Terminal<TestBackend> {
         Terminal::new(TestBackend::new(120, 3)).expect("terminal should be created")
-    }
-
-    fn create_test_app() -> App {
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        rt.block_on(async {
-            App::new(StartupOptions {
-                network: Some(Network::TestNet),
-                search: None,
-                graph_view: false,
-            })
-            .await
-            .expect("app")
-        })
     }
 
     #[test]
@@ -353,9 +356,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_header_renders(test_terminal: Terminal<TestBackend>) {
+    #[tokio::test]
+    async fn test_header_renders(
+        test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: crate::state::App,
+    ) {
         let mut terminal = test_terminal;
-        let app = create_test_app();
+        let app = mock_app.await;
 
         terminal
             .draw(|frame| render_header(frame, frame.area(), &app))
@@ -369,9 +376,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_search_bar_renders(test_terminal: Terminal<TestBackend>) {
+    #[tokio::test]
+    async fn test_search_bar_renders(
+        test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: crate::state::App,
+    ) {
         let mut terminal = test_terminal;
-        let app = create_test_app();
+        let app = mock_app.await;
 
         terminal
             .draw(|frame| render_search_bar(frame, frame.area(), &app))
@@ -384,18 +395,20 @@ mod tests {
         assert!(content.contains("Search"));
     }
 
-    #[test]
-    fn test_build_search_line_unfocused_empty() {
-        let app = create_test_app();
+    #[rstest]
+    #[tokio::test]
+    async fn test_build_search_line_unfocused_empty(#[future] mock_app: crate::state::App) {
+        let app = mock_app.await;
         let line = build_search_line(&app);
         // Should show placeholder
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("Search"));
     }
 
-    #[test]
-    fn test_build_search_line_focused() {
-        let mut app = create_test_app();
+    #[rstest]
+    #[tokio::test]
+    async fn test_build_search_line_focused(#[future] mock_app: crate::state::App) {
+        let mut app = mock_app.await;
         app.ui.focus_search();
         app.ui.search_type_char('t');
         app.ui.search_type_char('e');

@@ -1,6 +1,6 @@
 [package]
 name = "lazylora"
-version = "0.5.1"
+version = "0.6.0"
 description = "Unofficial terminal user interface for Algorand Blockchain exploration"
 authors = ["Altynbek Orumbayev <aorumbayev@pm.me>"]
 license = "MIT"
@@ -11,24 +11,32 @@ repository = "https://github.com/aorumbayev/lazylora"
 crossterm = "0.29.0"
 ratatui = "0.29.0"
 color-eyre = "0.6.5"
-tokio = { version = "1.48.0", features = ["full"] }
-reqwest = { version = "0.12.24", features = ["json", "blocking"] }
+tokio = { version = "1.48.0", features = [
+  "rt-multi-thread",
+  "time",
+  "sync",
+  "macros",
+  "signal",
+] }
+reqwest = { version = "0.12.24", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = "0.4.42"
 thiserror = "1.0"
-anyhow = "1.0"
 arboard = "3.6.1"
 clap = { version = "4.5.53", features = ["derive"] }
 dirs = "5.0"
 semver = "1.0"
 open = "5.3"
 base64 = "0.22"
+sha2 = "0.10"
+data-encoding = "2.6"
+tracing = "0.1"
 self_update = { version = "0.42.0", features = [
-    "archive-tar",
-    "archive-zip",
-    "compression-flate2",
-    "rustls",
+  "archive-tar",
+  "archive-zip",
+  "compression-flate2",
+  "rustls",
 ] }
 git2 = { version = "0.20.2", optional = true }
 

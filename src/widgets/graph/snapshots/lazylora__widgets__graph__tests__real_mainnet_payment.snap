@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/tests.rs
+expression: terminal.backend()
+---
+"                                ①          ②                                    "
+"                       Type  M3I...XM   KIZ...BQ                                "
+"                             Account    Account                                 "
+"                       ──────────┬──────────┬───                                "
+"                                 │          │                                   "
+"                         PAY     ●──────────▶    236.07A                        "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

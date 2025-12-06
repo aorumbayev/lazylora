@@ -135,7 +135,8 @@ pub fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     // Help text
-    let help_text = "[Tab] Switch  [↑↓] Navigate  [Enter] View  [C] Copy  [O] Open  [F] Fullscreen  [Esc] Close";
+    let help_text =
+        "[Tab] Switch  [↑↓] Navigate  [Enter] View  [C] Copy  [Y] JSON  [O] Open  [Esc] Close";
     frame.render_widget(
         Paragraph::new(help_text)
             .style(Style::default().fg(MUTED_COLOR))
@@ -350,74 +351,69 @@ fn render_block_transactions_tab(
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
+    use rstest::*;
 
-    use crate::client::AlgoClient;
-    use crate::domain::Network;
-    use crate::state::StartupOptions;
+    use crate::state::App;
+    use crate::test_utils::{BlockMother, mock_app, test_terminal};
 
-    /// Helper to create a mock App for testing.
-    async fn create_mock_app() -> App {
-        let options = StartupOptions {
-            network: Some(Network::MainNet),
-            search: None,
-            graph_view: false,
-        };
-        App::new(options).await.expect("Failed to create app")
-    }
+    // ============================================================================
+    // Fixtures
+    // ============================================================================
+
+    // Note: test_terminal and mock_app are imported from crate::test_utils
+
+    // ============================================================================
+    // Snapshot Tests
+    // ============================================================================
 
     /// Snapshot test for block details popup - Info tab.
     ///
-    /// Uses a real mainnet block to verify the Info tab layout.
+    /// Uses a static fixture matching mainnet block 50,000,000.
+    #[rstest]
     #[tokio::test]
-    async fn test_block_details_info_tab_snapshot() {
-        let client = AlgoClient::new(Network::MainNet);
-        // Use a known block with transactions
-        let block_details = client
-            .get_block_details(50_000_000)
-            .await
-            .expect("Failed to fetch block")
-            .expect("Block not found");
+    async fn test_block_details_info_tab(
+        mut test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: App,
+    ) {
+        let block_details = BlockMother::mainnet_block_50m();
 
-        let mut app = create_mock_app().await;
+        let mut app = mock_app.await;
         app.data.block_details = Some(block_details);
         app.nav.show_block_details = true;
         app.nav.block_detail_tab = BlockDetailTab::Info;
 
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-        terminal
+        test_terminal
             .draw(|frame| {
                 render_block_details(&app, frame, frame.area());
             })
             .unwrap();
 
-        insta::assert_snapshot!("block_details_info_tab", terminal.backend());
+        insta::assert_snapshot!(test_terminal.backend());
     }
 
     /// Snapshot test for block details popup - Transactions tab.
     ///
-    /// Uses a real mainnet block to verify the Transactions tab layout.
+    /// Uses a static fixture matching mainnet block 50,000,000.
+    #[rstest]
     #[tokio::test]
-    async fn test_block_details_txns_tab_snapshot() {
-        let client = AlgoClient::new(Network::MainNet);
-        let block_details = client
-            .get_block_details(50_000_000)
-            .await
-            .expect("Failed to fetch block")
-            .expect("Block not found");
+    async fn test_block_details_txns_tab(
+        mut test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: App,
+    ) {
+        let block_details = BlockMother::mainnet_block_50m();
 
-        let mut app = create_mock_app().await;
+        let mut app = mock_app.await;
         app.data.block_details = Some(block_details);
         app.nav.show_block_details = true;
         app.nav.block_detail_tab = BlockDetailTab::Transactions;
         app.nav.block_txn_index = Some(0);
 
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-        terminal
+        test_terminal
             .draw(|frame| {
                 render_block_details(&app, frame, frame.area());
             })
             .unwrap();
 
-        insta::assert_snapshot!("block_details_txns_tab", terminal.backend());
+        insta::assert_snapshot!(test_terminal.backend());
     }
 }

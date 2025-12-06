@@ -271,7 +271,7 @@ pub fn render_asset_details(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(table, content_area);
 
     // Help text
-    let help_text = "[C] Copy  [O] Open in Browser  [F] Fullscreen  [Esc] Close";
+    let help_text = "[C] Copy  [Y] JSON  [O] Open  [Esc] Close";
     frame.render_widget(
         Paragraph::new(help_text)
             .style(Style::default().fg(MUTED_COLOR))
@@ -288,70 +288,55 @@ pub fn render_asset_details(app: &App, frame: &mut Frame, area: Rect) {
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
+    use rstest::*;
 
-    use crate::client::AlgoClient;
-    use crate::domain::Network;
-    use crate::state::StartupOptions;
+    use crate::test_utils::{AssetMother, mock_app, test_terminal};
 
-    /// Helper to create a mock App for testing.
-    async fn create_mock_app() -> App {
-        let options = StartupOptions {
-            network: Some(Network::MainNet),
-            search: None,
-            graph_view: false,
-        };
-        App::new(options).await.expect("Failed to create app")
-    }
+    // ============================================================================
+    // Snapshot Tests
+    // ============================================================================
 
-    /// Snapshot test for asset details popup.
+    /// Snapshot test for USDC asset details popup.
     ///
-    /// Uses USDC (Asset ID 31566704) - a well-known ASA with all fields populated.
+    /// Uses static USDC fixture (Asset ID 31566704) - a well-known ASA with all fields populated.
+    #[rstest]
     #[tokio::test]
-    async fn test_asset_details_snapshot() {
-        let client = AlgoClient::new(Network::MainNet);
-        // USDC - widely used stablecoin with all fields
-        let asset = client
-            .get_asset_details(31566704)
-            .await
-            .expect("Failed to fetch asset");
-
-        let mut app = create_mock_app().await;
-        app.data.viewed_asset = Some(asset);
+    async fn test_asset_details_usdc(
+        mut test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: App,
+    ) {
+        let mut app = mock_app.await;
+        app.data.viewed_asset = Some(AssetMother::usdc());
         app.nav.show_asset_details = true;
 
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-        terminal
+        test_terminal
             .draw(|frame| {
                 render_asset_details(&app, frame, frame.area());
             })
             .unwrap();
 
-        insta::assert_snapshot!("asset_details_usdc", terminal.backend());
+        insta::assert_snapshot!("asset_details_usdc", test_terminal.backend());
     }
 
-    /// Snapshot test for ALGO token (Asset ID 0 - native).
+    /// Snapshot test for goUSD asset details popup.
     ///
-    /// Tests display of the native ALGO representation.
+    /// Uses static goUSD fixture (Asset ID 672913181) - tests asset with metadata hash.
+    #[rstest]
     #[tokio::test]
-    async fn test_asset_details_algo_snapshot() {
-        let client = AlgoClient::new(Network::MainNet);
-        // goUSD - another known asset
-        let asset = client
-            .get_asset_details(672913181)
-            .await
-            .expect("Failed to fetch asset");
-
-        let mut app = create_mock_app().await;
-        app.data.viewed_asset = Some(asset);
+    async fn test_asset_details_gousd(
+        mut test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: App,
+    ) {
+        let mut app = mock_app.await;
+        app.data.viewed_asset = Some(AssetMother::gousd());
         app.nav.show_asset_details = true;
 
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-        terminal
+        test_terminal
             .draw(|frame| {
                 render_asset_details(&app, frame, frame.area());
             })
             .unwrap();
 
-        insta::assert_snapshot!("asset_details_gousd", terminal.backend());
+        insta::assert_snapshot!("asset_details_gousd", test_terminal.backend());
     }
 }

@@ -1,7 +1,7 @@
 //! Network selection popup rendering.
 //!
 //! This module provides the network selector popup that allows users to switch
-//! between MainNet, TestNet, and LocalNet.
+//! between built-in networks (MainNet, TestNet, LocalNet) and custom user-defined networks.
 
 use ratatui::{
     Frame,
@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Block, Cell, Clear, Paragraph, Row, Table},
 };
 
-use crate::domain::Network;
+use crate::domain::NetworkConfig;
 use crate::theme::{MUTED_COLOR, PRIMARY_COLOR, SUCCESS_COLOR};
 use crate::ui::helpers::create_popup_block;
 use crate::ui::layout::centered_popup_area;
@@ -23,41 +23,48 @@ use crate::ui::layout::centered_popup_area;
 ///
 /// Displays a modal popup allowing the user to select which Algorand network
 /// to connect to. Shows the current network and allows navigation between
-/// MainNet, TestNet, and LocalNet.
+/// all available networks (built-in and custom).
 ///
 /// # Arguments
 ///
 /// * `frame` - The Ratatui frame to render to
 /// * `area` - The terminal area to render within
-/// * `selected_index` - The currently highlighted network index (0-2)
-/// * `current_network` - The currently active network
+/// * `selected_index` - The currently highlighted network index
+/// * `current_network` - The currently active network configuration
+/// * `networks` - All available networks (built-in + custom)
 ///
 /// # Example
 ///
 /// ```ignore
 /// use lazylora::ui::popups::network;
-/// use lazylora::domain::Network;
+/// use lazylora::domain::NetworkConfig;
 ///
-/// network::render(&mut frame, area, 0, Network::MainNet);
+/// let networks = vec![NetworkConfig::BuiltIn(Network::MainNet)];
+/// network::render(&mut frame, area, 0, &networks[0], &networks);
 /// ```
-pub fn render(frame: &mut Frame, area: Rect, selected_index: usize, current_network: Network) {
-    let popup_area = centered_popup_area(area, 35, 14);
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    selected_index: usize,
+    current_network: &NetworkConfig,
+    networks: &[NetworkConfig],
+) {
+    // Dynamic height based on network count (min 10, max 20)
+    let popup_height = (networks.len() as u16 + 6).clamp(10, 20);
+    let popup_area = centered_popup_area(area, 40, popup_height);
 
-    let popup_block = create_popup_block("Select Network (Esc:Cancel)");
+    let popup_block = create_popup_block("Select Network");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
     let inner_area = popup_block.inner(popup_area);
-
-    let networks = ["MainNet", "TestNet", "LocalNet"];
-    let network_types = [Network::MainNet, Network::TestNet, Network::LocalNet];
 
     let rows: Vec<Row> = networks
         .iter()
         .enumerate()
         .map(|(i, net)| {
             let is_selected = i == selected_index;
-            let is_current = network_types[i] == current_network;
+            let is_current = net == current_network;
 
             let indicator = if is_current && is_selected {
                 "◉ " // Both current and selected
@@ -81,10 +88,16 @@ pub fn render(frame: &mut Frame, area: Rect, selected_index: usize, current_netw
                 Style::default().fg(MUTED_COLOR)
             };
 
+            // Mark custom networks with [Custom] suffix
+            let network_name = net.as_str();
+            let suffix = match net {
+                NetworkConfig::Custom(_) => " [Custom]",
+                NetworkConfig::BuiltIn(_) => "",
+            };
             let network_text = if is_current {
-                format!("{} (current)", net)
+                format!("{}{} (current)", network_name, suffix)
             } else {
-                net.to_string()
+                format!("{}{}", network_name, suffix)
             };
 
             Row::new(vec![
@@ -94,13 +107,24 @@ pub fn render(frame: &mut Frame, area: Rect, selected_index: usize, current_netw
         })
         .collect();
 
-    let table = Table::new(rows, [Constraint::Length(3), Constraint::Min(15)])
+    let table = Table::new(rows, [Constraint::Length(3), Constraint::Min(20)])
         .block(Block::default())
         .column_spacing(1);
 
     frame.render_widget(table, inner_area);
 
-    let help_text = "↑↓:Move Enter:Select";
+    // Build help text - show delete option only for custom networks
+    let selected_is_custom = networks
+        .get(selected_index)
+        .map(|n| matches!(n, NetworkConfig::Custom(_)))
+        .unwrap_or(false);
+
+    let help_text = if selected_is_custom {
+        "j/k:Move  Enter:Select  a:Add  d:Delete  Esc:Close"
+    } else {
+        "j/k:Move  Enter:Select  a:Add  Esc:Close"
+    };
+
     let help_area = Rect::new(
         inner_area.x,
         inner_area.y + inner_area.height.saturating_sub(1),
@@ -122,16 +146,27 @@ pub fn render(frame: &mut Frame, area: Rect, selected_index: usize, current_netw
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::{CustomNetwork, Network};
     use ratatui::{Terminal, backend::TestBackend};
+
+    fn builtin_networks() -> Vec<NetworkConfig> {
+        vec![
+            NetworkConfig::BuiltIn(Network::MainNet),
+            NetworkConfig::BuiltIn(Network::TestNet),
+            NetworkConfig::BuiltIn(Network::LocalNet),
+        ]
+    }
 
     #[test]
     fn test_network_selector_renders() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
+        let networks = builtin_networks();
+        let current = &networks[0];
 
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), 0, Network::MainNet);
+                render(frame, frame.area(), 0, current, &networks);
             })
             .unwrap();
 
@@ -144,10 +179,12 @@ mod tests {
     fn test_network_selector_shows_current_network() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
+        let networks = builtin_networks();
+        let current = &networks[1]; // TestNet
 
         terminal
             .draw(|frame| {
-                render(frame, frame.area(), 1, Network::TestNet);
+                render(frame, frame.area(), 1, current, &networks);
             })
             .unwrap();
 
@@ -160,15 +197,66 @@ mod tests {
     fn test_network_selector_multiple_selections() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
+        let networks = builtin_networks();
+        let current = &networks[0];
 
         // Test each selection index
         for i in 0..3 {
             terminal
                 .draw(|frame| {
-                    render(frame, frame.area(), i, Network::MainNet);
+                    render(frame, frame.area(), i, current, &networks);
                 })
                 .unwrap();
         }
+
+        // Should render without panicking
+        let buffer = terminal.backend().buffer();
+        assert!(!buffer.area().is_empty());
+    }
+
+    #[test]
+    fn test_network_selector_with_custom_networks() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut networks = builtin_networks();
+        networks.push(NetworkConfig::Custom(CustomNetwork::new(
+            "MyCustomNet",
+            "http://indexer.local",
+            "http://algod.local",
+        )));
+        let current = &networks[0];
+
+        terminal
+            .draw(|frame| {
+                render(frame, frame.area(), 3, current, &networks);
+            })
+            .unwrap();
+
+        // Should render without panicking
+        let buffer = terminal.backend().buffer();
+        assert!(!buffer.area().is_empty());
+    }
+
+    #[test]
+    fn test_network_selector_custom_network_is_current() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let custom = NetworkConfig::Custom(CustomNetwork::new(
+            "MyCustomNet",
+            "http://indexer.local",
+            "http://algod.local",
+        ));
+        let mut networks = builtin_networks();
+        networks.push(custom.clone());
+        let current = &networks[3]; // Custom network is current
+
+        terminal
+            .draw(|frame| {
+                render(frame, frame.area(), 3, current, &networks);
+            })
+            .unwrap();
 
         // Should render without panicking
         let buffer = terminal.backend().buffer();

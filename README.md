@@ -12,11 +12,11 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/aorumbayev/lazylora)](https://github.com/aorumbayev/lazylora/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-LazyLora is a terminal user interface for exploring the Algorand blockchain. It provides a simple and intuitive way to browse blocks and transactions.
+LazyLora is a terminal user interface for exploring the Algorand blockchain. Browse blocks, transactions, accounts, assets, and applications - all from your terminal.
 
 ![LazyLora Screenshot](assets/lazylora.png)
 
-## Quick Install
+## Install
 
 ### macOS / Linux
 
@@ -30,95 +30,83 @@ curl -fsSL https://raw.githubusercontent.com/aorumbayev/lazylora/main/install.sh
 iwr -useb https://raw.githubusercontent.com/aorumbayev/lazylora/main/install.ps1 | iex
 ```
 
-> [!NOTE] ensure you have [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170) installed.
+> [!NOTE]
+> Ensure you have [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170) installed.
 
-## Features
+## What You Can Do
 
-- Browse latest blocks and transactions
-- Search by transaction ID, account address, block number, or asset ID
-- View detailed transaction information with visual graph view
-- Live updates of new blocks and transactions
-- Support for MainNet, TestNet, and LocalNet
-- Direct CLI lookups for transactions, accounts, blocks, and assets
+- **Browse** the latest blocks and transactions in real-time
+- **Search** by transaction ID, account address, block number, asset ID, or NFD name
+- **Inspect** transactions with visual graph view showing inner transactions and asset flows
+- **Explore** accounts (balances, assets, apps), assets (supply, metadata), and applications (state, programs)
+- **Export** transaction graphs as SVG files
+- **Copy** transaction IDs, addresses, or raw JSON to clipboard
+- **Open** any entity directly in your browser (Lora explorer)
+- **Switch** between MainNet, TestNet, and LocalNet
 
 ## Usage
 
 ```bash
-# Run with default settings (mainnet)
-lazylora
-
-# Look up a transaction
-lazylora -t <TXID>
-
-# Look up an account
-lazylora -a <ADDRESS>
-
-# Look up a block
-lazylora -b <BLOCK_NUMBER>
-
-# Look up an asset
-lazylora -s <ASSET_ID>
-
-# Connect to testnet
-lazylora -n testnet
-
-# Open transaction in graph view
-lazylora -t <TXID> -g
-
-# Check for updates
-lazylora update
-
-# Update to the latest version
-lazylora update --install
+lazylora                    # Launch TUI (MainNet)
+lazylora -n testnet         # Connect to TestNet
+lazylora -t <TXID>          # Look up transaction
+lazylora -a <ADDRESS>       # Look up account
+lazylora -b <BLOCK>         # Look up block
+lazylora -s <ASSET_ID>      # Look up asset
+lazylora -t <TXID> -g       # Open transaction in graph view
+lazylora version            # Show version
+lazylora update             # Check for updates
+lazylora update --install   # Install update
 ```
+
+## Key Bindings
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `r` | Refresh |
+| `?` | Help |
+| `f` | Search |
+| `n` | Switch network |
+| `Space` | Toggle live updates |
+| `Tab` | Cycle panels / Switch view |
+| `j`/`k` | Navigate |
+| `Enter` | Open details |
+| `Esc` | Close |
+| `c` | Copy ID |
+| `y` | Copy JSON |
+| `o` | Open in browser |
+| `s` | Export SVG (graph view) |
 
 ## CLI Reference
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--tx <TXID>` | `-t` | Look up a transaction by ID |
-| `--account <ADDRESS>` | `-a` | Look up an account by address |
-| `--block <NUMBER>` | `-b` | Look up a block by number |
-| `--asset <ID>` | `-s` | Look up an asset by ID |
-| `--network <NETWORK>` | `-n` | Network to connect to (mainnet, testnet, localnet) |
-| `--graph` | `-g` | Open transaction in graph view |
-| `--help` | `-h` | Display help information |
-| `--version` | `-V` | Display version information |
+| `--tx <TXID>` | `-t` | Transaction lookup |
+| `--account <ADDRESS>` | `-a` | Account lookup |
+| `--block <NUMBER>` | `-b` | Block lookup |
+| `--asset <ID>` | `-s` | Asset lookup |
+| `--network <NETWORK>` | `-n` | Network (mainnet, testnet, localnet) |
+| `--graph` | `-g` | Open in graph view |
 
-## Key Bindings
-
-- `q`: Quit the application
-- `r`: Refresh data
-- `f`: Search transactions
-- `n`: Switch network
-- `Space`: Toggle live updates
-- `Tab`: Switch between blocks and transactions
-- `Enter`: View selected item details
-- `Esc`: Close popup or details view
-- `v`: Toggle between table and graph view (in transaction details)
-- `c`: Copy transaction ID to clipboard
+| Subcommand | Description |
+|------------|-------------|
+| `version` | Show version |
+| `update` | Check for updates |
+| `update --install` | Install update |
 
 ## Building from Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/aorumbayev/lazylora.git
 cd lazylora
-
-# Install cargo-nextest for faster test runs (one-time)
-cargo install cargo-nextest
-
-# Build and install
 cargo build --release
-
-# Run tests
-cargo t --all-features
 ```
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! See the [documentation](https://aorumbayev.github.io/lazylora/) for details.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT - see [LICENSE](LICENSE)

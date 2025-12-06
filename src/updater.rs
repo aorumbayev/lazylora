@@ -49,6 +49,7 @@ impl InstallSource {
     /// let binary = InstallSource::Binary;
     /// assert!(binary.update_instructions().is_none());
     /// ```
+    #[must_use]
     pub fn update_instructions(&self) -> Option<&'static str> {
         match self {
             InstallSource::Cargo => Some("cargo install lazylora --force"),
@@ -75,11 +76,13 @@ impl InstallSource {
     /// assert!(!InstallSource::Cargo.supports_self_update());
     /// assert!(InstallSource::Binary.supports_self_update());
     /// ```
+    #[must_use]
     pub fn supports_self_update(&self) -> bool {
         matches!(self, InstallSource::Binary)
     }
 
     /// Returns a human-readable description of the installation source.
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             InstallSource::Cargo => "Cargo (cargo install)",
@@ -214,6 +217,7 @@ fn detect_install_source_from_path<P: AsRef<Path>>(
 ///     println!("Update with: {}", instructions);
 /// }
 /// ```
+#[must_use]
 pub fn detect_install_source() -> InstallSource {
     let exe_path = match std::env::current_exe() {
         Ok(path) => path,

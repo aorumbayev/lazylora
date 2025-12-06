@@ -216,6 +216,38 @@ pub fn render(frame: &mut Frame, area: Rect, results: &[(usize, SearchResultItem
                 ]);
                 vec![line1, line2, line3, line4, Line::from("")]
             }
+            SearchResultItem::Application(app) => {
+                let id_span = Span::styled(
+                    format!("App # {}", app.app_id),
+                    Style::default()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::BOLD),
+                );
+                let type_span = Span::styled("[App]", Style::default().fg(Color::Blue));
+                let status = if app.deleted { "Deleted" } else { "Active" };
+                let status_color = if app.deleted {
+                    Color::Red
+                } else {
+                    SUCCESS_COLOR
+                };
+
+                let line1 = Line::from(vec![
+                    Span::raw(format!("{} ", selection_indicator)),
+                    id_span,
+                    "  ".into(),
+                    type_span,
+                ]);
+                let line2 = Line::from(vec![
+                    Span::styled("  Creator: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(app.creator.clone(), Style::default().fg(WARNING_COLOR)),
+                ]);
+                let line3 = Line::from(vec![
+                    Span::styled("  Status: ", Style::default().fg(MUTED_COLOR)),
+                    Span::styled(status, Style::default().fg(status_color)),
+                ]);
+                let line4 = Line::from("");
+                vec![line1, line2, line3, line4, Line::from("")]
+            }
         };
 
         list_items.push(ListItem::new(list_item).style(if is_selected {
@@ -231,7 +263,7 @@ pub fn render(frame: &mut Frame, area: Rect, results: &[(usize, SearchResultItem
 
     frame.render_widget(txn_list, inner_area);
 
-    let help_text = "↑↓: Navigate  Enter: Select  Esc: Cancel";
+    let help_text = "j/k:Navigate  Enter:Select  Esc:Close";
     let help_area = Rect::new(
         popup_area.x + (popup_area.width - help_text.len() as u16) / 2,
         popup_area.y + popup_area.height - 2,

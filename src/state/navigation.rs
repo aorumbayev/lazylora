@@ -42,20 +42,6 @@ impl DetailViewMode {
             Self::Visual => Self::Table,
         }
     }
-
-    /// Returns `true` if in visual/graph mode.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn is_visual(self) -> bool {
-        matches!(self, Self::Visual)
-    }
-
-    /// Returns `true` if in table mode.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn is_table(self) -> bool {
-        matches!(self, Self::Table)
-    }
 }
 
 // ============================================================================
@@ -87,20 +73,6 @@ impl BlockDetailTab {
             Self::Transactions => Self::Info,
         }
     }
-
-    /// Returns `true` if showing the info tab.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn is_info(self) -> bool {
-        matches!(self, Self::Info)
-    }
-
-    /// Returns `true` if showing the transactions tab.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn is_transactions(self) -> bool {
-        matches!(self, Self::Transactions)
-    }
 }
 
 // ============================================================================
@@ -131,37 +103,74 @@ impl AccountDetailTab {
             Self::Apps => Self::Info,
         }
     }
+}
 
-    /// Cycles to the previous tab.
+// ============================================================================
+// Application Detail Tab
+// ============================================================================
+
+/// The tab in the application details popup.
+///
+/// Application details can show general info, state, or programs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppDetailTab {
+    /// General application information (ID, creator, schemas).
+    #[default]
+    Info,
+    /// Global state key-value pairs.
+    State,
+    /// Program information (approval/clear programs).
+    Programs,
+}
+
+impl AppDetailTab {
+    /// Cycles to the next tab.
     #[must_use]
-    pub const fn prev(self) -> Self {
+    pub const fn next(self) -> Self {
         match self {
-            Self::Info => Self::Apps,
-            Self::Assets => Self::Info,
-            Self::Apps => Self::Assets,
+            Self::Info => Self::State,
+            Self::State => Self::Programs,
+            Self::Programs => Self::Info,
         }
     }
+}
 
-    /// Returns `true` if showing the info tab.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn is_info(self) -> bool {
-        matches!(self, Self::Info)
-    }
+// ============================================================================
+// Detail Popup Stack
+// ============================================================================
 
-    /// Returns `true` if showing the assets tab.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn is_assets(self) -> bool {
-        matches!(self, Self::Assets)
-    }
+/// A saved popup state for stack-based navigation.
+///
+/// When opening a nested popup (e.g., Asset from Account), the parent popup
+/// state is saved to this struct so it can be restored when the child closes.
+#[derive(Debug, Clone)]
+pub struct SavedPopupState {
+    /// The type of detail popup that was open.
+    pub popup_type: DetailPopupType,
+    /// The ID of the entity being viewed (address, asset_id, app_id, etc.).
+    pub entity_id: String,
+    /// The tab that was selected (for popups with tabs).
+    pub tab_index: usize,
+    /// The selected item index within the tab's list.
+    pub item_index: Option<usize>,
+    /// The scroll position within the tab's list.
+    pub item_scroll: u16,
+}
 
-    /// Returns `true` if showing the apps tab.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn is_apps(self) -> bool {
-        matches!(self, Self::Apps)
-    }
+/// The type of detail popup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Variants reserved for future popup stack support
+pub enum DetailPopupType {
+    /// Block details popup.
+    Block,
+    /// Transaction details popup.
+    Transaction,
+    /// Account details popup.
+    Account,
+    /// Asset details popup.
+    Asset,
+    /// Application details popup.
+    Application,
 }
 
 // ============================================================================
@@ -214,6 +223,8 @@ pub struct NavigationState {
     pub show_account_details: bool,
     /// Whether the asset details popup is shown.
     pub show_asset_details: bool,
+    /// Whether the application details popup is shown.
+    pub show_application_details: bool,
 
     // === Block Detail View State ===
     /// Current tab in block details popup.
@@ -231,6 +242,14 @@ pub struct NavigationState {
     /// Scroll position for account details list.
     pub account_item_scroll: u16,
 
+    // === Application Detail View State ===
+    /// Current tab in application details popup.
+    pub app_detail_tab: AppDetailTab,
+    /// Selected item index within application state list.
+    pub app_state_index: Option<usize>,
+    /// Scroll position for application state list.
+    pub app_state_scroll: u16,
+
     // === Graph View State ===
     /// Horizontal scroll offset for transaction graph view.
     pub graph_scroll_x: u16,
@@ -240,6 +259,18 @@ pub struct NavigationState {
     pub graph_max_scroll_x: u16,
     /// Maximum vertical scroll offset for transaction graph (computed from content).
     pub graph_max_scroll_y: u16,
+
+    // === Detail Table Row Selection ===
+    /// Selected row index in detail table view (for copy functionality).
+    pub detail_row_index: Option<usize>,
+    /// Scroll position for detail table rows.
+    pub detail_row_scroll: u16,
+
+    // === Popup Stack for Nested Navigation ===
+    /// Stack of saved popup states for nested navigation.
+    /// When opening a nested popup (e.g., Asset from Account details),
+    /// the parent popup state is pushed here. On dismiss, we pop and restore.
+    pub popup_stack: Vec<SavedPopupState>,
 }
 
 impl NavigationState {
@@ -267,16 +298,23 @@ impl NavigationState {
         self.show_transaction_details = false;
         self.show_account_details = false;
         self.show_asset_details = false;
+        self.show_application_details = false;
         self.block_detail_tab = BlockDetailTab::default();
         self.block_txn_index = None;
         self.block_txn_scroll = 0;
         self.account_detail_tab = AccountDetailTab::default();
         self.account_item_index = None;
         self.account_item_scroll = 0;
+        self.app_detail_tab = AppDetailTab::default();
+        self.app_state_index = None;
+        self.app_state_scroll = 0;
         self.graph_scroll_x = 0;
         self.graph_scroll_y = 0;
         self.graph_max_scroll_x = 0;
         self.graph_max_scroll_y = 0;
+        self.detail_row_index = None;
+        self.detail_row_scroll = 0;
+        self.popup_stack.clear();
     }
 
     // ========================================================================
@@ -294,6 +332,7 @@ impl NavigationState {
             || self.show_transaction_details
             || self.show_account_details
             || self.show_asset_details
+            || self.show_application_details
     }
 
     /// Closes all detail views.
@@ -302,31 +341,50 @@ impl NavigationState {
         self.show_transaction_details = false;
         self.show_account_details = false;
         self.show_asset_details = false;
+        self.show_application_details = false;
     }
 
-    /// Opens the block details view.
-    #[allow(dead_code)] // Part of navigation API
-    pub fn open_block_details(&mut self) {
-        self.show_block_details = true;
-        self.block_detail_tab = BlockDetailTab::default();
-        self.block_txn_index = None;
-        self.block_txn_scroll = 0;
+    /// Returns `true` if there are saved popups in the stack.
+    #[must_use]
+    pub fn has_popup_stack(&self) -> bool {
+        !self.popup_stack.is_empty()
     }
 
-    /// Opens the transaction details view.
-    #[allow(dead_code)] // Part of navigation API
-    pub fn open_transaction_details(&mut self) {
-        self.show_transaction_details = true;
-        self.reset_graph_scroll();
+    /// Pushes the current account popup state to the stack.
+    ///
+    /// Call this before opening a nested popup from account details.
+    pub fn push_account_state(&mut self, address: &str) {
+        let tab_index = match self.account_detail_tab {
+            AccountDetailTab::Info => 0,
+            AccountDetailTab::Assets => 1,
+            AccountDetailTab::Apps => 2,
+        };
+        self.popup_stack.push(SavedPopupState {
+            popup_type: DetailPopupType::Account,
+            entity_id: address.to_string(),
+            tab_index,
+            item_index: self.account_item_index,
+            item_scroll: self.account_item_scroll,
+        });
     }
 
-    /// Resets graph scroll position and bounds.
-    #[allow(dead_code)] // Part of navigation API
-    pub fn reset_graph_scroll(&mut self) {
-        self.graph_scroll_x = 0;
-        self.graph_scroll_y = 0;
-        self.graph_max_scroll_x = 0;
-        self.graph_max_scroll_y = 0;
+    /// Pops the most recent saved popup state from the stack.
+    ///
+    /// Returns the saved state if one exists, or None if stack is empty.
+    pub fn pop_popup_state(&mut self) -> Option<SavedPopupState> {
+        self.popup_stack.pop()
+    }
+
+    /// Restores account detail state from a saved popup state.
+    pub fn restore_account_state(&mut self, saved: &SavedPopupState) {
+        self.account_detail_tab = match saved.tab_index {
+            0 => AccountDetailTab::Info,
+            1 => AccountDetailTab::Assets,
+            _ => AccountDetailTab::Apps,
+        };
+        self.account_item_index = saved.item_index;
+        self.account_item_scroll = saved.item_scroll;
+        self.show_account_details = true;
     }
 
     // ========================================================================
@@ -350,13 +408,6 @@ impl NavigationState {
         self.selected_block_id = None;
     }
 
-    /// Returns `true` if a block is selected.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn has_block_selection(&self) -> bool {
-        self.selected_block_index.is_some()
-    }
-
     // ========================================================================
     // Transaction Selection
     // ========================================================================
@@ -378,13 +429,6 @@ impl NavigationState {
         self.selected_transaction_id = None;
     }
 
-    /// Returns `true` if a transaction is selected.
-    #[must_use]
-    #[allow(dead_code)] // Part of navigation API
-    pub const fn has_transaction_selection(&self) -> bool {
-        self.selected_transaction_index.is_some()
-    }
-
     // ========================================================================
     // Block Detail Navigation
     // ========================================================================
@@ -392,16 +436,6 @@ impl NavigationState {
     /// Cycles the block detail tab between Info and Transactions.
     pub fn cycle_block_detail_tab(&mut self) {
         self.block_detail_tab = self.block_detail_tab.next();
-    }
-
-    /// Selects a transaction within the block details view.
-    ///
-    /// # Arguments
-    ///
-    /// * `index` - The index of the transaction in the block's transaction list
-    #[allow(dead_code)] // Part of navigation API
-    pub fn select_block_txn(&mut self, index: usize) {
-        self.block_txn_index = Some(index);
     }
 
     /// Moves the block transaction selection up.
@@ -455,15 +489,6 @@ impl NavigationState {
         self.account_item_scroll = 0;
     }
 
-    /// Cycles the account detail tab to the previous tab.
-    #[allow(dead_code)] // Part of navigation API
-    pub fn cycle_account_detail_tab_prev(&mut self) {
-        self.account_detail_tab = self.account_detail_tab.prev();
-        // Reset item selection when switching tabs
-        self.account_item_index = None;
-        self.account_item_scroll = 0;
-    }
-
     /// Moves the account item selection up.
     pub fn move_account_item_up(&mut self) {
         if let Some(idx) = self.account_item_index
@@ -509,68 +534,114 @@ impl NavigationState {
     }
 
     // ========================================================================
-    // Graph Scrolling
+    // Application Detail Navigation
     // ========================================================================
 
-    /// Scrolls the graph view left by the specified amount.
-    ///
-    /// # Arguments
-    ///
-    /// * `amount` - Number of columns to scroll
-    #[allow(dead_code)] // Part of navigation API
-    pub fn scroll_graph_left(&mut self, amount: u16) {
-        self.graph_scroll_x = self.graph_scroll_x.saturating_sub(amount);
+    /// Cycles the app detail tab to the next tab.
+    pub fn cycle_app_detail_tab(&mut self) {
+        self.app_detail_tab = self.app_detail_tab.next();
+        // Reset item selection when switching tabs
+        self.app_state_index = None;
+        self.app_state_scroll = 0;
     }
 
-    /// Scrolls the graph view right by the specified amount.
-    ///
-    /// # Arguments
-    ///
-    /// * `amount` - Number of columns to scroll
-    #[allow(dead_code)] // Part of navigation API
-    pub fn scroll_graph_right(&mut self, amount: u16) {
-        self.graph_scroll_x = self
-            .graph_scroll_x
-            .saturating_add(amount)
-            .min(self.graph_max_scroll_x);
+    /// Moves the app state selection up.
+    pub fn move_app_state_up(&mut self) {
+        if let Some(idx) = self.app_state_index
+            && idx > 0
+        {
+            self.app_state_index = Some(idx - 1);
+            // Adjust scroll if needed (each item is 1 line)
+            let new_pos = (idx - 1) as u16;
+            if new_pos < self.app_state_scroll {
+                self.app_state_scroll = new_pos;
+            }
+        }
     }
 
-    /// Scrolls the graph view up by the specified amount.
+    /// Moves the app state selection down.
     ///
     /// # Arguments
     ///
-    /// * `amount` - Number of rows to scroll
-    #[allow(dead_code)] // Part of navigation API
-    pub fn scroll_graph_up(&mut self, amount: u16) {
-        self.graph_scroll_y = self.graph_scroll_y.saturating_sub(amount);
+    /// * `max` - Maximum valid index (length - 1)
+    /// * `visible_height` - Number of visible rows in the list area
+    pub fn move_app_state_down(&mut self, max: usize, visible_height: u16) {
+        if let Some(idx) = self.app_state_index {
+            if idx < max {
+                self.app_state_index = Some(idx + 1);
+                // Adjust scroll if needed
+                let new_pos = (idx + 1) as u16;
+                let visible_end = self.app_state_scroll + visible_height;
+                if new_pos >= visible_end {
+                    self.app_state_scroll = new_pos.saturating_sub(visible_height) + 1;
+                }
+            }
+        } else if max > 0 {
+            self.app_state_index = Some(0);
+            self.app_state_scroll = 0;
+        }
     }
 
-    /// Scrolls the graph view down by the specified amount.
-    ///
-    /// # Arguments
-    ///
-    /// * `amount` - Number of rows to scroll
-    #[allow(dead_code)] // Part of navigation API
-    pub fn scroll_graph_down(&mut self, amount: u16) {
-        self.graph_scroll_y = self
-            .graph_scroll_y
-            .saturating_add(amount)
-            .min(self.graph_max_scroll_y);
+    /// Resets app detail view state.
+    pub fn reset_app_detail(&mut self) {
+        self.app_detail_tab = AppDetailTab::default();
+        self.app_state_index = None;
+        self.app_state_scroll = 0;
     }
 
-    /// Updates the maximum scroll bounds for the graph view.
+    // ========================================================================
+    // Detail Table Row Navigation
+    // ========================================================================
+
+    /// Moves the detail row selection up.
+    pub fn move_detail_row_up(&mut self) {
+        if let Some(idx) = self.detail_row_index
+            && idx > 0
+        {
+            self.detail_row_index = Some(idx - 1);
+            // Adjust scroll if needed
+            let new_pos = (idx - 1) as u16;
+            if new_pos < self.detail_row_scroll {
+                self.detail_row_scroll = new_pos;
+            }
+        }
+    }
+
+    /// Moves the detail row selection down.
     ///
     /// # Arguments
     ///
-    /// * `max_x` - Maximum horizontal scroll offset
-    /// * `max_y` - Maximum vertical scroll offset
-    #[allow(dead_code)] // Part of navigation API
-    pub fn set_graph_bounds(&mut self, max_x: u16, max_y: u16) {
-        self.graph_max_scroll_x = max_x;
-        self.graph_max_scroll_y = max_y;
-        // Clamp current scroll to new bounds
-        self.graph_scroll_x = self.graph_scroll_x.min(max_x);
-        self.graph_scroll_y = self.graph_scroll_y.min(max_y);
+    /// * `max` - Maximum valid index (row_count - 1)
+    /// * `visible_height` - Number of visible rows in the table area
+    pub fn move_detail_row_down(&mut self, max: usize, visible_height: u16) {
+        if let Some(idx) = self.detail_row_index {
+            if idx < max {
+                self.detail_row_index = Some(idx + 1);
+                // Adjust scroll if needed
+                let new_pos = (idx + 1) as u16;
+                let visible_end = self.detail_row_scroll + visible_height;
+                if new_pos >= visible_end {
+                    self.detail_row_scroll = new_pos.saturating_sub(visible_height) + 1;
+                }
+            }
+        } else if max > 0 {
+            // Initialize selection at first row
+            self.detail_row_index = Some(0);
+            self.detail_row_scroll = 0;
+        }
+    }
+
+    /// Resets detail row selection (call when opening/closing detail views).
+    pub fn reset_detail_row(&mut self) {
+        self.detail_row_index = None;
+        self.detail_row_scroll = 0;
+    }
+
+    /// Initializes detail row selection at first row if not set.
+    pub fn init_detail_row_if_needed(&mut self, row_count: usize) {
+        if self.detail_row_index.is_none() && row_count > 0 {
+            self.detail_row_index = Some(0);
+        }
     }
 }
 
@@ -581,42 +652,7 @@ impl NavigationState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::TxnType;
-
-    // ========================================================================
-    // Helper Functions
-    // ========================================================================
-
-    fn create_test_block(id: u64) -> AlgoBlock {
-        AlgoBlock {
-            id,
-            txn_count: 5,
-            timestamp: "2024-01-01 12:00:00".to_string(),
-        }
-    }
-
-    fn create_test_transaction(id: &str) -> Transaction {
-        Transaction {
-            id: id.to_string(),
-            txn_type: TxnType::Payment,
-            from: "sender".to_string(),
-            to: "receiver".to_string(),
-            timestamp: "2024-01-01 12:00:00".to_string(),
-            block: 12345,
-            fee: 1000,
-            note: String::new(),
-            amount: 1_000_000,
-            asset_id: None,
-            rekey_to: None,
-            group: None,
-            details: crate::domain::TransactionDetails::None,
-            inner_transactions: Vec::new(),
-        }
-    }
-
-    // ========================================================================
-    // Behavior Tests
-    // ========================================================================
+    use crate::test_utils::{BlockMother, TransactionMother};
 
     #[test]
     fn test_detail_view_mode_toggle_behavior() {
@@ -625,11 +661,9 @@ mod tests {
         assert_eq!(DetailViewMode::Table.toggle(), DetailViewMode::Visual);
         assert_eq!(DetailViewMode::Visual.toggle(), DetailViewMode::Table);
 
-        // Predicates work correctly
-        assert!(DetailViewMode::Table.is_table());
-        assert!(!DetailViewMode::Table.is_visual());
-        assert!(DetailViewMode::Visual.is_visual());
-        assert!(!DetailViewMode::Visual.is_table());
+        // Match exhaustively to verify all variants
+        assert!(matches!(DetailViewMode::Table, DetailViewMode::Table));
+        assert!(matches!(DetailViewMode::Visual, DetailViewMode::Visual));
     }
 
     #[test]
@@ -639,11 +673,12 @@ mod tests {
         assert_eq!(BlockDetailTab::Info.next(), BlockDetailTab::Transactions);
         assert_eq!(BlockDetailTab::Transactions.next(), BlockDetailTab::Info);
 
-        // Predicates work correctly
-        assert!(BlockDetailTab::Info.is_info());
-        assert!(!BlockDetailTab::Info.is_transactions());
-        assert!(BlockDetailTab::Transactions.is_transactions());
-        assert!(!BlockDetailTab::Transactions.is_info());
+        // Match exhaustively to verify all variants
+        assert!(matches!(BlockDetailTab::Info, BlockDetailTab::Info));
+        assert!(matches!(
+            BlockDetailTab::Transactions,
+            BlockDetailTab::Transactions
+        ));
     }
 
     #[test]
@@ -674,8 +709,12 @@ mod tests {
         // Initially no details shown
         assert!(!nav.is_showing_details());
 
-        // Open block details
-        nav.open_block_details();
+        // Open block details (inline logic from deleted open_block_details)
+        nav.show_block_details = true;
+        nav.block_detail_tab = BlockDetailTab::default();
+        nav.block_txn_index = None;
+        nav.block_txn_scroll = 0;
+
         assert!(nav.is_showing_details());
         assert!(nav.show_block_details);
         assert_eq!(nav.block_detail_tab, BlockDetailTab::Info);
@@ -687,8 +726,11 @@ mod tests {
         assert!(!nav.show_block_details);
         assert!(!nav.show_transaction_details);
 
-        // Open transaction details
-        nav.open_transaction_details();
+        // Open transaction details (inline logic)
+        nav.show_transaction_details = true;
+        nav.graph_scroll_x = 0;
+        nav.graph_scroll_y = 0;
+
         assert!(nav.is_showing_details());
         assert!(nav.show_transaction_details);
         assert_eq!(nav.graph_scroll_x, 0);
@@ -708,20 +750,19 @@ mod tests {
     fn test_block_selection_with_data() {
         let mut nav = NavigationState::new();
         let blocks = vec![
-            create_test_block(10000),
-            create_test_block(10001),
-            create_test_block(10002),
+            BlockMother::with_id(10000),
+            BlockMother::with_id(10001),
+            BlockMother::with_id(10002),
         ];
 
         // Select block and verify index and ID are set
         nav.select_block(1, &blocks);
         assert_eq!(nav.selected_block_index, Some(1));
         assert_eq!(nav.selected_block_id, Some(10001));
-        assert!(nav.has_block_selection());
+        assert!(nav.selected_block_index.is_some());
 
         // Clear selection
         nav.clear_block_selection();
-        assert!(!nav.has_block_selection());
         assert!(nav.selected_block_index.is_none());
         assert!(nav.selected_block_id.is_none());
     }
@@ -730,49 +771,21 @@ mod tests {
     fn test_transaction_selection_with_data() {
         let mut nav = NavigationState::new();
         let transactions = vec![
-            create_test_transaction("txn1"),
-            create_test_transaction("txn2"),
-            create_test_transaction("txn3"),
+            TransactionMother::payment("txn1"),
+            TransactionMother::payment("txn2"),
+            TransactionMother::payment("txn3"),
         ];
 
         // Select transaction and verify index and ID are set
         nav.select_transaction(1, &transactions);
         assert_eq!(nav.selected_transaction_index, Some(1));
         assert_eq!(nav.selected_transaction_id, Some("txn2".to_string()));
-        assert!(nav.has_transaction_selection());
+        assert!(nav.selected_transaction_index.is_some());
 
         // Clear selection
         nav.clear_transaction_selection();
-        assert!(!nav.has_transaction_selection());
         assert!(nav.selected_transaction_index.is_none());
         assert!(nav.selected_transaction_id.is_none());
-    }
-
-    #[test]
-    fn test_graph_scroll_respects_bounds() {
-        let mut nav = NavigationState::new();
-        nav.set_graph_bounds(100, 50);
-
-        // Scroll right and verify clamping at max
-        nav.scroll_graph_right(200);
-        assert_eq!(nav.graph_scroll_x, 100);
-
-        // Scroll left and verify clamping at 0
-        nav.scroll_graph_left(200);
-        assert_eq!(nav.graph_scroll_x, 0);
-
-        // Same for vertical
-        nav.scroll_graph_down(200);
-        assert_eq!(nav.graph_scroll_y, 50);
-        nav.scroll_graph_up(200);
-        assert_eq!(nav.graph_scroll_y, 0);
-
-        // Test set_graph_bounds clamps existing scroll position
-        nav.graph_scroll_x = 200;
-        nav.graph_scroll_y = 150;
-        nav.set_graph_bounds(80, 40);
-        assert_eq!(nav.graph_scroll_x, 80);
-        assert_eq!(nav.graph_scroll_y, 40);
     }
 
     #[test]

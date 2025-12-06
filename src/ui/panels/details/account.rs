@@ -22,12 +22,6 @@ use crate::ui::layout::{centered_popup_area, fullscreen_popup_area};
 /// Renders the account details popup with tabbed interface.
 ///
 /// Supports tabbed navigation between Info, Assets, and Apps views.
-///
-/// # Arguments
-///
-/// * `app` - Application state containing account data
-/// * `frame` - Ratatui frame for rendering
-/// * `area` - Available screen area for rendering
 pub fn render_account_details(app: &App, frame: &mut Frame, area: Rect) {
     let Some(account) = &app.data.viewed_account else {
         // Still loading or no data
@@ -85,7 +79,7 @@ pub fn render_account_details(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     // Help text
-    let help_text = "[Tab] Switch  [↑↓] Navigate  [C] Copy  [O] Open  [F] Fullscreen  [Esc] Close";
+    let help_text = "[Tab] Switch  [↑↓] Navigate  [C] Copy  [Y] JSON  [O] Open  [Esc] Close";
     frame.render_widget(
         Paragraph::new(help_text)
             .style(Style::default().fg(MUTED_COLOR))
@@ -550,31 +544,20 @@ fn render_apps_tab(app: &App, account: &AccountDetails, frame: &mut Frame, area:
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
+    use rstest::*;
 
-    use crate::client::AlgoClient;
-    use crate::domain::Network;
-    use crate::state::StartupOptions;
+    use crate::domain::account::{AccountAssetHolding, AccountDetails};
+    use crate::test_utils::{AccountMother, mock_app, test_terminal};
 
-    /// Helper to create a mock App for testing.
-    async fn create_mock_app() -> App {
-        let options = StartupOptions {
-            network: Some(Network::MainNet),
-            search: None,
-            graph_view: false,
-        };
-        App::new(options).await.expect("Failed to create app")
-    }
+    // ============================================================================
+    // Fixtures
+    // ============================================================================
 
-    /// Snapshot test for account details popup - Info tab.
-    ///
-    /// Uses a mock account with various features (assets, apps, etc) to avoid flaky
-    /// balance changes from live participating accounts.
-    #[tokio::test]
-    async fn test_account_details_snapshot() {
-        use crate::domain::account::{AccountAssetHolding, AccountDetails};
+    // Note: test_terminal, mock_app, and AccountMother are imported from crate::test_utils
 
-        // Use mock account data to avoid flaky balance changes from live consensus rewards
-        let account = AccountDetails {
+    #[fixture]
+    fn mock_account() -> AccountDetails {
+        AccountDetails {
             address: "Y76M3MSY6DKBRHBL7C3NNDXGS5IIMQVQVUAB6MP4XEMMGVF2QWNPL226CA".to_string(),
             balance: 17_398_150_061_870, // ~17.4M ALGO
             min_balance: 100_000,
@@ -599,48 +582,59 @@ mod tests {
             ],
             nfd: None,
             ..Default::default()
-        };
+        }
+    }
 
-        let mut app = create_mock_app().await;
-        app.data.viewed_account = Some(account);
+    // ============================================================================
+    // Snapshot Tests
+    // ============================================================================
+
+    /// Snapshot test for account details popup - Info tab.
+    ///
+    /// Uses a mock account with various features (assets, apps, etc) to avoid flaky
+    /// balance changes from live participating accounts.
+    #[rstest]
+    #[tokio::test]
+    async fn test_account_details_snapshot(
+        mut test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: App,
+        mock_account: AccountDetails,
+    ) {
+        let mut app = mock_app.await;
+        app.data.viewed_account = Some(mock_account);
         app.nav.show_account_details = true;
         app.nav.account_detail_tab = AccountDetailTab::Info;
 
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-        terminal
+        test_terminal
             .draw(|frame| {
                 render_account_details(&app, frame, frame.area());
             })
             .unwrap();
 
-        insta::assert_snapshot!("account_details", terminal.backend());
+        insta::assert_snapshot!("account_details", test_terminal.backend());
     }
 
     /// Snapshot test for account with NFD name.
     ///
-    /// Tests that NFD names are displayed prominently.
-    /// Uses silvio.algo which is a real mainnet NFD.
+    /// Tests that NFD names are displayed prominently with verification badge.
+    /// Uses a static fixture (silvio.algo-style) to avoid network calls.
+    #[rstest]
     #[tokio::test]
-    async fn test_account_details_with_nfd_snapshot() {
-        let client = AlgoClient::new(Network::MainNet);
-        // silvio.algo - a real mainnet NFD account
-        let account = client
-            .get_account_details("5NBAJP3FDBY4HXY3RZWRBE3VG4YJLXWOULC2QC4WM75KKCX4JZYG4ASVJ4")
-            .await
-            .expect("Failed to fetch account");
-
-        let mut app = create_mock_app().await;
-        app.data.viewed_account = Some(account);
+    async fn test_account_details_with_nfd_snapshot(
+        mut test_terminal: Terminal<TestBackend>,
+        #[future] mock_app: App,
+    ) {
+        let mut app = mock_app.await;
+        app.data.viewed_account = Some(AccountMother::with_nfd());
         app.nav.show_account_details = true;
         app.nav.account_detail_tab = AccountDetailTab::Info;
 
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
-        terminal
+        test_terminal
             .draw(|frame| {
                 render_account_details(&app, frame, frame.area());
             })
             .unwrap();
 
-        insta::assert_snapshot!("account_details_with_nfd", terminal.backend());
+        insta::assert_snapshot!("account_details_with_nfd", test_terminal.backend());
     }
 }

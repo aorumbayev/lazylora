@@ -76,17 +76,18 @@ pub fn render(frame: &mut Frame, area: Rect, query: &str, search_type: SearchTyp
 
     let selector_y = input_area.y + 4;
     let selector_height = 1;
-    let selector_width = inner_area.width / 5;
-    let spacing = 2;
+    let selector_width = inner_area.width / 6;
+    let spacing = 1;
 
     let search_types = [
         SearchType::Transaction,
         SearchType::Block,
         SearchType::Account,
         SearchType::Asset,
+        SearchType::Application,
     ];
 
-    let mut x_offset = inner_area.x + (inner_area.width - (4 * selector_width + 3 * spacing)) / 2;
+    let mut x_offset = inner_area.x + (inner_area.width - (5 * selector_width + 4 * spacing)) / 2;
 
     for t in &search_types {
         let is_selected = *t == search_type;
@@ -163,7 +164,7 @@ pub fn render(frame: &mut Frame, area: Rect, query: &str, search_type: SearchTyp
     frame.render_widget(help_msg1, help_area1);
     frame.render_widget(help_msg2, help_area2);
 
-    let control_text = "Tab: Change Type  Enter: Search  Esc: Cancel";
+    let control_text = "Tab:Type  Enter:Search  Esc:Close";
     let control_area = Rect::new(
         popup_area.x + (popup_area.width - control_text.len() as u16) / 2,
         popup_area.y + popup_area.height - 2,
@@ -230,6 +231,7 @@ mod tests {
             SearchType::Block,
             SearchType::Account,
             SearchType::Asset,
+            SearchType::Application,
         ] {
             terminal
                 .draw(|frame| {

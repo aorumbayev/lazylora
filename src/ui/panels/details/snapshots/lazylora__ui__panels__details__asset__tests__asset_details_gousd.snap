@@ -35,7 +35,7 @@ expression: terminal.backend()
 "       │                                                                                   │        "
 "       │                                                                                   │        "
 "       │                                                                                   │        "
-"       │            [C] Copy  [O] Open in Browser  [F] Fullscreen  [Esc] Close             │        "
+"       │                     [C] Copy  [Y] JSON  [O] Open  [Esc] Close                     │        "
 "       ╰───────────────────────────────────────────────────────────────────────────────────╯        "
 "                                                                                                    "
 "                                                                                                    "

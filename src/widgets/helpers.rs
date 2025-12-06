@@ -2,8 +2,8 @@
 //!
 //! This module contains utility functions used across various widgets for:
 //! - Address truncation and formatting
-//! - Amount formatting (ALGO and ASA)
-//! - Transaction type icons and codes
+//! - Amount formatting (ALGO)
+//! - Transaction type icons
 
 use crate::domain::TxnType;
 
@@ -11,7 +11,7 @@ use crate::domain::TxnType;
 // Re-exported Constants
 // ============================================================================
 
-pub use crate::constants::{ALGO_SYMBOL, ASSET_SYMBOL, MICROALGOS_PER_ALGO};
+pub use crate::constants::MICROALGOS_PER_ALGO;
 
 // ============================================================================
 // Address Formatting
@@ -87,36 +87,6 @@ pub fn format_algo_amount(microalgos: u64) -> String {
     format!("{algos:.6} ALGO")
 }
 
-/// Format asset amount with optional decimals.
-///
-/// # Arguments
-///
-/// * `amount` - The raw asset amount
-/// * `decimals` - Optional decimal places for formatting
-///
-/// # Returns
-///
-/// A formatted string with commas for thousands
-///
-/// # Examples
-///
-/// ```ignore
-/// assert_eq!(format_asset_amount(1000, None), "1,000");
-/// assert_eq!(format_asset_amount(100_000_000, Some(6)), "100.000000");
-/// ```
-#[allow(dead_code)]
-#[must_use]
-pub fn format_asset_amount(amount: u64, decimals: Option<u64>) -> String {
-    match decimals {
-        Some(d) if d > 0 => {
-            let divisor = 10_u64.pow(d as u32) as f64;
-            let formatted = amount as f64 / divisor;
-            format_with_commas_f64(formatted, d as usize)
-        }
-        _ => format_with_commas(amount),
-    }
-}
-
 /// Format a number with commas for thousands separators.
 ///
 /// # Examples
@@ -125,7 +95,6 @@ pub fn format_asset_amount(amount: u64, decimals: Option<u64>) -> String {
 /// assert_eq!(format_with_commas(1000), "1,000");
 /// assert_eq!(format_with_commas(1_000_000), "1,000,000");
 /// ```
-#[allow(dead_code)]
 #[must_use]
 pub fn format_with_commas(n: u64) -> String {
     let s = n.to_string();
@@ -137,25 +106,6 @@ pub fn format_with_commas(n: u64) -> String {
         result.push(c);
     }
     result.chars().rev().collect()
-}
-
-/// Format a floating point number with commas and specified decimal places.
-#[allow(dead_code)]
-#[must_use]
-pub fn format_with_commas_f64(n: f64, decimals: usize) -> String {
-    let int_part = n.trunc() as u64;
-    let frac_part = n.fract();
-
-    let int_formatted = format_with_commas(int_part);
-
-    if decimals == 0 {
-        int_formatted
-    } else {
-        let frac_str = format!("{:.prec$}", frac_part, prec = decimals);
-        // Skip the "0." prefix
-        let frac_digits = &frac_str[2..];
-        format!("{int_formatted}.{frac_digits}")
-    }
 }
 
 // ============================================================================
@@ -184,30 +134,6 @@ pub const fn txn_type_icon(txn_type: TxnType) -> &'static str {
         TxnType::StateProof => "[S]",
         TxnType::Heartbeat => "[H]",
         TxnType::Unknown => "[?]",
-    }
-}
-
-/// Get the short code for a transaction type.
-///
-/// # Examples
-///
-/// ```ignore
-/// assert_eq!(txn_type_code(TxnType::Payment), "PAY");
-/// assert_eq!(txn_type_code(TxnType::AppCall), "APP");
-/// ```
-#[must_use]
-#[allow(dead_code)] // Future use
-pub const fn txn_type_code(txn_type: TxnType) -> &'static str {
-    match txn_type {
-        TxnType::Payment => "PAY",
-        TxnType::AppCall => "APP",
-        TxnType::AssetTransfer => "AXF",
-        TxnType::AssetConfig => "ACF",
-        TxnType::AssetFreeze => "AFZ",
-        TxnType::KeyReg => "KEY",
-        TxnType::StateProof => "STP",
-        TxnType::Heartbeat => "HBT",
-        TxnType::Unknown => "???",
     }
 }
 
@@ -263,25 +189,6 @@ mod tests {
         }
     }
 
-    /// Table-driven tests for asset amount formatting.
-    #[test]
-    fn test_format_asset_amount() {
-        let cases = [
-            (1000_u64, None, "1,000"),
-            (1_000_000, None, "1,000,000"),
-            (100_000_000, Some(6_u64), "100.000000"),
-            (1_500_000, Some(6), "1.500000"),
-        ];
-
-        for (amount, decimals, expected) in cases {
-            assert_eq!(
-                format_asset_amount(amount, decimals),
-                expected,
-                "amount={amount}, decimals={decimals:?}"
-            );
-        }
-    }
-
     /// Table-driven tests for number formatting with commas.
     #[test]
     fn test_format_with_commas() {
@@ -298,26 +205,25 @@ mod tests {
         }
     }
 
-    /// Table-driven tests for transaction type icons and codes.
+    /// Table-driven tests for transaction type icons.
     #[test]
-    fn test_txn_type_display() {
+    fn test_txn_type_icon() {
         use TxnType::*;
 
         let cases = [
-            (Payment, "[$]", "PAY"),
-            (AppCall, "[A]", "APP"),
-            (AssetTransfer, "[>]", "AXF"),
-            (AssetConfig, "[*]", "ACF"),
-            (AssetFreeze, "[#]", "AFZ"),
-            (KeyReg, "[K]", "KEY"),
-            (StateProof, "[S]", "STP"),
-            (Heartbeat, "[H]", "HBT"),
-            (Unknown, "[?]", "???"),
+            (Payment, "[$]"),
+            (AppCall, "[A]"),
+            (AssetTransfer, "[>]"),
+            (AssetConfig, "[*]"),
+            (AssetFreeze, "[#]"),
+            (KeyReg, "[K]"),
+            (StateProof, "[S]"),
+            (Heartbeat, "[H]"),
+            (Unknown, "[?]"),
         ];
 
-        for (txn_type, expected_icon, expected_code) in cases {
+        for (txn_type, expected_icon) in cases {
             assert_eq!(txn_type_icon(txn_type), expected_icon, "{txn_type:?} icon");
-            assert_eq!(txn_type_code(txn_type), expected_code, "{txn_type:?} code");
         }
     }
 }

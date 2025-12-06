@@ -12,24 +12,9 @@ use ratatui::{
 };
 
 use crate::domain::{Transaction, TxnType};
-use crate::widgets::helpers::{MICROALGOS_PER_ALGO, truncate_address, txn_type_icon};
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Format a number with commas for thousands separators.
-fn format_with_commas(n: u64) -> String {
-    let s = n.to_string();
-    let mut result = String::with_capacity(s.len() + s.len() / 3);
-    for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push(',');
-        }
-        result.push(c);
-    }
-    result.chars().rev().collect()
-}
+use crate::widgets::helpers::{
+    MICROALGOS_PER_ALGO, format_with_commas, truncate_address, txn_type_icon,
+};
 
 // ============================================================================
 // TxnFlowDiagram Widget
@@ -62,29 +47,11 @@ pub struct TxnFlowDiagram<'a> {
 }
 
 impl<'a> TxnFlowDiagram<'a> {
-    /// Create a new transaction flow diagram.
-    ///
-    /// # Arguments
-    ///
-    /// * `txn` - The transaction to visualize
-    ///
-    /// # Returns
-    ///
-    /// A new `TxnFlowDiagram` widget
     #[must_use]
     pub const fn new(txn: &'a Transaction) -> Self {
         Self { txn, box_width: 16 }
     }
 
-    /// Set custom box width.
-    ///
-    /// # Arguments
-    ///
-    /// * `width` - The width for entity boxes
-    ///
-    /// # Returns
-    ///
-    /// Self with the new box width
     #[allow(dead_code)]
     #[must_use]
     pub const fn with_box_width(mut self, width: usize) -> Self {

@@ -13,7 +13,7 @@
 //! let command = map_key(key_event, &context);
 //!
 //! match command {
-//!     AppCommand::Quit => app.exit = true,
+//!     AppCommand::ConfirmQuit => app.exit = true,
 //!     AppCommand::Refresh => app.initial_data_fetch().await,
 //!     // ...
 //! }
@@ -33,12 +33,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub enum InputContext {
     /// Normal browsing mode - viewing blocks and transactions lists.
     Main,
-    /// Viewing transaction details overlay.
+    /// Viewing transaction details overlay in Visual/Graph mode.
     DetailView,
+    /// Viewing transaction details overlay in Table mode (with tabs).
+    TxnDetailViewTable,
     /// Viewing block details overlay with tabs (Info / Transactions).
     BlockDetailView,
     /// Viewing account details overlay with tabs (Info / Assets / Apps).
     AccountDetailView,
+    /// Viewing application details overlay with tabs (Info / State / Programs).
+    AppDetailView,
     /// Network selection popup is open.
     NetworkSelect,
     /// Search popup with text input is open.
@@ -49,6 +53,12 @@ pub enum InputContext {
     SearchResults,
     /// Viewing a message/notification popup.
     MessagePopup,
+    /// Viewing the help popup with keybindings.
+    HelpPopup,
+    /// Quit confirmation popup is open.
+    ConfirmQuit,
+    /// Adding or editing a custom network.
+    NetworkForm,
 }
 
 // ============================================================================
@@ -63,17 +73,18 @@ pub enum InputContext {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppCommand {
     // === Application Control ===
-    /// Exit the application.
-    Quit,
+    /// Request quit confirmation (show popup).
+    RequestQuit,
+    /// Confirm quit from the confirmation popup.
+    ConfirmQuit,
     /// Refresh data from the network.
     Refresh,
     /// Toggle live updates on/off.
     ToggleLive,
+    /// Toggle the help popup.
+    ToggleHelp,
 
     // === Popup/Modal Control ===
-    /// Open the search popup.
-    #[allow(dead_code)] // Kept for potential fallback use
-    OpenSearch,
     /// Focus the inline search bar in the header.
     FocusInlineSearch,
     /// Open the network selection popup.
@@ -88,6 +99,10 @@ pub enum AppCommand {
     MoveUp,
     /// Move selection down in the current list.
     MoveDown,
+    /// Jump to the top of the current list.
+    GoToTop,
+    /// Jump to the bottom of the current list.
+    GoToBottom,
     /// Select/confirm the current item (open details, confirm selection).
     Select,
 
@@ -144,6 +159,10 @@ pub enum AppCommand {
     NetworkDown,
     /// Select the currently highlighted network.
     SelectNetwork,
+    /// Add a new custom network.
+    AddNetwork,
+    /// Delete the selected custom network.
+    DeleteNetwork,
 
     // === Search Results Actions ===
     /// Move to the previous search result.
@@ -152,6 +171,12 @@ pub enum AppCommand {
     NextResult,
     /// Select the current search result.
     SelectResult,
+
+    // === Help Popup Actions ===
+    /// Scroll help popup up.
+    ScrollHelpUp,
+    /// Scroll help popup down.
+    ScrollHelpDown,
 
     // === Block Detail View Actions ===
     /// Cycle between block detail tabs (Info / Transactions).
@@ -170,6 +195,24 @@ pub enum AppCommand {
     MoveAccountItemUp,
     /// Move down in account item list (assets or apps).
     MoveAccountItemDown,
+    /// Select asset or app from account details to view full details.
+    SelectAccountItem,
+
+    // === Application Detail View Actions ===
+    /// Cycle between app detail tabs (Info / State / Programs).
+    CycleAppDetailTab,
+    /// Move up in app state list.
+    MoveAppStateUp,
+    /// Move down in app state list.
+    MoveAppStateDown,
+
+    // === Network Form Actions ===
+    /// Submit the custom network form.
+    SubmitNetworkForm,
+    /// Move to the next field in the network form.
+    NetworkFormNextField,
+    /// Move to the previous field in the network form.
+    NetworkFormPrevField,
 
     // === No Operation ===
     /// No action to perform (unhandled key).
@@ -199,27 +242,35 @@ pub fn map_key(key: KeyEvent, context: &InputContext) -> AppCommand {
     match context {
         InputContext::Main => map_main_keys(key),
         InputContext::DetailView => map_detail_view_keys(key),
+        InputContext::TxnDetailViewTable => map_txn_detail_view_table_keys(key),
         InputContext::BlockDetailView => map_block_detail_view_keys(key),
         InputContext::AccountDetailView => map_account_detail_view_keys(key),
+        InputContext::AppDetailView => map_app_detail_view_keys(key),
         InputContext::NetworkSelect => map_network_select_keys(key),
         InputContext::SearchInput => map_search_input_keys(key),
         InputContext::InlineSearch => map_inline_search_keys(key),
         InputContext::SearchResults => map_search_results_keys(key),
         InputContext::MessagePopup => map_message_popup_keys(key),
+        InputContext::HelpPopup => map_help_popup_keys(key),
+        InputContext::ConfirmQuit => map_confirm_quit_keys(key),
+        InputContext::NetworkForm => map_network_form_keys(key),
     }
 }
 
 /// Maps keys in the main browsing context.
 fn map_main_keys(key: KeyEvent) -> AppCommand {
     match key.code {
-        KeyCode::Char('q') => AppCommand::Quit,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
         KeyCode::Char('r') => AppCommand::Refresh,
         KeyCode::Char(' ') => AppCommand::ToggleLive,
+        KeyCode::Char('?') => AppCommand::ToggleHelp,
         KeyCode::Char('f') => AppCommand::FocusInlineSearch,
         KeyCode::Char('n') => AppCommand::OpenNetworkSelect,
         KeyCode::Tab => AppCommand::CycleFocus,
-        KeyCode::Up => AppCommand::MoveUp,
-        KeyCode::Down => AppCommand::MoveDown,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::MoveUp,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::MoveDown,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
         KeyCode::Enter => AppCommand::Select,
         KeyCode::Esc => AppCommand::Dismiss,
         _ => AppCommand::Noop,
@@ -234,7 +285,7 @@ fn map_detail_view_keys(key: KeyEvent) -> AppCommand {
         KeyCode::Char('y') => AppCommand::CopyJson,
         KeyCode::Char('o') => AppCommand::OpenInBrowser,
         KeyCode::Char('s') => AppCommand::ExportSvg,
-        KeyCode::Char('q') => AppCommand::Quit,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
         KeyCode::Char('f') => AppCommand::ToggleFullscreen,
         KeyCode::Tab => AppCommand::ToggleDetailViewMode,
         // Arrow keys for graph scrolling (Visual mode) and section navigation (Table mode)
@@ -255,30 +306,65 @@ fn map_block_detail_view_keys(key: KeyEvent) -> AppCommand {
     match key.code {
         KeyCode::Esc => AppCommand::Dismiss,
         KeyCode::Tab => AppCommand::CycleBlockDetailTab,
-        KeyCode::Up => AppCommand::MoveBlockTxnUp,
-        KeyCode::Down => AppCommand::MoveBlockTxnDown,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::MoveBlockTxnUp,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::MoveBlockTxnDown,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
         KeyCode::Enter => AppCommand::SelectBlockTxn,
         KeyCode::Char('c') => AppCommand::CopyToClipboard,
         KeyCode::Char('y') => AppCommand::CopyJson,
         KeyCode::Char('o') => AppCommand::OpenInBrowser,
         KeyCode::Char('f') => AppCommand::ToggleFullscreen,
-        KeyCode::Char('q') => AppCommand::Quit,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
         _ => AppCommand::Noop,
     }
 }
 
+/// Maps keys in the add custom network form.
+fn map_network_form_keys(key: KeyEvent) -> AppCommand {
+    match key.code {
+        KeyCode::Esc => AppCommand::Dismiss,
+        KeyCode::Enter => AppCommand::SubmitNetworkForm,
+        KeyCode::Tab | KeyCode::Down => AppCommand::NetworkFormNextField,
+        KeyCode::Up => AppCommand::NetworkFormPrevField,
+        KeyCode::Backspace => AppCommand::Backspace,
+        KeyCode::Char(c) => AppCommand::TypeChar(c),
+        _ => AppCommand::Noop,
+    }
+}
 /// Maps keys in the account detail view context.
 fn map_account_detail_view_keys(key: KeyEvent) -> AppCommand {
     match key.code {
         KeyCode::Esc => AppCommand::Dismiss,
         KeyCode::Tab => AppCommand::CycleAccountDetailTab,
-        KeyCode::Up => AppCommand::MoveAccountItemUp,
-        KeyCode::Down => AppCommand::MoveAccountItemDown,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::MoveAccountItemUp,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::MoveAccountItemDown,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
+        KeyCode::Enter => AppCommand::SelectAccountItem,
         KeyCode::Char('c') => AppCommand::CopyToClipboard,
         KeyCode::Char('y') => AppCommand::CopyJson,
         KeyCode::Char('o') => AppCommand::OpenInBrowser,
         KeyCode::Char('f') => AppCommand::ToggleFullscreen,
-        KeyCode::Char('q') => AppCommand::Quit,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
+        _ => AppCommand::Noop,
+    }
+}
+
+/// Maps keys in the application detail view context.
+fn map_app_detail_view_keys(key: KeyEvent) -> AppCommand {
+    match key.code {
+        KeyCode::Esc => AppCommand::Dismiss,
+        KeyCode::Tab => AppCommand::CycleAppDetailTab,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::MoveAppStateUp,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::MoveAppStateDown,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
+        KeyCode::Char('c') => AppCommand::CopyToClipboard,
+        KeyCode::Char('y') => AppCommand::CopyJson,
+        KeyCode::Char('o') => AppCommand::OpenInBrowser,
+        KeyCode::Char('f') => AppCommand::ToggleFullscreen,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
         _ => AppCommand::Noop,
     }
 }
@@ -287,10 +373,14 @@ fn map_account_detail_view_keys(key: KeyEvent) -> AppCommand {
 fn map_network_select_keys(key: KeyEvent) -> AppCommand {
     match key.code {
         KeyCode::Esc => AppCommand::Dismiss,
-        KeyCode::Up => AppCommand::NetworkUp,
-        KeyCode::Down => AppCommand::NetworkDown,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::NetworkUp,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::NetworkDown,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
         KeyCode::Enter => AppCommand::SelectNetwork,
-        KeyCode::Char('q') => AppCommand::Dismiss,
+        KeyCode::Char('a') => AppCommand::AddNetwork,
+        KeyCode::Char('d') => AppCommand::DeleteNetwork,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
         _ => AppCommand::Noop,
     }
 }
@@ -341,10 +431,12 @@ fn map_inline_search_keys(key: KeyEvent) -> AppCommand {
 fn map_search_results_keys(key: KeyEvent) -> AppCommand {
     match key.code {
         KeyCode::Esc => AppCommand::Dismiss,
-        KeyCode::Up => AppCommand::PreviousResult,
-        KeyCode::Down => AppCommand::NextResult,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::PreviousResult,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::NextResult,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
         KeyCode::Enter => AppCommand::SelectResult,
-        KeyCode::Char('q') => AppCommand::Dismiss,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
         _ => AppCommand::Noop,
     }
 }
@@ -353,7 +445,48 @@ fn map_search_results_keys(key: KeyEvent) -> AppCommand {
 fn map_message_popup_keys(key: KeyEvent) -> AppCommand {
     match key.code {
         KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ') => AppCommand::Dismiss,
-        KeyCode::Char('q') => AppCommand::Quit,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
+        _ => AppCommand::Noop,
+    }
+}
+
+/// Maps keys in the help popup.
+fn map_help_popup_keys(key: KeyEvent) -> AppCommand {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('?') => AppCommand::Dismiss,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::ScrollHelpUp,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::ScrollHelpDown,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
+        _ => AppCommand::Noop,
+    }
+}
+
+/// Maps keys in the quit confirmation popup.
+fn map_confirm_quit_keys(key: KeyEvent) -> AppCommand {
+    match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => AppCommand::ConfirmQuit,
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => AppCommand::Dismiss,
+        _ => AppCommand::Noop,
+    }
+}
+
+/// Maps keys in the transaction detail view (Table mode) context.
+fn map_txn_detail_view_table_keys(key: KeyEvent) -> AppCommand {
+    match key.code {
+        KeyCode::Esc => AppCommand::Dismiss,
+        KeyCode::Tab => AppCommand::ToggleDetailViewMode,
+        KeyCode::Char('k') | KeyCode::Up => AppCommand::DetailSectionUp,
+        KeyCode::Char('j') | KeyCode::Down => AppCommand::DetailSectionDown,
+        KeyCode::Char('g') => AppCommand::GoToTop,
+        KeyCode::Char('G') => AppCommand::GoToBottom,
+        KeyCode::Char('c') => AppCommand::CopyToClipboard,
+        KeyCode::Char('y') => AppCommand::CopyJson,
+        KeyCode::Char('o') => AppCommand::OpenInBrowser,
+        KeyCode::Char('f') => AppCommand::ToggleFullscreen,
+        KeyCode::Char('s') => AppCommand::ExportSvg,
+        KeyCode::Char('q') => AppCommand::RequestQuit,
         _ => AppCommand::Noop,
     }
 }
@@ -366,6 +499,7 @@ fn map_message_popup_keys(key: KeyEvent) -> AppCommand {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use rstest::rstest;
 
     /// Helper to create a key event for testing.
     fn key_event(code: KeyCode) -> KeyEvent {
@@ -387,240 +521,293 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_main_context_key_mappings() {
-        let cases = [
-            (KeyCode::Char('q'), AppCommand::Quit),
-            (KeyCode::Char('r'), AppCommand::Refresh),
-            (KeyCode::Char(' '), AppCommand::ToggleLive),
-            (KeyCode::Char('f'), AppCommand::FocusInlineSearch),
-            (KeyCode::Char('n'), AppCommand::OpenNetworkSelect),
-            (KeyCode::Tab, AppCommand::CycleFocus),
-            (KeyCode::Up, AppCommand::MoveUp),
-            (KeyCode::Down, AppCommand::MoveDown),
-            (KeyCode::Enter, AppCommand::Select),
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
+    // ============================================================================
+    // Consolidated Key Mapping Tests
+    // ============================================================================
 
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::Main);
-            assert_eq!(result, expected, "Key {:?} in Main context", key_code);
-        }
+    /// Tests all key mappings for Main context.
+    #[rstest]
+    #[case::quit(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::refresh(KeyCode::Char('r'), AppCommand::Refresh)]
+    #[case::toggle_live(KeyCode::Char(' '), AppCommand::ToggleLive)]
+    #[case::toggle_help(KeyCode::Char('?'), AppCommand::ToggleHelp)]
+    #[case::focus_search(KeyCode::Char('f'), AppCommand::FocusInlineSearch)]
+    #[case::network_select(KeyCode::Char('n'), AppCommand::OpenNetworkSelect)]
+    #[case::cycle_focus(KeyCode::Tab, AppCommand::CycleFocus)]
+    #[case::move_up_arrow(KeyCode::Up, AppCommand::MoveUp)]
+    #[case::move_up_vim(KeyCode::Char('k'), AppCommand::MoveUp)]
+    #[case::move_down_arrow(KeyCode::Down, AppCommand::MoveDown)]
+    #[case::move_down_vim(KeyCode::Char('j'), AppCommand::MoveDown)]
+    #[case::go_top(KeyCode::Char('g'), AppCommand::GoToTop)]
+    #[case::go_bottom(KeyCode::Char('G'), AppCommand::GoToBottom)]
+    #[case::select(KeyCode::Enter, AppCommand::Select)]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_main_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(map_key(key_event(key_code), &InputContext::Main), expected);
     }
 
-    #[test]
-    fn test_detail_view_key_mappings() {
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Char('c'), AppCommand::CopyToClipboard),
-            (KeyCode::Char('y'), AppCommand::CopyJson),
-            (KeyCode::Char('o'), AppCommand::OpenInBrowser),
-            (KeyCode::Char('s'), AppCommand::ExportSvg),
-            (KeyCode::Char('f'), AppCommand::ToggleFullscreen),
-            (KeyCode::Char('q'), AppCommand::Quit),
-            (KeyCode::Tab, AppCommand::ToggleDetailViewMode),
-            (KeyCode::Up, AppCommand::GraphScrollUp),
-            (KeyCode::Down, AppCommand::GraphScrollDown),
-            (KeyCode::Left, AppCommand::GraphScrollLeft),
-            (KeyCode::Right, AppCommand::GraphScrollRight),
-            (KeyCode::Char('j'), AppCommand::DetailSectionDown),
-            (KeyCode::Char('k'), AppCommand::DetailSectionUp),
-            (KeyCode::Enter, AppCommand::ToggleDetailSection),
-            (KeyCode::Char(' '), AppCommand::ToggleDetailSection),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
-
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::DetailView);
-            assert_eq!(result, expected, "Key {:?} in DetailView context", key_code);
-        }
-    }
-
-    #[test]
-    fn test_block_detail_view_key_mappings() {
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Tab, AppCommand::CycleBlockDetailTab),
-            (KeyCode::Up, AppCommand::MoveBlockTxnUp),
-            (KeyCode::Down, AppCommand::MoveBlockTxnDown),
-            (KeyCode::Enter, AppCommand::SelectBlockTxn),
-            (KeyCode::Char('c'), AppCommand::CopyToClipboard),
-            (KeyCode::Char('y'), AppCommand::CopyJson),
-            (KeyCode::Char('o'), AppCommand::OpenInBrowser),
-            (KeyCode::Char('f'), AppCommand::ToggleFullscreen),
-            (KeyCode::Char('q'), AppCommand::Quit),
-            (KeyCode::Char('x'), AppCommand::Noop),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
-
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::BlockDetailView);
-            assert_eq!(
-                result, expected,
-                "Key {:?} in BlockDetailView context",
-                key_code
-            );
-        }
-    }
-
-    #[test]
-    fn test_account_detail_view_key_mappings() {
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Tab, AppCommand::CycleAccountDetailTab),
-            (KeyCode::Up, AppCommand::MoveAccountItemUp),
-            (KeyCode::Down, AppCommand::MoveAccountItemDown),
-            (KeyCode::Char('c'), AppCommand::CopyToClipboard),
-            (KeyCode::Char('y'), AppCommand::CopyJson),
-            (KeyCode::Char('o'), AppCommand::OpenInBrowser),
-            (KeyCode::Char('f'), AppCommand::ToggleFullscreen),
-            (KeyCode::Char('q'), AppCommand::Quit),
-            (KeyCode::Char('x'), AppCommand::Noop),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
-
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::AccountDetailView);
-            assert_eq!(
-                result, expected,
-                "Key {:?} in AccountDetailView context",
-                key_code
-            );
-        }
-    }
-
-    #[test]
-    fn test_network_select_key_mappings() {
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Up, AppCommand::NetworkUp),
-            (KeyCode::Down, AppCommand::NetworkDown),
-            (KeyCode::Enter, AppCommand::SelectNetwork),
-            (KeyCode::Char('q'), AppCommand::Dismiss),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
-
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::NetworkSelect);
-            assert_eq!(
-                result, expected,
-                "Key {:?} in NetworkSelect context",
-                key_code
-            );
-        }
-    }
-
-    #[test]
-    fn test_search_input_key_mappings() {
-        // Test cases without modifiers
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Enter, AppCommand::SubmitSearch),
-            (KeyCode::Tab, AppCommand::CycleSearchType),
-            (KeyCode::Backspace, AppCommand::Backspace),
-            (KeyCode::Char('a'), AppCommand::TypeChar('a')),
-            (KeyCode::Char('1'), AppCommand::TypeChar('1')),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
-
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::SearchInput);
-            assert_eq!(
-                result, expected,
-                "Key {:?} in SearchInput context",
-                key_code
-            );
-        }
-
-        // Test Ctrl+C special case
-        let ctrl_c_result = map_key(
-            key_event_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL),
-            &InputContext::SearchInput,
-        );
+    /// Tests all key mappings for DetailView context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::copy_clipboard(KeyCode::Char('c'), AppCommand::CopyToClipboard)]
+    #[case::copy_json(KeyCode::Char('y'), AppCommand::CopyJson)]
+    #[case::open_browser(KeyCode::Char('o'), AppCommand::OpenInBrowser)]
+    #[case::export_svg(KeyCode::Char('s'), AppCommand::ExportSvg)]
+    #[case::fullscreen(KeyCode::Char('f'), AppCommand::ToggleFullscreen)]
+    #[case::quit(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::toggle_mode(KeyCode::Tab, AppCommand::ToggleDetailViewMode)]
+    #[case::scroll_up(KeyCode::Up, AppCommand::GraphScrollUp)]
+    #[case::scroll_down(KeyCode::Down, AppCommand::GraphScrollDown)]
+    #[case::scroll_left(KeyCode::Left, AppCommand::GraphScrollLeft)]
+    #[case::scroll_right(KeyCode::Right, AppCommand::GraphScrollRight)]
+    #[case::section_down(KeyCode::Char('j'), AppCommand::DetailSectionDown)]
+    #[case::section_up(KeyCode::Char('k'), AppCommand::DetailSectionUp)]
+    #[case::toggle_section_enter(KeyCode::Enter, AppCommand::ToggleDetailSection)]
+    #[case::toggle_section_space(KeyCode::Char(' '), AppCommand::ToggleDetailSection)]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_detail_view_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
         assert_eq!(
-            ctrl_c_result,
-            AppCommand::Dismiss,
-            "Ctrl+C should dismiss in SearchInput context"
+            map_key(key_event(key_code), &InputContext::DetailView),
+            expected
         );
     }
 
-    #[test]
-    fn test_inline_search_key_mappings() {
-        // Test cases without modifiers
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Enter, AppCommand::SubmitSearch),
-            (KeyCode::Backspace, AppCommand::Backspace),
-            (KeyCode::Tab, AppCommand::CycleSearchType),
-            (KeyCode::Up, AppCommand::SearchHistoryPrev),
-            (KeyCode::Down, AppCommand::SearchHistoryNext),
-            (KeyCode::Left, AppCommand::SearchCursorLeft),
-            (KeyCode::Right, AppCommand::SearchCursorRight),
-            (KeyCode::Char('a'), AppCommand::TypeChar('a')),
-            (KeyCode::Char('1'), AppCommand::TypeChar('1')),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
-
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::InlineSearch);
-            assert_eq!(
-                result, expected,
-                "Key {:?} in InlineSearch context",
-                key_code
-            );
-        }
-
-        // Test Ctrl+C special case
-        let ctrl_c_result = map_key(
-            key_event_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL),
-            &InputContext::InlineSearch,
-        );
+    /// Tests all key mappings for BlockDetailView context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::cycle_tab(KeyCode::Tab, AppCommand::CycleBlockDetailTab)]
+    #[case::move_up_arrow(KeyCode::Up, AppCommand::MoveBlockTxnUp)]
+    #[case::move_up_vim(KeyCode::Char('k'), AppCommand::MoveBlockTxnUp)]
+    #[case::move_down_arrow(KeyCode::Down, AppCommand::MoveBlockTxnDown)]
+    #[case::move_down_vim(KeyCode::Char('j'), AppCommand::MoveBlockTxnDown)]
+    #[case::go_top(KeyCode::Char('g'), AppCommand::GoToTop)]
+    #[case::go_bottom(KeyCode::Char('G'), AppCommand::GoToBottom)]
+    #[case::select(KeyCode::Enter, AppCommand::SelectBlockTxn)]
+    #[case::copy_clipboard(KeyCode::Char('c'), AppCommand::CopyToClipboard)]
+    #[case::copy_json(KeyCode::Char('y'), AppCommand::CopyJson)]
+    #[case::open_browser(KeyCode::Char('o'), AppCommand::OpenInBrowser)]
+    #[case::fullscreen(KeyCode::Char('f'), AppCommand::ToggleFullscreen)]
+    #[case::quit(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::noop_x(KeyCode::Char('x'), AppCommand::Noop)]
+    #[case::noop_f1(KeyCode::F(1), AppCommand::Noop)]
+    fn test_block_detail_view_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
         assert_eq!(
-            ctrl_c_result,
-            AppCommand::Dismiss,
-            "Ctrl+C should dismiss in InlineSearch context"
+            map_key(key_event(key_code), &InputContext::BlockDetailView),
+            expected
         );
     }
 
-    #[test]
-    fn test_search_results_key_mappings() {
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Up, AppCommand::PreviousResult),
-            (KeyCode::Down, AppCommand::NextResult),
-            (KeyCode::Enter, AppCommand::SelectResult),
-            (KeyCode::Char('q'), AppCommand::Dismiss),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
-
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::SearchResults);
-            assert_eq!(
-                result, expected,
-                "Key {:?} in SearchResults context",
-                key_code
-            );
-        }
+    /// Tests all key mappings for AccountDetailView context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::cycle_tab(KeyCode::Tab, AppCommand::CycleAccountDetailTab)]
+    #[case::move_up_arrow(KeyCode::Up, AppCommand::MoveAccountItemUp)]
+    #[case::move_up_vim(KeyCode::Char('k'), AppCommand::MoveAccountItemUp)]
+    #[case::move_down_arrow(KeyCode::Down, AppCommand::MoveAccountItemDown)]
+    #[case::move_down_vim(KeyCode::Char('j'), AppCommand::MoveAccountItemDown)]
+    #[case::go_top(KeyCode::Char('g'), AppCommand::GoToTop)]
+    #[case::go_bottom(KeyCode::Char('G'), AppCommand::GoToBottom)]
+    #[case::select(KeyCode::Enter, AppCommand::SelectAccountItem)]
+    #[case::copy_clipboard(KeyCode::Char('c'), AppCommand::CopyToClipboard)]
+    #[case::copy_json(KeyCode::Char('y'), AppCommand::CopyJson)]
+    #[case::open_browser(KeyCode::Char('o'), AppCommand::OpenInBrowser)]
+    #[case::fullscreen(KeyCode::Char('f'), AppCommand::ToggleFullscreen)]
+    #[case::quit(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::noop_x(KeyCode::Char('x'), AppCommand::Noop)]
+    #[case::noop_f1(KeyCode::F(1), AppCommand::Noop)]
+    fn test_account_detail_view_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::AccountDetailView),
+            expected
+        );
     }
 
-    #[test]
-    fn test_message_popup_key_mappings() {
-        let cases = [
-            (KeyCode::Esc, AppCommand::Dismiss),
-            (KeyCode::Enter, AppCommand::Dismiss),
-            (KeyCode::Char(' '), AppCommand::Dismiss),
-            (KeyCode::Char('q'), AppCommand::Quit),
-            (KeyCode::F(1), AppCommand::Noop),
-        ];
+    /// Tests all key mappings for AppDetailView context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::cycle_tab(KeyCode::Tab, AppCommand::CycleAppDetailTab)]
+    #[case::move_up_arrow(KeyCode::Up, AppCommand::MoveAppStateUp)]
+    #[case::move_up_vim(KeyCode::Char('k'), AppCommand::MoveAppStateUp)]
+    #[case::move_down_arrow(KeyCode::Down, AppCommand::MoveAppStateDown)]
+    #[case::move_down_vim(KeyCode::Char('j'), AppCommand::MoveAppStateDown)]
+    #[case::go_top(KeyCode::Char('g'), AppCommand::GoToTop)]
+    #[case::go_bottom(KeyCode::Char('G'), AppCommand::GoToBottom)]
+    #[case::copy_clipboard(KeyCode::Char('c'), AppCommand::CopyToClipboard)]
+    #[case::copy_json(KeyCode::Char('y'), AppCommand::CopyJson)]
+    #[case::open_browser(KeyCode::Char('o'), AppCommand::OpenInBrowser)]
+    #[case::fullscreen(KeyCode::Char('f'), AppCommand::ToggleFullscreen)]
+    #[case::quit(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::noop_x(KeyCode::Char('x'), AppCommand::Noop)]
+    #[case::noop_f1(KeyCode::F(1), AppCommand::Noop)]
+    fn test_app_detail_view_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::AppDetailView),
+            expected
+        );
+    }
 
-        for (key_code, expected) in cases {
-            let result = map_key(key_event(key_code), &InputContext::MessagePopup);
-            assert_eq!(
-                result, expected,
-                "Key {:?} in MessagePopup context",
-                key_code
-            );
-        }
+    /// Tests all key mappings for NetworkSelect context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::move_up_arrow(KeyCode::Up, AppCommand::NetworkUp)]
+    #[case::move_up_vim(KeyCode::Char('k'), AppCommand::NetworkUp)]
+    #[case::move_down_arrow(KeyCode::Down, AppCommand::NetworkDown)]
+    #[case::move_down_vim(KeyCode::Char('j'), AppCommand::NetworkDown)]
+    #[case::go_top(KeyCode::Char('g'), AppCommand::GoToTop)]
+    #[case::go_bottom(KeyCode::Char('G'), AppCommand::GoToBottom)]
+    #[case::select(KeyCode::Enter, AppCommand::SelectNetwork)]
+    #[case::add_network(KeyCode::Char('a'), AppCommand::AddNetwork)]
+    #[case::delete_network(KeyCode::Char('d'), AppCommand::DeleteNetwork)]
+    #[case::quit_q(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_network_select_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::NetworkSelect),
+            expected
+        );
+    }
+
+    /// Tests key mappings for NetworkForm context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::submit(KeyCode::Enter, AppCommand::SubmitNetworkForm)]
+    #[case::next_tab(KeyCode::Tab, AppCommand::NetworkFormNextField)]
+    #[case::next_down(KeyCode::Down, AppCommand::NetworkFormNextField)]
+    #[case::prev(KeyCode::Up, AppCommand::NetworkFormPrevField)]
+    #[case::backspace(KeyCode::Backspace, AppCommand::Backspace)]
+    #[case::type_char(KeyCode::Char('n'), AppCommand::TypeChar('n'))]
+    fn test_network_form_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::NetworkForm),
+            expected
+        );
+    }
+
+    /// Tests all key mappings for SearchInput context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::submit(KeyCode::Enter, AppCommand::SubmitSearch)]
+    #[case::cycle_type(KeyCode::Tab, AppCommand::CycleSearchType)]
+    #[case::backspace(KeyCode::Backspace, AppCommand::Backspace)]
+    #[case::type_a(KeyCode::Char('a'), AppCommand::TypeChar('a'))]
+    #[case::type_1(KeyCode::Char('1'), AppCommand::TypeChar('1'))]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_search_input_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::SearchInput),
+            expected
+        );
+    }
+
+    /// Tests Ctrl+C special case in SearchInput context.
+    #[test]
+    fn test_search_input_ctrl_c() {
+        assert_eq!(
+            map_key(
+                key_event_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                &InputContext::SearchInput
+            ),
+            AppCommand::Dismiss
+        );
+    }
+
+    /// Tests all key mappings for InlineSearch context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::submit(KeyCode::Enter, AppCommand::SubmitSearch)]
+    #[case::backspace(KeyCode::Backspace, AppCommand::Backspace)]
+    #[case::cycle_type(KeyCode::Tab, AppCommand::CycleSearchType)]
+    #[case::history_prev(KeyCode::Up, AppCommand::SearchHistoryPrev)]
+    #[case::history_next(KeyCode::Down, AppCommand::SearchHistoryNext)]
+    #[case::cursor_left(KeyCode::Left, AppCommand::SearchCursorLeft)]
+    #[case::cursor_right(KeyCode::Right, AppCommand::SearchCursorRight)]
+    #[case::type_a(KeyCode::Char('a'), AppCommand::TypeChar('a'))]
+    #[case::type_1(KeyCode::Char('1'), AppCommand::TypeChar('1'))]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_inline_search_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::InlineSearch),
+            expected
+        );
+    }
+
+    /// Tests Ctrl+C special case in InlineSearch context.
+    #[test]
+    fn test_inline_search_ctrl_c() {
+        assert_eq!(
+            map_key(
+                key_event_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                &InputContext::InlineSearch
+            ),
+            AppCommand::Dismiss
+        );
+    }
+
+    /// Tests all key mappings for SearchResults context.
+    #[rstest]
+    #[case::dismiss(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::prev_arrow(KeyCode::Up, AppCommand::PreviousResult)]
+    #[case::prev_vim(KeyCode::Char('k'), AppCommand::PreviousResult)]
+    #[case::next_arrow(KeyCode::Down, AppCommand::NextResult)]
+    #[case::next_vim(KeyCode::Char('j'), AppCommand::NextResult)]
+    #[case::go_top(KeyCode::Char('g'), AppCommand::GoToTop)]
+    #[case::go_bottom(KeyCode::Char('G'), AppCommand::GoToBottom)]
+    #[case::select(KeyCode::Enter, AppCommand::SelectResult)]
+    #[case::quit_q(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_search_results_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::SearchResults),
+            expected
+        );
+    }
+
+    /// Tests all key mappings for MessagePopup context.
+    #[rstest]
+    #[case::dismiss_esc(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::dismiss_enter(KeyCode::Enter, AppCommand::Dismiss)]
+    #[case::dismiss_space(KeyCode::Char(' '), AppCommand::Dismiss)]
+    #[case::quit(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_message_popup_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::MessagePopup),
+            expected
+        );
+    }
+
+    /// Tests all key mappings for HelpPopup context.
+    #[rstest]
+    #[case::dismiss_esc(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::quit_q(KeyCode::Char('q'), AppCommand::RequestQuit)]
+    #[case::dismiss_question(KeyCode::Char('?'), AppCommand::Dismiss)]
+    #[case::scroll_up_arrow(KeyCode::Up, AppCommand::ScrollHelpUp)]
+    #[case::scroll_up_vim(KeyCode::Char('k'), AppCommand::ScrollHelpUp)]
+    #[case::scroll_down_arrow(KeyCode::Down, AppCommand::ScrollHelpDown)]
+    #[case::scroll_down_vim(KeyCode::Char('j'), AppCommand::ScrollHelpDown)]
+    #[case::go_top(KeyCode::Char('g'), AppCommand::GoToTop)]
+    #[case::go_bottom(KeyCode::Char('G'), AppCommand::GoToBottom)]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_help_popup_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::HelpPopup),
+            expected
+        );
+    }
+
+    /// Tests all key mappings for ConfirmQuit context.
+    #[rstest]
+    #[case::confirm_y(KeyCode::Char('y'), AppCommand::ConfirmQuit)]
+    #[case::confirm_upper_y(KeyCode::Char('Y'), AppCommand::ConfirmQuit)]
+    #[case::dismiss_n(KeyCode::Char('n'), AppCommand::Dismiss)]
+    #[case::dismiss_upper_n(KeyCode::Char('N'), AppCommand::Dismiss)]
+    #[case::dismiss_esc(KeyCode::Esc, AppCommand::Dismiss)]
+    #[case::noop(KeyCode::F(1), AppCommand::Noop)]
+    fn test_confirm_quit_context(#[case] key_code: KeyCode, #[case] expected: AppCommand) {
+        assert_eq!(
+            map_key(key_event(key_code), &InputContext::ConfirmQuit),
+            expected
+        );
     }
 }

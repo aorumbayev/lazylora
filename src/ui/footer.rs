@@ -30,16 +30,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Returns context-appropriate footer hint text.
 fn get_footer_text(app: &App) -> &'static str {
+    // Don't show footer hints when any popup/detail view is active (they have their own footers)
+    if app.ui.popup_state.is_active() || app.ui.show_help || app.nav.is_showing_details() {
+        return "";
+    }
+
     if app.ui.is_search_focused() {
         "Esc:Cancel  Tab:Type  ↑↓:History  ←→:Cursor  Enter:Search"
-    } else if app.nav.show_transaction_details {
-        "Esc:Close  Tab:Mode  c:Copy ID  y:JSON  o:Open  s:SVG  ↑↓←→:Scroll"
-    } else if app.nav.show_block_details {
-        "Esc:Close  Tab:Tab  y:JSON  o:Open  ↑↓:Navigate  Enter:Select"
-    } else if app.nav.show_account_details || app.nav.show_asset_details {
-        "Esc:Close  y:JSON  o:Open"
     } else {
-        "q:Quit  r:Refresh  f:Search  n:Network  Space:Live  Tab:Focus"
+        "q:Quit  ?:Help  r:Refresh  f:Search  n:Network  Space:Live  Tab:Focus"
     }
 }
 
@@ -73,6 +72,7 @@ mod tests {
             // All expected shortcuts must be present (main context)
             let expected_shortcuts = [
                 "q:Quit",
+                "?:Help",
                 "r:Refresh",
                 "f:Search",
                 "n:Network",
@@ -130,9 +130,9 @@ mod tests {
         });
     }
 
-    /// Tests footer displays transaction detail view hints.
+    /// Tests footer is empty when transaction detail view is active (popup has its own footer).
     #[test]
-    fn test_footer_displays_transaction_detail_hints() {
+    fn test_footer_empty_when_transaction_detail_active() {
         test_with_mock_app_mut(|app| {
             app.nav.show_transaction_details = true;
 
@@ -149,23 +149,18 @@ mod tests {
             let buffer = terminal.backend().buffer();
             let content = buffer_to_string(buffer, 80, 1);
 
-            // Transaction detail-specific hints
-            let expected_hints = ["Esc:Close", "y:JSON", "o:Open"];
-
-            for hint in expected_hints {
-                assert!(
-                    content.contains(hint),
-                    "Footer should contain '{}' in transaction detail view, got: {}",
-                    hint,
-                    content
-                );
-            }
+            // Footer should be empty - detail popup has its own embedded footer
+            assert!(
+                content.trim().is_empty(),
+                "Footer should be empty when transaction detail is active, got: {}",
+                content
+            );
         });
     }
 
-    /// Tests footer displays block detail view hints.
+    /// Tests footer is empty when block detail view is active (popup has its own footer).
     #[test]
-    fn test_footer_displays_block_detail_hints() {
+    fn test_footer_empty_when_block_detail_active() {
         test_with_mock_app_mut(|app| {
             app.nav.show_block_details = true;
 
@@ -182,17 +177,12 @@ mod tests {
             let buffer = terminal.backend().buffer();
             let content = buffer_to_string(buffer, 80, 1);
 
-            // Block detail-specific hints
-            let expected_hints = ["Esc:Close", "y:JSON", "o:Open"];
-
-            for hint in expected_hints {
-                assert!(
-                    content.contains(hint),
-                    "Footer should contain '{}' in block detail view, got: {}",
-                    hint,
-                    content
-                );
-            }
+            // Footer should be empty - detail popup has its own embedded footer
+            assert!(
+                content.trim().is_empty(),
+                "Footer should be empty when block detail is active, got: {}",
+                content
+            );
         });
     }
 

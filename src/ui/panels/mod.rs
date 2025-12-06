@@ -38,21 +38,12 @@ use ratatui::{
 };
 
 use super::helpers::create_border_block;
+use crate::constants::{BLOCK_HEIGHT, TXN_HEIGHT};
 use crate::state::{App, Focus};
 use crate::theme::{
     HIGHLIGHT_STYLE, MUTED_COLOR, PRIMARY_COLOR, SECONDARY_COLOR, SELECTED_STYLE, SUCCESS_COLOR,
     WARNING_COLOR,
 };
-
-// ============================================================================
-// Constants
-// ============================================================================
-
-/// Height of each block item in the list (in terminal lines).
-const BLOCK_HEIGHT: u16 = 3;
-
-/// Height of each transaction item in the list (in terminal lines).
-const TXN_HEIGHT: u16 = 4;
 
 // ============================================================================
 // Public Panel Rendering Functions
@@ -197,13 +188,8 @@ pub fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     let inner_area = txn_block.inner(area);
 
     let transactions = &app.data.transactions;
-    let transactions_to_display: Vec<_> = transactions
-        .iter()
-        .enumerate()
-        .map(|(i, txn)| (i, txn.clone()))
-        .collect();
 
-    if transactions_to_display.is_empty() {
+    if transactions.is_empty() {
         let message = "No transactions available";
         let no_data_message = Paragraph::new(message)
             .style(Style::default().fg(MUTED_COLOR))
@@ -212,10 +198,11 @@ pub fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
         return;
     }
 
-    let txn_items: Vec<ListItem> = transactions_to_display
+    let txn_items: Vec<ListItem> = transactions
         .iter()
-        .map(|(orig_idx, txn)| {
-            let is_selected = app.nav.selected_transaction_index == Some(*orig_idx);
+        .enumerate()
+        .map(|(idx, txn)| {
+            let is_selected = app.nav.selected_transaction_index == Some(idx);
             let txn_type_str = txn.txn_type.as_str();
             let entity_type_style = Style::default().fg(txn.txn_type.color());
             let selection_indicator = if is_selected { "▶" } else { "→" };
@@ -255,12 +242,8 @@ pub fn render_transactions(app: &App, frame: &mut Frame, area: Rect) {
     let items_per_page = inner_area.height as usize / TXN_HEIGHT as usize;
 
     let mut list_state = ListState::default();
-    if let Some(selected_index) = app.nav.selected_transaction_index
-        && let Some(display_index) = transactions_to_display
-            .iter()
-            .position(|(idx, _)| *idx == selected_index)
-    {
-        list_state.select(Some(display_index));
+    if let Some(selected_index) = app.nav.selected_transaction_index {
+        list_state.select(Some(selected_index));
     }
 
     let txn_scroll_usize = app.nav.transaction_scroll as usize / TXN_HEIGHT as usize;
@@ -533,13 +516,11 @@ mod tests {
             app.ui.focus = Focus::Blocks;
 
             // Add many blocks to trigger scrollbar
-            for i in 0..50 {
-                app.data.blocks.push(AlgoBlock {
-                    id: 2000 + i,
-                    txn_count: 1,
-                    timestamp: format!("2024-01-01 10:{:02}:00", i),
-                });
-            }
+            app.data.blocks.extend((0..50).map(|i| AlgoBlock {
+                id: 2000 + i,
+                txn_count: 1,
+                timestamp: format!("2024-01-01 10:{:02}:00", i),
+            }));
 
             let backend = TestBackend::new(80, 24);
             let mut terminal = Terminal::new(backend).unwrap();

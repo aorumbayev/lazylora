@@ -1,105 +1,80 @@
 # CLI Commands
 
-LazyLora provides several command-line options for launching the explorer and performing direct lookups.
-
-## Basic Usage
+## Launch
 
 ```bash
-# Run with default settings (mainnet)
-lazylora
-
-# Show help
-lazylora --help
-
-# Show version
-lazylora --version
+lazylora              # MainNet (default)
+lazylora -n testnet   # TestNet
+lazylora -n localnet  # LocalNet
 ```
 
-## Direct Search
+## Direct Lookups
 
-Launch LazyLora with a specific search query:
-
-```bash
-# Transaction lookup
-lazylora -t <TXID>
-lazylora --tx <TXID>
-
-# Account lookup
-lazylora -a <ADDRESS>
-lazylora --account <ADDRESS>
-
-# Block lookup
-lazylora -b <BLOCK_NUMBER>
-lazylora --block <BLOCK_NUMBER>
-
-# Asset lookup
-lazylora -s <ASSET_ID>
-lazylora --asset <ASSET_ID>
-```
-
-## Network Selection
-
-Specify which network to connect to:
+Skip the TUI and go straight to details:
 
 ```bash
-# Connect to mainnet (default)
-lazylora -n mainnet
-
-# Connect to testnet
-lazylora -n testnet
-lazylora --network testnet
-
-# Connect to localnet
-lazylora -n localnet
+lazylora -t <TXID>           # Transaction
+lazylora -a <ADDRESS>        # Account (or NFD name)
+lazylora -b <BLOCK_NUMBER>   # Block
+lazylora -s <ASSET_ID>       # Asset
 ```
 
 ## Graph View
 
-Open a transaction directly in graph view:
+Open a transaction directly in visual graph mode:
 
 ```bash
 lazylora -t <TXID> -g
 lazylora --tx <TXID> --graph
 ```
 
-## Update Commands
+## Updates
 
 ```bash
-# Check for updates
-lazylora update
-
-# Update to the latest version
-lazylora update --install
+lazylora update              # Check for new version
+lazylora update --install    # Install update
 ```
 
-## Options Reference
+## Version
+
+```bash
+lazylora version             # Show version info
+```
+
+## Options
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--help` | `-h` | Display help information |
-| `--version` | `-V` | Display version information |
-| `--tx <TXID>` | `-t` | Look up a transaction by ID |
-| `--account <ADDRESS>` | `-a` | Look up an account by address |
-| `--block <NUMBER>` | `-b` | Look up a block by number |
-| `--asset <ID>` | `-s` | Look up an asset by ID |
-| `--network <NETWORK>` | `-n` | Network to connect to (mainnet, testnet, localnet) |
-| `--graph` | `-g` | Open transaction in graph view |
+| `--tx <TXID>` | `-t` | Transaction ID |
+| `--account <ADDRESS>` | `-a` | Account address or NFD |
+| `--block <NUMBER>` | `-b` | Block number |
+| `--asset <ID>` | `-s` | Asset ID |
+| `--network <NETWORK>` | `-n` | Network: mainnet, testnet, localnet |
+| `--graph` | `-g` | Open in graph view |
+
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `version` | Show version |
+| `update` | Check for updates |
+| `update --install` | Install update |
 
 ## Examples
 
 ```bash
-# Look up a transaction on mainnet
-lazylora -t TXID123ABC
+# Transaction on MainNet
+lazylora -t AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
-# Look up an account on testnet
-lazylora -n testnet -a ADDR123ABC
+# Account on TestNet
+lazylora -n testnet -a AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 
-# Look up block 12345 on mainnet
-lazylora -b 12345
-
-# Look up asset 31566704 (USDC) on mainnet
+# USDC asset details
 lazylora -s 31566704
 
-# View transaction graph on testnet
-lazylora -n testnet -t TXID123ABC -g
+# Block 12345
+lazylora -b 12345
+
+# Transaction graph on TestNet
+lazylora -n testnet -t TXID -g
 ```

@@ -74,6 +74,11 @@ pub fn render(app: &App, frame: &mut Frame) {
         render_detail_views(app, frame, size);
     }
 
+    // Render help popup on top of everything else (except toast)
+    if app.ui.show_help {
+        popups::render_help_popup(frame, size, app.ui.help_scroll_offset);
+    }
+
     // Render toast notification on top of everything (non-blocking overlay)
     if let Some((message, _)) = &app.ui.toast {
         components::render_toast(frame, size, message);
@@ -101,7 +106,16 @@ fn render_main_content(app: &App, frame: &mut Frame, area: ratatui::layout::Rect
 fn render_popups(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
     match &app.ui.popup_state {
         PopupState::NetworkSelect(selected_index) => {
-            popups::network::render(frame, area, *selected_index, app.network);
+            popups::network::render(
+                frame,
+                area,
+                *selected_index,
+                app.current_network_config(),
+                app.all_networks(),
+            );
+        }
+        PopupState::NetworkForm(form) => {
+            popups::network_form::render(frame, area, form);
         }
         PopupState::SearchWithType(query, search_type) => {
             popups::search::render(frame, area, query, *search_type);
@@ -112,11 +126,14 @@ fn render_popups(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
         PopupState::SearchResults(results) => {
             popups::search_results::render(frame, area, results);
         }
+        PopupState::ConfirmQuit => {
+            popups::confirm::render(frame, area);
+        }
         PopupState::None => {}
     }
 }
 
-/// Render detail views (block, transaction, account, asset details)
+/// Render detail views (block, transaction, account, asset, application details)
 fn render_detail_views(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
     if app.nav.show_block_details {
         panels::details::block::render_block_details(app, frame, area);
@@ -126,5 +143,7 @@ fn render_detail_views(app: &App, frame: &mut Frame, area: ratatui::layout::Rect
         panels::details::account::render_account_details(app, frame, area);
     } else if app.nav.show_asset_details {
         panels::details::asset::render_asset_details(app, frame, area);
+    } else if app.nav.show_application_details {
+        panels::details::application::render_application_details(app, frame, area);
     }
 }

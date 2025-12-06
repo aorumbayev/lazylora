@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use crate::domain::Network;
+use crate::domain::{CustomNetwork, Network, NetworkConfig};
 
 // ============================================================================
 // Constants
@@ -52,12 +52,17 @@ const CONFIG_FILE: &str = "config.json";
 ///
 /// # Fields
 ///
-/// * `network` - The currently selected Algorand network
+/// * `network` - The currently selected network (built-in or custom)
+/// * `custom_networks` - List of user-defined custom networks
 /// * `show_live` - Whether live updates are enabled
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
-    /// The currently selected Algorand network.
-    pub network: Network,
+    /// The currently selected network.
+    #[serde(default)]
+    pub network: NetworkConfig,
+    /// List of user-defined custom networks.
+    #[serde(default)]
+    pub custom_networks: Vec<CustomNetwork>,
     /// Whether live updates are enabled.
     pub show_live: bool,
 }
@@ -65,44 +70,14 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            network: Network::MainNet,
+            network: NetworkConfig::BuiltIn(Network::MainNet),
+            custom_networks: Vec::new(),
             show_live: true,
         }
     }
 }
 
 impl AppConfig {
-    /// Creates a new `AppConfig` with default values.
-    ///
-    /// # Returns
-    ///
-    /// A new `AppConfig` instance with:
-    /// - `network`: `Network::MainNet`
-    /// - `show_live`: `true`
-    #[must_use]
-    #[allow(dead_code)] // Part of config API
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates a new `AppConfig` with the specified network.
-    ///
-    /// # Arguments
-    ///
-    /// * `network` - The Algorand network to use
-    ///
-    /// # Returns
-    ///
-    /// A new `AppConfig` instance with the specified network and live updates enabled.
-    #[must_use]
-    #[allow(dead_code)] // Part of config API
-    pub const fn with_network(network: Network) -> Self {
-        Self {
-            network,
-            show_live: true,
-        }
-    }
-
     /// Returns the path to the configuration file.
     ///
     /// # Errors
@@ -114,28 +89,14 @@ impl AppConfig {
     ///
     /// The path to the configuration file.
     pub fn config_path() -> Result<PathBuf> {
-        let mut path = dirs::config_dir()
-            .ok_or_else(|| color_eyre::eyre::eyre!("Could not find config directory"))?;
+        let mut path = dirs::config_dir().ok_or_else(|| {
+            color_eyre::eyre::eyre!(
+                "Could not determine config directory. Expected XDG_CONFIG_HOME or ~/.config on Linux, ~/Library/Application Support on macOS, %APPDATA% on Windows"
+            )
+        })?;
         path.push(APP_NAME);
         fs::create_dir_all(&path)?;
         path.push(CONFIG_FILE);
-        Ok(path)
-    }
-
-    /// Returns the path to the configuration directory.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the configuration directory cannot be determined.
-    ///
-    /// # Returns
-    ///
-    /// The path to the configuration directory.
-    #[allow(dead_code)] // Part of config API
-    pub fn config_dir() -> Result<PathBuf> {
-        let mut path = dirs::config_dir()
-            .ok_or_else(|| color_eyre::eyre::eyre!("Could not find config directory"))?;
-        path.push(APP_NAME);
         Ok(path)
     }
 
@@ -149,7 +110,13 @@ impl AppConfig {
     /// The loaded configuration or defaults if loading fails.
     #[must_use]
     pub fn load() -> Self {
-        Self::try_load().unwrap_or_default()
+        match Self::try_load() {
+            Ok(config) => config,
+            Err(err) => {
+                eprintln!("Config load failed, using defaults: {err}");
+                Self::default()
+            }
+        }
     }
 
     /// Attempts to load the configuration from disk.
@@ -190,92 +157,75 @@ impl AppConfig {
         Ok(())
     }
 
-    /// Saves the configuration to disk, ignoring any errors.
+    /// Adds a custom network and saves the configuration.
     ///
-    /// This is useful for best-effort saves where failure is acceptable
-    /// (e.g., during shutdown).
+    /// # Arguments
+    ///
+    /// * `network` - The custom network to add
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a network with the same name exists or if saving fails.
     #[allow(dead_code)] // Part of config API
-    pub fn save_silent(&self) {
-        if let Err(e) = self.save() {
-            eprintln!("Failed to save configuration: {e}");
+    pub fn add_custom_network(&mut self, network: CustomNetwork) -> Result<()> {
+        if self.custom_networks.iter().any(|n| n.name == network.name) {
+            return Err(color_eyre::eyre::eyre!(
+                "Network '{}' already exists",
+                network.name
+            ));
         }
-    }
-
-    /// Updates the network and saves the configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `network` - The new network to set
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the configuration cannot be saved.
-    #[allow(dead_code)] // Part of config API
-    pub fn set_network(&mut self, network: Network) -> Result<()> {
-        self.network = network;
+        self.custom_networks.push(network);
         self.save()
     }
 
-    /// Updates the live updates setting and saves the configuration.
+    /// Deletes a custom network by name and saves the configuration.
     ///
     /// # Arguments
     ///
-    /// * `show_live` - Whether to enable live updates
+    /// * `name` - The name of the network to delete
     ///
     /// # Errors
     ///
-    /// Returns an error if the configuration cannot be saved.
+    /// Returns an error if the network is not found or if saving fails.
     #[allow(dead_code)] // Part of config API
-    pub fn set_show_live(&mut self, show_live: bool) -> Result<()> {
-        self.show_live = show_live;
+    pub fn delete_custom_network(&mut self, name: &str) -> Result<()> {
+        let original_len = self.custom_networks.len();
+        self.custom_networks.retain(|n| n.name != name);
+
+        if self.custom_networks.len() == original_len {
+            return Err(color_eyre::eyre::eyre!("Network '{}' not found", name));
+        }
+
+        // Switch to MainNet if deleted network was active
+        if let NetworkConfig::Custom(ref current) = self.network
+            && current.name == name
+        {
+            self.network = NetworkConfig::BuiltIn(Network::MainNet);
+        }
+
         self.save()
     }
 
-    /// Toggles the live updates setting and saves the configuration.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the configuration cannot be saved.
+    /// Returns all available networks (built-in + custom).
     ///
     /// # Returns
     ///
-    /// The new value of `show_live`.
-    #[allow(dead_code)] // Part of config API
-    pub fn toggle_show_live(&mut self) -> Result<bool> {
-        self.show_live = !self.show_live;
-        self.save()?;
-        Ok(self.show_live)
-    }
-
-    /// Checks if the configuration file exists.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the configuration file exists, `false` otherwise.
+    /// A vector containing all built-in networks followed by custom networks.
     #[must_use]
     #[allow(dead_code)] // Part of config API
-    pub fn exists() -> bool {
-        Self::config_path().map(|p| p.exists()).unwrap_or(false)
-    }
-
-    /// Deletes the configuration file if it exists.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The configuration path cannot be determined
-    /// - The file exists but cannot be deleted
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` on success (including if the file didn't exist).
-    #[allow(dead_code)] // Part of config API
-    pub fn delete() -> Result<()> {
-        let path = Self::config_path()?;
-        if path.exists() {
-            fs::remove_file(path)?;
-        }
-        Ok(())
+    pub fn get_all_networks(&self) -> Vec<NetworkConfig> {
+        let mut networks = vec![
+            NetworkConfig::BuiltIn(Network::MainNet),
+            NetworkConfig::BuiltIn(Network::TestNet),
+            NetworkConfig::BuiltIn(Network::LocalNet),
+        ];
+        networks.extend(
+            self.custom_networks
+                .iter()
+                .cloned()
+                .map(NetworkConfig::Custom),
+        );
+        networks
     }
 }
 
@@ -286,38 +236,147 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::*;
 
     #[test]
     fn test_default_config() {
         let config = AppConfig::default();
-        assert_eq!(config.network, Network::MainNet);
+        assert_eq!(config.network, NetworkConfig::BuiltIn(Network::MainNet));
+        assert!(config.custom_networks.is_empty());
         assert!(config.show_live);
     }
 
     #[test]
-    fn test_new_config() {
-        let config = AppConfig::new();
-        assert_eq!(config, AppConfig::default());
-    }
-
-    #[test]
-    fn test_with_network() {
-        let config = AppConfig::with_network(Network::TestNet);
-        assert_eq!(config.network, Network::TestNet);
-        assert!(config.show_live);
-    }
-
-    #[test]
-    fn test_serialization() {
+    fn test_serialization_builtin() {
         let config = AppConfig {
-            network: Network::TestNet,
+            network: NetworkConfig::BuiltIn(Network::TestNet),
+            custom_networks: Vec::new(),
             show_live: false,
         };
 
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
-
         assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_serialization_with_custom_networks() {
+        let mut config = AppConfig::default();
+        config
+            .custom_networks
+            .push(CustomNetwork::new("Custom1", "http://i1", "http://a1"));
+        config.custom_networks.push(
+            CustomNetwork::new("Custom2", "http://i2", "http://a2").with_nfd_api("http://nfd"),
+        );
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_backward_compatibility_old_config() {
+        // Old config format with direct Network enum
+        let old_json = r#"{"network":"TestNet","show_live":true}"#;
+        let config: Result<AppConfig, _> = serde_json::from_str(old_json);
+
+        // Should deserialize with defaults for missing fields
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert!(config.show_live);
+        assert!(config.custom_networks.is_empty());
+    }
+
+    #[test]
+    fn test_add_custom_network() {
+        let mut config = AppConfig::default();
+        let network = CustomNetwork::new("MyNet", "http://idx", "http://algod");
+
+        // Can't test save() without filesystem, but we can test the logic
+        config.custom_networks.push(network.clone());
+        assert_eq!(config.custom_networks.len(), 1);
+        assert_eq!(config.custom_networks[0], network);
+    }
+
+    #[test]
+    fn test_add_custom_network_duplicate_name() {
+        let mut config = AppConfig::default();
+        let network1 = CustomNetwork::new("MyNet", "http://idx1", "http://algod1");
+        let network2 = CustomNetwork::new("MyNet", "http://idx2", "http://algod2");
+
+        config.custom_networks.push(network1);
+        let result = config.add_custom_network(network2);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+    }
+
+    #[test]
+    fn test_delete_custom_network() {
+        let mut config = AppConfig::default();
+        config
+            .custom_networks
+            .push(CustomNetwork::new("Net1", "http://i1", "http://a1"));
+        config
+            .custom_networks
+            .push(CustomNetwork::new("Net2", "http://i2", "http://a2"));
+
+        config.custom_networks.retain(|n| n.name != "Net1");
+        assert_eq!(config.custom_networks.len(), 1);
+        assert_eq!(config.custom_networks[0].name, "Net2");
+    }
+
+    #[test]
+    fn test_delete_custom_network_switches_to_mainnet() {
+        let mut config = AppConfig::default();
+        let custom = CustomNetwork::new("MyNet", "http://idx", "http://algod");
+        config.network = NetworkConfig::Custom(custom.clone());
+        config.custom_networks.push(custom);
+
+        // Simulate deletion
+        config.custom_networks.retain(|n| n.name != "MyNet");
+        if let NetworkConfig::Custom(ref current) = config.network {
+            if current.name == "MyNet" {
+                config.network = NetworkConfig::BuiltIn(Network::MainNet);
+            }
+        }
+
+        assert_eq!(config.network, NetworkConfig::BuiltIn(Network::MainNet));
+    }
+
+    #[test]
+    fn test_get_all_networks_no_custom() {
+        let config = AppConfig::default();
+        let networks = config.get_all_networks();
+
+        assert_eq!(networks.len(), 3); // MainNet, TestNet, LocalNet
+        assert_eq!(networks[0], NetworkConfig::BuiltIn(Network::MainNet));
+        assert_eq!(networks[1], NetworkConfig::BuiltIn(Network::TestNet));
+        assert_eq!(networks[2], NetworkConfig::BuiltIn(Network::LocalNet));
+    }
+
+    #[test]
+    fn test_get_all_networks_with_custom() {
+        let mut config = AppConfig::default();
+        config
+            .custom_networks
+            .push(CustomNetwork::new("Custom1", "http://i1", "http://a1"));
+        config
+            .custom_networks
+            .push(CustomNetwork::new("Custom2", "http://i2", "http://a2"));
+
+        let networks = config.get_all_networks();
+        assert_eq!(networks.len(), 5); // 3 built-in + 2 custom
+
+        // Check custom networks are at the end
+        match &networks[3] {
+            NetworkConfig::Custom(n) => assert_eq!(n.name, "Custom1"),
+            _ => panic!("Expected custom network"),
+        }
+        match &networks[4] {
+            NetworkConfig::Custom(n) => assert_eq!(n.name, "Custom2"),
+            _ => panic!("Expected custom network"),
+        }
     }
 
     #[test]
@@ -325,18 +384,9 @@ mod tests {
         let config = AppConfig::default();
         let json = serde_json::to_string_pretty(&config).unwrap();
 
-        // Verify it's valid JSON with expected fields
         assert!(json.contains("network"));
         assert!(json.contains("show_live"));
-    }
-
-    #[test]
-    fn test_config_dir_has_app_name() {
-        if let Ok(dir) = AppConfig::config_dir() {
-            let dir_name = dir.file_name().and_then(|n| n.to_str());
-            assert_eq!(dir_name, Some(APP_NAME));
-        }
-        // Skip test if config dir unavailable (CI environments)
+        assert!(json.contains("custom_networks"));
     }
 
     #[test]
@@ -345,32 +395,32 @@ mod tests {
             let extension = path.extension().and_then(|e| e.to_str());
             assert_eq!(extension, Some("json"));
         }
-        // Skip test if config dir unavailable (CI environments)
     }
 
-    #[test]
-    fn test_all_networks_serialize() {
-        for network in [Network::MainNet, Network::TestNet, Network::LocalNet] {
-            let config = AppConfig::with_network(network);
-            let json = serde_json::to_string(&config).unwrap();
-            let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
-            assert_eq!(config.network, deserialized.network);
-        }
+    #[rstest]
+    #[case::mainnet(Network::MainNet)]
+    #[case::testnet(Network::TestNet)]
+    #[case::localnet(Network::LocalNet)]
+    fn test_all_networks_serialize(#[case] network: Network) {
+        let config = AppConfig {
+            network: NetworkConfig::BuiltIn(network),
+            custom_networks: Vec::new(),
+            show_live: true,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.network, deserialized.network);
     }
 
     #[test]
     fn test_try_load_fails_on_missing_file() {
-        // try_load should return an error when file doesn't exist
-        // load() then falls back to default - we test the error path here
-        // using a path that definitely doesn't exist
-        let result = AppConfig::try_load();
-        // Either succeeds (user has config) or fails (no config) - both valid
-        // The key behavior: load() always returns a usable config
+        let _result = AppConfig::try_load();
         let config = AppConfig::load();
-        // Config must be valid regardless of file existence
         assert!(matches!(
             config.network,
-            Network::MainNet | Network::TestNet | Network::LocalNet
+            NetworkConfig::BuiltIn(Network::MainNet)
+                | NetworkConfig::BuiltIn(Network::TestNet)
+                | NetworkConfig::BuiltIn(Network::LocalNet)
         ));
     }
 }

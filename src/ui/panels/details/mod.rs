@@ -5,6 +5,7 @@
 //! dedicated module for maintainability.
 
 pub mod account;
+pub mod application;
 pub mod asset;
 pub mod block;
 pub mod transaction;

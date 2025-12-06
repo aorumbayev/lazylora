@@ -183,11 +183,7 @@ impl<'a> TxnGraphWidget<'a> {
             if i > 0 {
                 number_spans.push(Span::raw(" ".repeat(col_spacing)));
             }
-            let num = if i < Self::CIRCLED_NUMBERS.len() {
-                Self::CIRCLED_NUMBERS[i]
-            } else {
-                "⓪"
-            };
+            let num = Self::CIRCLED_NUMBERS.get(i).copied().unwrap_or("⓪");
             // Center the circled number
             let num_len = 1; // Circled numbers are 1 char wide visually
             let padding_total = col_width.saturating_sub(num_len);
@@ -206,12 +202,12 @@ impl<'a> TxnGraphWidget<'a> {
         }
         lines.push(Line::from(number_spans));
 
-        // Header labels row - TYP + entity labels
+        // Header labels row - Type + entity labels
         let mut header_spans = Vec::new();
 
         // Sender indicator column header (fixed width, left-aligned)
         header_spans.push(Span::styled(
-            format!("{:<width$}", "TYP", width = Self::SENDER_INDICATOR_WIDTH),
+            format!("{:<width$}", "Type", width = Self::SENDER_INDICATOR_WIDTH),
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::DIM),
@@ -662,9 +658,9 @@ impl<'a> TxnGraphWidget<'a> {
 
         let center = col_width / 2;
 
-        // Truncate label for compact display
-        let truncated_label = if label.len() > 6 {
-            format!("{}…", &label[..5])
+        // Truncate label for compact display (keep 6 chars like "opt-in")
+        let truncated_label = if label.len() > 7 {
+            format!("{}…", &label[..6])
         } else {
             label.to_string()
         };
@@ -739,9 +735,9 @@ impl<'a> TxnGraphWidget<'a> {
 
         let center = col_width / 2;
 
-        // Truncate label for compact display
-        let truncated_label = if label.len() > 6 {
-            format!("{}…", &label[..5])
+        // Truncate label for compact display (keep 6 chars like "opt-in")
+        let truncated_label = if label.len() > 7 {
+            format!("{}…", &label[..6])
         } else {
             label.to_string()
         };

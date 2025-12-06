@@ -84,7 +84,7 @@ pub fn render(frame: &mut Frame, area: Rect, message: &str) {
 
     frame.render_widget(separator_widget, separator_area);
 
-    let help_text = "Press Esc to continue";
+    let help_text = "Esc:Close  Enter:Close  q:Close";
     let help_area = Rect::new(
         popup_area.x,
         popup_area.y + popup_area.height - 2,

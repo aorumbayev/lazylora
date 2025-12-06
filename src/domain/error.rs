@@ -38,6 +38,10 @@ pub enum AlgoError {
     /// Invalid user input.
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+
+    /// HTTP client initialization failed.
+    #[error("Failed to initialize HTTP client: {0}")]
+    ClientInit(String),
 }
 
 impl AlgoError {
@@ -89,6 +93,12 @@ impl AlgoError {
         Self::InvalidInput(message.into())
     }
 
+    /// Create a new client initialization error.
+    #[must_use]
+    pub fn client_init(message: impl Into<String>) -> Self {
+        Self::ClientInit(message.into())
+    }
+
     /// Convert to a `color_eyre::Report` for API compatibility.
     ///
     /// This method allows `AlgoError` to be used with color_eyre's error
@@ -103,56 +113,8 @@ impl AlgoError {
     }
 }
 
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_algo_error_display() {
-        let parse_err = AlgoError::parse("test error");
-        assert_eq!(format!("{}", parse_err), "Parse error: test error");
-
-        let not_found_err = AlgoError::not_found("transaction", "abc123");
-        assert_eq!(
-            format!("{}", not_found_err),
-            "transaction 'abc123' not found"
-        );
-
-        let invalid_err = AlgoError::invalid_input("bad input");
-        assert_eq!(format!("{}", invalid_err), "Invalid input: bad input");
-    }
-
-    #[test]
-    fn test_parse_error_creation() {
-        let err = AlgoError::parse("invalid JSON");
-        match err {
-            AlgoError::Parse { message } => assert_eq!(message, "invalid JSON"),
-            _ => panic!("Expected Parse variant"),
-        }
-    }
-
-    #[test]
-    fn test_not_found_error_creation() {
-        let err = AlgoError::not_found("account", "ADDR123");
-        match err {
-            AlgoError::NotFound { entity, id } => {
-                assert_eq!(entity, "account");
-                assert_eq!(id, "ADDR123");
-            }
-            _ => panic!("Expected NotFound variant"),
-        }
-    }
-
-    #[test]
-    fn test_invalid_input_error_creation() {
-        let err = AlgoError::invalid_input("empty query");
-        match err {
-            AlgoError::InvalidInput(msg) => assert_eq!(msg, "empty query"),
-            _ => panic!("Expected InvalidInput variant"),
-        }
-    }
-}
+// Tests removed per AGENTS.md commandments:
+// - test_algo_error_display: Tests thiserror's Display derive (framework test)
+// - test_parse_error_creation: Tests that constructor constructs (trivial)
+// - test_not_found_error_creation: Tests that constructor constructs (trivial)
+// - test_invalid_input_error_creation: Tests that constructor constructs (trivial)

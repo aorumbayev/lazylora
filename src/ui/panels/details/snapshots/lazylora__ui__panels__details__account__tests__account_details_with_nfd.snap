@@ -1,6 +1,6 @@
 ---
 source: src/ui/panels/details/account.rs
-expression: terminal.backend()
+expression: test_terminal.backend()
 ---
 "                                                                                                    "
 "                                                                                                    "
@@ -8,6 +8,9 @@ expression: terminal.backend()
 "       ╭───────────────────────────────── Account Details ─────────────────────────────────╮        "
 "       │   Info    Assets    Apps                                                          │        "
 "       │───────────────────────────────────────────────────────────────────────────────────│        "
+"       │NFD Name:             silvio.algo                                                  │        "
+"       │NFD Status:           Verified                                                     │        "
+"       │                                                                                   │        "
 "       │Address:              5NBAJP3FDBY4HXY3RZWRBE3VG4YJLXWOULC2QC4WM75KKCX...           │        "
 "       │Status:               Offline                                                      │        "
 "       │                                                                                   │        "
@@ -16,9 +19,9 @@ expression: terminal.backend()
 "       │Pending Rewards:      0.000000 Algos                                               │        "
 "       │Total Rewards:        0.000000 Algos                                               │        "
 "       │                                                                                   │        "
-"       │Assets Opted In:      1                                                            │        "
+"       │Assets Opted In:      3                                                            │        "
 "       │Created Assets:       0                                                            │        "
-"       │Apps Opted In:        0                                                            │        "
+"       │Apps Opted In:        2                                                            │        "
 "       │Created Apps:         0                                                            │        "
 "       │                                                                                   │        "
 "       │                                                                                   │        "
@@ -34,10 +37,7 @@ expression: terminal.backend()
 "       │                                                                                   │        "
 "       │                                                                                   │        "
 "       │                                                                                   │        "
-"       │                                                                                   │        "
-"       │                                                                                   │        "
-"       │                                                                                   │        "
-"       │   [Tab] Switch  [↑↓] Navigate  [C] Copy  [O] Open  [F] Fullscreen  [Esc] Close    │        "
+"       │      [Tab] Switch  [↑↓] Navigate  [C] Copy  [Y] JSON  [O] Open  [Esc] Close       │        "
 "       ╰───────────────────────────────────────────────────────────────────────────────────╯        "
 "                                                                                                    "
 "                                                                                                    "

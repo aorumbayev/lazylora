@@ -9,7 +9,7 @@
 //! - Skip functionality with any key (Ctrl+C exits application)
 //! - TTY detection to skip boot screen in non-interactive environments
 
-use anyhow::Result;
+use color_eyre::Result;
 use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyModifiers, poll, read},
     execute,
