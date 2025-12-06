@@ -99,6 +99,7 @@ mod tests {
             amount: 0,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: TransactionDetails::None,
             inner_transactions: Vec::new(),
         }));

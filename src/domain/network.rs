@@ -97,6 +97,51 @@ impl Network {
     pub const fn supports_nfd(&self) -> bool {
         matches!(self, Self::MainNet | Self::TestNet)
     }
+
+    /// Returns the base URL for the web Lora explorer.
+    ///
+    /// # Returns
+    ///
+    /// The base URL for the Lora web explorer for this network.
+    #[must_use]
+    pub const fn lora_base_url(&self) -> &str {
+        match self {
+            Self::MainNet => "https://lora.algokit.io/mainnet",
+            Self::TestNet => "https://lora.algokit.io/testnet",
+            Self::LocalNet => "https://lora.algokit.io/localnet",
+        }
+    }
+
+    /// Returns the Lora URL for a specific transaction.
+    #[must_use]
+    pub fn transaction_url(&self, txn_id: &str) -> String {
+        format!("{}/transaction/{}", self.lora_base_url(), txn_id)
+    }
+
+    /// Returns the Lora URL for a specific account.
+    #[must_use]
+    pub fn account_url(&self, address: &str) -> String {
+        format!("{}/account/{}", self.lora_base_url(), address)
+    }
+
+    /// Returns the Lora URL for a specific asset.
+    #[must_use]
+    pub fn asset_url(&self, asset_id: u64) -> String {
+        format!("{}/asset/{}", self.lora_base_url(), asset_id)
+    }
+
+    /// Returns the Lora URL for a specific block.
+    #[must_use]
+    pub fn block_url(&self, round: u64) -> String {
+        format!("{}/block/{}", self.lora_base_url(), round)
+    }
+
+    /// Returns the Lora URL for a specific application.
+    #[must_use]
+    #[allow(dead_code)] // Reserved for future application detail view
+    pub fn application_url(&self, app_id: u64) -> String {
+        format!("{}/application/{}", self.lora_base_url(), app_id)
+    }
 }
 
 impl std::fmt::Display for Network {
@@ -159,5 +204,47 @@ mod tests {
         let serialized = serde_json::to_string(&network).unwrap();
         let deserialized: Network = serde_json::from_str(&serialized).unwrap();
         assert_eq!(network, deserialized);
+    }
+
+    #[test]
+    fn test_lora_base_url() {
+        assert_eq!(
+            Network::MainNet.lora_base_url(),
+            "https://lora.algokit.io/mainnet"
+        );
+        assert_eq!(
+            Network::TestNet.lora_base_url(),
+            "https://lora.algokit.io/testnet"
+        );
+        assert_eq!(
+            Network::LocalNet.lora_base_url(),
+            "https://lora.algokit.io/localnet"
+        );
+    }
+
+    #[test]
+    fn test_lora_entity_urls() {
+        let network = Network::MainNet;
+
+        assert_eq!(
+            network.transaction_url("ABC123"),
+            "https://lora.algokit.io/mainnet/transaction/ABC123"
+        );
+        assert_eq!(
+            network.account_url("ADDR123"),
+            "https://lora.algokit.io/mainnet/account/ADDR123"
+        );
+        assert_eq!(
+            network.asset_url(12345),
+            "https://lora.algokit.io/mainnet/asset/12345"
+        );
+        assert_eq!(
+            network.block_url(49000000),
+            "https://lora.algokit.io/mainnet/block/49000000"
+        );
+        assert_eq!(
+            network.application_url(1234),
+            "https://lora.algokit.io/mainnet/application/1234"
+        );
     }
 }

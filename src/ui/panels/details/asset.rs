@@ -15,7 +15,7 @@ use crate::theme::{
     ACCENT_COLOR, MUTED_COLOR, PRIMARY_COLOR, SECONDARY_COLOR, SUCCESS_COLOR, WARNING_COLOR,
 };
 use crate::ui::helpers::create_popup_block;
-use crate::ui::layout::centered_popup_area;
+use crate::ui::layout::{centered_popup_area, fullscreen_popup_area};
 
 /// Renders the asset details popup.
 ///
@@ -42,7 +42,11 @@ pub fn render_asset_details(app: &App, frame: &mut Frame, area: Rect) {
         return;
     };
 
-    let popup_area = centered_popup_area(area, 85, 30);
+    let popup_area = if app.ui.detail_fullscreen {
+        fullscreen_popup_area(area)
+    } else {
+        centered_popup_area(area, 85, 30)
+    };
     let popup_block = create_popup_block("Asset Details");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
@@ -267,11 +271,87 @@ pub fn render_asset_details(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(table, content_area);
 
     // Help text
-    let help_text = "Esc: Close";
+    let help_text = "[C] Copy  [O] Open in Browser  [F] Fullscreen  [Esc] Close";
     frame.render_widget(
         Paragraph::new(help_text)
             .style(Style::default().fg(MUTED_COLOR))
             .alignment(Alignment::Center),
         content_layout[1],
     );
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    use crate::client::AlgoClient;
+    use crate::domain::Network;
+    use crate::state::StartupOptions;
+
+    /// Helper to create a mock App for testing.
+    async fn create_mock_app() -> App {
+        let options = StartupOptions {
+            network: Some(Network::MainNet),
+            search: None,
+            graph_view: false,
+        };
+        App::new(options).await.expect("Failed to create app")
+    }
+
+    /// Snapshot test for asset details popup.
+    ///
+    /// Uses USDC (Asset ID 31566704) - a well-known ASA with all fields populated.
+    #[tokio::test]
+    async fn test_asset_details_snapshot() {
+        let client = AlgoClient::new(Network::MainNet);
+        // USDC - widely used stablecoin with all fields
+        let asset = client
+            .get_asset_details(31566704)
+            .await
+            .expect("Failed to fetch asset");
+
+        let mut app = create_mock_app().await;
+        app.data.viewed_asset = Some(asset);
+        app.nav.show_asset_details = true;
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_asset_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("asset_details_usdc", terminal.backend());
+    }
+
+    /// Snapshot test for ALGO token (Asset ID 0 - native).
+    ///
+    /// Tests display of the native ALGO representation.
+    #[tokio::test]
+    async fn test_asset_details_algo_snapshot() {
+        let client = AlgoClient::new(Network::MainNet);
+        // goUSD - another known asset
+        let asset = client
+            .get_asset_details(672913181)
+            .await
+            .expect("Failed to fetch asset");
+
+        let mut app = create_mock_app().await;
+        app.data.viewed_asset = Some(asset);
+        app.nav.show_asset_details = true;
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_asset_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("asset_details_gousd", terminal.backend());
+    }
 }

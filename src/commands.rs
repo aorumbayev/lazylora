@@ -37,10 +37,14 @@ pub enum InputContext {
     DetailView,
     /// Viewing block details overlay with tabs (Info / Transactions).
     BlockDetailView,
+    /// Viewing account details overlay with tabs (Info / Assets / Apps).
+    AccountDetailView,
     /// Network selection popup is open.
     NetworkSelect,
     /// Search popup with text input is open.
     SearchInput,
+    /// Inline search bar in header is focused.
+    InlineSearch,
     /// Viewing search results list.
     SearchResults,
     /// Viewing a message/notification popup.
@@ -68,7 +72,10 @@ pub enum AppCommand {
 
     // === Popup/Modal Control ===
     /// Open the search popup.
+    #[allow(dead_code)] // Kept for potential fallback use
     OpenSearch,
+    /// Focus the inline search bar in the header.
+    FocusInlineSearch,
     /// Open the network selection popup.
     OpenNetworkSelect,
     /// Dismiss/close the current popup or detail view.
@@ -87,6 +94,10 @@ pub enum AppCommand {
     // === Detail View Actions ===
     /// Copy the current transaction ID to clipboard.
     CopyToClipboard,
+    /// Copy raw JSON to clipboard.
+    CopyJson,
+    /// Open current entity in web browser (Lora).
+    OpenInBrowser,
     /// Toggle between Visual and Table view modes in detail popup.
     ToggleDetailViewMode,
     /// Move to previous expandable section in detail view.
@@ -105,6 +116,8 @@ pub enum AppCommand {
     GraphScrollDown,
     /// Export transaction graph as SVG file.
     ExportSvg,
+    /// Toggle fullscreen mode for detail popups.
+    ToggleFullscreen,
 
     // === Search Input Actions ===
     /// Type a character in the search input.
@@ -115,6 +128,14 @@ pub enum AppCommand {
     CycleSearchType,
     /// Submit the current search query.
     SubmitSearch,
+    /// Navigate to previous search in history.
+    SearchHistoryPrev,
+    /// Navigate to next search in history.
+    SearchHistoryNext,
+    /// Move cursor left in search input.
+    SearchCursorLeft,
+    /// Move cursor right in search input.
+    SearchCursorRight,
 
     // === Network Selection Actions ===
     /// Move up in the network selection list.
@@ -141,6 +162,14 @@ pub enum AppCommand {
     MoveBlockTxnDown,
     /// Select transaction from block details to view full details.
     SelectBlockTxn,
+
+    // === Account Detail View Actions ===
+    /// Cycle between account detail tabs (Info / Assets / Apps).
+    CycleAccountDetailTab,
+    /// Move up in account item list (assets or apps).
+    MoveAccountItemUp,
+    /// Move down in account item list (assets or apps).
+    MoveAccountItemDown,
 
     // === No Operation ===
     /// No action to perform (unhandled key).
@@ -171,8 +200,10 @@ pub fn map_key(key: KeyEvent, context: &InputContext) -> AppCommand {
         InputContext::Main => map_main_keys(key),
         InputContext::DetailView => map_detail_view_keys(key),
         InputContext::BlockDetailView => map_block_detail_view_keys(key),
+        InputContext::AccountDetailView => map_account_detail_view_keys(key),
         InputContext::NetworkSelect => map_network_select_keys(key),
         InputContext::SearchInput => map_search_input_keys(key),
+        InputContext::InlineSearch => map_inline_search_keys(key),
         InputContext::SearchResults => map_search_results_keys(key),
         InputContext::MessagePopup => map_message_popup_keys(key),
     }
@@ -184,7 +215,7 @@ fn map_main_keys(key: KeyEvent) -> AppCommand {
         KeyCode::Char('q') => AppCommand::Quit,
         KeyCode::Char('r') => AppCommand::Refresh,
         KeyCode::Char(' ') => AppCommand::ToggleLive,
-        KeyCode::Char('f') => AppCommand::OpenSearch,
+        KeyCode::Char('f') => AppCommand::FocusInlineSearch,
         KeyCode::Char('n') => AppCommand::OpenNetworkSelect,
         KeyCode::Tab => AppCommand::CycleFocus,
         KeyCode::Up => AppCommand::MoveUp,
@@ -200,8 +231,11 @@ fn map_detail_view_keys(key: KeyEvent) -> AppCommand {
     match key.code {
         KeyCode::Esc => AppCommand::Dismiss,
         KeyCode::Char('c') => AppCommand::CopyToClipboard,
+        KeyCode::Char('y') => AppCommand::CopyJson,
+        KeyCode::Char('o') => AppCommand::OpenInBrowser,
         KeyCode::Char('s') => AppCommand::ExportSvg,
         KeyCode::Char('q') => AppCommand::Quit,
+        KeyCode::Char('f') => AppCommand::ToggleFullscreen,
         KeyCode::Tab => AppCommand::ToggleDetailViewMode,
         // Arrow keys for graph scrolling (Visual mode) and section navigation (Table mode)
         KeyCode::Up => AppCommand::GraphScrollUp,
@@ -224,6 +258,26 @@ fn map_block_detail_view_keys(key: KeyEvent) -> AppCommand {
         KeyCode::Up => AppCommand::MoveBlockTxnUp,
         KeyCode::Down => AppCommand::MoveBlockTxnDown,
         KeyCode::Enter => AppCommand::SelectBlockTxn,
+        KeyCode::Char('c') => AppCommand::CopyToClipboard,
+        KeyCode::Char('y') => AppCommand::CopyJson,
+        KeyCode::Char('o') => AppCommand::OpenInBrowser,
+        KeyCode::Char('f') => AppCommand::ToggleFullscreen,
+        KeyCode::Char('q') => AppCommand::Quit,
+        _ => AppCommand::Noop,
+    }
+}
+
+/// Maps keys in the account detail view context.
+fn map_account_detail_view_keys(key: KeyEvent) -> AppCommand {
+    match key.code {
+        KeyCode::Esc => AppCommand::Dismiss,
+        KeyCode::Tab => AppCommand::CycleAccountDetailTab,
+        KeyCode::Up => AppCommand::MoveAccountItemUp,
+        KeyCode::Down => AppCommand::MoveAccountItemDown,
+        KeyCode::Char('c') => AppCommand::CopyToClipboard,
+        KeyCode::Char('y') => AppCommand::CopyJson,
+        KeyCode::Char('o') => AppCommand::OpenInBrowser,
+        KeyCode::Char('f') => AppCommand::ToggleFullscreen,
         KeyCode::Char('q') => AppCommand::Quit,
         _ => AppCommand::Noop,
     }
@@ -250,6 +304,29 @@ fn map_search_input_keys(key: KeyEvent) -> AppCommand {
         KeyCode::Backspace => AppCommand::Backspace,
         KeyCode::Char(c) => {
             // Handle Ctrl+C as quit in search mode too
+            if c == 'c' && key.modifiers.contains(KeyModifiers::CONTROL) {
+                AppCommand::Dismiss
+            } else {
+                AppCommand::TypeChar(c)
+            }
+        }
+        _ => AppCommand::Noop,
+    }
+}
+
+/// Maps keys in the inline search bar context.
+fn map_inline_search_keys(key: KeyEvent) -> AppCommand {
+    match key.code {
+        KeyCode::Esc => AppCommand::Dismiss,
+        KeyCode::Enter => AppCommand::SubmitSearch,
+        KeyCode::Backspace => AppCommand::Backspace,
+        KeyCode::Tab => AppCommand::CycleSearchType,
+        KeyCode::Up => AppCommand::SearchHistoryPrev,
+        KeyCode::Down => AppCommand::SearchHistoryNext,
+        KeyCode::Left => AppCommand::SearchCursorLeft,
+        KeyCode::Right => AppCommand::SearchCursorRight,
+        KeyCode::Char(c) => {
+            // Handle Ctrl+C as dismiss
             if c == 'c' && key.modifiers.contains(KeyModifiers::CONTROL) {
                 AppCommand::Dismiss
             } else {
@@ -316,7 +393,7 @@ mod tests {
             (KeyCode::Char('q'), AppCommand::Quit),
             (KeyCode::Char('r'), AppCommand::Refresh),
             (KeyCode::Char(' '), AppCommand::ToggleLive),
-            (KeyCode::Char('f'), AppCommand::OpenSearch),
+            (KeyCode::Char('f'), AppCommand::FocusInlineSearch),
             (KeyCode::Char('n'), AppCommand::OpenNetworkSelect),
             (KeyCode::Tab, AppCommand::CycleFocus),
             (KeyCode::Up, AppCommand::MoveUp),
@@ -337,7 +414,10 @@ mod tests {
         let cases = [
             (KeyCode::Esc, AppCommand::Dismiss),
             (KeyCode::Char('c'), AppCommand::CopyToClipboard),
+            (KeyCode::Char('y'), AppCommand::CopyJson),
+            (KeyCode::Char('o'), AppCommand::OpenInBrowser),
             (KeyCode::Char('s'), AppCommand::ExportSvg),
+            (KeyCode::Char('f'), AppCommand::ToggleFullscreen),
             (KeyCode::Char('q'), AppCommand::Quit),
             (KeyCode::Tab, AppCommand::ToggleDetailViewMode),
             (KeyCode::Up, AppCommand::GraphScrollUp),
@@ -365,6 +445,10 @@ mod tests {
             (KeyCode::Up, AppCommand::MoveBlockTxnUp),
             (KeyCode::Down, AppCommand::MoveBlockTxnDown),
             (KeyCode::Enter, AppCommand::SelectBlockTxn),
+            (KeyCode::Char('c'), AppCommand::CopyToClipboard),
+            (KeyCode::Char('y'), AppCommand::CopyJson),
+            (KeyCode::Char('o'), AppCommand::OpenInBrowser),
+            (KeyCode::Char('f'), AppCommand::ToggleFullscreen),
             (KeyCode::Char('q'), AppCommand::Quit),
             (KeyCode::Char('x'), AppCommand::Noop),
             (KeyCode::F(1), AppCommand::Noop),
@@ -375,6 +459,32 @@ mod tests {
             assert_eq!(
                 result, expected,
                 "Key {:?} in BlockDetailView context",
+                key_code
+            );
+        }
+    }
+
+    #[test]
+    fn test_account_detail_view_key_mappings() {
+        let cases = [
+            (KeyCode::Esc, AppCommand::Dismiss),
+            (KeyCode::Tab, AppCommand::CycleAccountDetailTab),
+            (KeyCode::Up, AppCommand::MoveAccountItemUp),
+            (KeyCode::Down, AppCommand::MoveAccountItemDown),
+            (KeyCode::Char('c'), AppCommand::CopyToClipboard),
+            (KeyCode::Char('y'), AppCommand::CopyJson),
+            (KeyCode::Char('o'), AppCommand::OpenInBrowser),
+            (KeyCode::Char('f'), AppCommand::ToggleFullscreen),
+            (KeyCode::Char('q'), AppCommand::Quit),
+            (KeyCode::Char('x'), AppCommand::Noop),
+            (KeyCode::F(1), AppCommand::Noop),
+        ];
+
+        for (key_code, expected) in cases {
+            let result = map_key(key_event(key_code), &InputContext::AccountDetailView);
+            assert_eq!(
+                result, expected,
+                "Key {:?} in AccountDetailView context",
                 key_code
             );
         }
@@ -432,6 +542,44 @@ mod tests {
             ctrl_c_result,
             AppCommand::Dismiss,
             "Ctrl+C should dismiss in SearchInput context"
+        );
+    }
+
+    #[test]
+    fn test_inline_search_key_mappings() {
+        // Test cases without modifiers
+        let cases = [
+            (KeyCode::Esc, AppCommand::Dismiss),
+            (KeyCode::Enter, AppCommand::SubmitSearch),
+            (KeyCode::Backspace, AppCommand::Backspace),
+            (KeyCode::Tab, AppCommand::CycleSearchType),
+            (KeyCode::Up, AppCommand::SearchHistoryPrev),
+            (KeyCode::Down, AppCommand::SearchHistoryNext),
+            (KeyCode::Left, AppCommand::SearchCursorLeft),
+            (KeyCode::Right, AppCommand::SearchCursorRight),
+            (KeyCode::Char('a'), AppCommand::TypeChar('a')),
+            (KeyCode::Char('1'), AppCommand::TypeChar('1')),
+            (KeyCode::F(1), AppCommand::Noop),
+        ];
+
+        for (key_code, expected) in cases {
+            let result = map_key(key_event(key_code), &InputContext::InlineSearch);
+            assert_eq!(
+                result, expected,
+                "Key {:?} in InlineSearch context",
+                key_code
+            );
+        }
+
+        // Test Ctrl+C special case
+        let ctrl_c_result = map_key(
+            key_event_with_modifiers(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &InputContext::InlineSearch,
+        );
+        assert_eq!(
+            ctrl_c_result,
+            AppCommand::Dismiss,
+            "Ctrl+C should dismiss in InlineSearch context"
         );
     }
 

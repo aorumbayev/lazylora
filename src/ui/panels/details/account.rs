@@ -7,19 +7,21 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Cell, Clear, Paragraph, Row, Table},
+    text::{Line, Span},
+    widgets::{Block, Cell, Clear, List, ListItem, Paragraph, Row, Table},
 };
 
-use crate::state::App;
+use crate::domain::account::AccountDetails;
+use crate::state::{AccountDetailTab, App};
 use crate::theme::{
     ACCENT_COLOR, MUTED_COLOR, PRIMARY_COLOR, SECONDARY_COLOR, SUCCESS_COLOR, WARNING_COLOR,
 };
 use crate::ui::helpers::create_popup_block;
-use crate::ui::layout::centered_popup_area;
+use crate::ui::layout::{centered_popup_area, fullscreen_popup_area};
 
-/// Renders the account details popup.
+/// Renders the account details popup with tabbed interface.
 ///
-/// Shows balances, participation status, assets, and NFD info.
+/// Supports tabbed navigation between Info, Assets, and Apps views.
 ///
 /// # Arguments
 ///
@@ -42,24 +44,87 @@ pub fn render_account_details(app: &App, frame: &mut Frame, area: Rect) {
         return;
     };
 
-    let popup_area = centered_popup_area(area, 85, 34);
+    let popup_area = if app.ui.detail_fullscreen {
+        fullscreen_popup_area(area)
+    } else {
+        centered_popup_area(area, 85, 34)
+    };
     let popup_block = create_popup_block("Account Details");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
 
     let inner_area = popup_block.inner(popup_area);
 
-    // Layout: content area and help text
+    // Layout: tab bar, separator, content, help text
     let content_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1), // Tab bar
+            Constraint::Length(1), // Separator
             Constraint::Min(10),   // Main content
             Constraint::Length(1), // Help text
         ])
         .split(inner_area);
 
-    let content_area = content_layout[0];
+    // Render tab bar
+    render_tab_bar(app, frame, content_layout[0]);
 
+    // Separator
+    let separator = "─".repeat(inner_area.width as usize);
+    frame.render_widget(
+        Paragraph::new(separator).style(Style::default().fg(Color::DarkGray)),
+        content_layout[1],
+    );
+
+    // Content based on tab
+    let content_area = content_layout[2];
+    match app.nav.account_detail_tab {
+        AccountDetailTab::Info => render_info_tab(account, frame, content_area),
+        AccountDetailTab::Assets => render_assets_tab(app, account, frame, content_area),
+        AccountDetailTab::Apps => render_apps_tab(app, account, frame, content_area),
+    }
+
+    // Help text
+    let help_text = "[Tab] Switch  [↑↓] Navigate  [C] Copy  [O] Open  [F] Fullscreen  [Esc] Close";
+    frame.render_widget(
+        Paragraph::new(help_text)
+            .style(Style::default().fg(MUTED_COLOR))
+            .alignment(Alignment::Center),
+        content_layout[3],
+    );
+}
+
+/// Renders the tab bar for account details.
+fn render_tab_bar(app: &App, frame: &mut Frame, area: Rect) {
+    let current_tab = app.nav.account_detail_tab;
+
+    let tab_style = |is_active: bool| {
+        if is_active {
+            Style::default()
+                .bg(PRIMARY_COLOR)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(MUTED_COLOR)
+        }
+    };
+
+    let tab_bar = Line::from(vec![
+        Span::raw("  "),
+        Span::styled(" Info ", tab_style(current_tab == AccountDetailTab::Info)),
+        Span::raw("  "),
+        Span::styled(
+            " Assets ",
+            tab_style(current_tab == AccountDetailTab::Assets),
+        ),
+        Span::raw("  "),
+        Span::styled(" Apps ", tab_style(current_tab == AccountDetailTab::Apps)),
+    ]);
+    frame.render_widget(Paragraph::new(tab_bar), area);
+}
+
+/// Renders the Info tab with general account information.
+fn render_info_tab(account: &AccountDetails, frame: &mut Frame, area: Rect) {
     // Format balances in Algos
     let balance_algos = format!("{:.6} Algos", account.balance as f64 / 1_000_000.0);
     let min_balance_algos = format!("{:.6} Algos", account.min_balance as f64 / 1_000_000.0);
@@ -242,41 +307,340 @@ pub fn render_account_details(app: &App, frame: &mut Frame, area: Rect) {
         ]));
     }
 
-    // Show first few asset holdings if any
-    if !account.assets.is_empty() {
-        rows.push(Row::new(vec![Cell::from(""), Cell::from("")])); // Spacer
-        rows.push(Row::new(vec![
-            Cell::from("Asset Holdings:").style(
-                Style::default()
-                    .fg(WARNING_COLOR)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Cell::from(format!("(showing first {})", account.assets.len().min(5)))
-                .style(Style::default().fg(MUTED_COLOR)),
-        ]));
-        for asset in account.assets.iter().take(5) {
-            let frozen_indicator = if asset.is_frozen { " [frozen]" } else { "" };
-            rows.push(Row::new(vec![
-                Cell::from(format!("  Asset #{}:", asset.asset_id))
-                    .style(Style::default().fg(MUTED_COLOR)),
-                Cell::from(format!("{}{}", asset.amount, frozen_indicator))
-                    .style(Style::default().fg(SUCCESS_COLOR)),
-            ]));
-        }
-    }
-
     let table = Table::new(rows, [Constraint::Length(20), Constraint::Min(50)])
         .block(Block::default())
         .column_spacing(2);
 
-    frame.render_widget(table, content_area);
+    frame.render_widget(table, area);
+}
 
-    // Help text
-    let help_text = "Esc: Close";
-    frame.render_widget(
-        Paragraph::new(help_text)
-            .style(Style::default().fg(MUTED_COLOR))
-            .alignment(Alignment::Center),
-        content_layout[1],
+/// Renders the Assets tab with asset holdings and created assets.
+fn render_assets_tab(app: &App, account: &AccountDetails, frame: &mut Frame, area: Rect) {
+    // Split area for holdings and created assets
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Holdings header
+            Constraint::Min(8),    // Holdings list
+            Constraint::Length(1), // Created header
+            Constraint::Min(4),    // Created list
+        ])
+        .split(area);
+
+    // Asset Holdings section
+    let holdings_header = Paragraph::new(format!(
+        " Asset Holdings ({} total)",
+        account.total_assets_opted_in
+    ))
+    .style(
+        Style::default()
+            .fg(ACCENT_COLOR)
+            .add_modifier(Modifier::BOLD),
     );
+    frame.render_widget(holdings_header, sections[0]);
+
+    if account.assets.is_empty() {
+        let empty_msg = Paragraph::new("  No assets held")
+            .style(Style::default().fg(MUTED_COLOR))
+            .alignment(Alignment::Left);
+        frame.render_widget(empty_msg, sections[1]);
+    } else {
+        let scroll_offset = app.nav.account_item_scroll as usize;
+        let visible_height = sections[1].height as usize;
+
+        let items: Vec<ListItem> = account
+            .assets
+            .iter()
+            .enumerate()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .map(|(i, asset)| {
+                let is_selected = app.nav.account_item_index == Some(i)
+                    && app.nav.account_detail_tab == AccountDetailTab::Assets;
+                let indicator = if is_selected { "▶" } else { " " };
+                let frozen_indicator = if asset.is_frozen { " [frozen]" } else { "" };
+
+                let style = if is_selected {
+                    Style::default().fg(Color::White).bg(Color::DarkGray)
+                } else {
+                    Style::default()
+                };
+
+                ListItem::new(Line::from(vec![
+                    Span::raw(format!("{} ", indicator)),
+                    Span::styled(
+                        format!("Asset #{}", asset.asset_id),
+                        Style::default().fg(SECONDARY_COLOR),
+                    ),
+                    Span::raw(": "),
+                    Span::styled(
+                        format!("{}", asset.amount),
+                        Style::default().fg(SUCCESS_COLOR),
+                    ),
+                    Span::styled(frozen_indicator, Style::default().fg(Color::Red)),
+                ]))
+                .style(style)
+            })
+            .collect();
+
+        let list = List::new(items).block(Block::default());
+        frame.render_widget(list, sections[1]);
+    }
+
+    // Created Assets section
+    let created_header = Paragraph::new(format!(
+        " Created Assets ({} total)",
+        account.total_created_assets
+    ))
+    .style(
+        Style::default()
+            .fg(ACCENT_COLOR)
+            .add_modifier(Modifier::BOLD),
+    );
+    frame.render_widget(created_header, sections[2]);
+
+    if account.created_assets.is_empty() {
+        let empty_msg = Paragraph::new("  No assets created")
+            .style(Style::default().fg(MUTED_COLOR))
+            .alignment(Alignment::Left);
+        frame.render_widget(empty_msg, sections[3]);
+    } else {
+        let items: Vec<ListItem> = account
+            .created_assets
+            .iter()
+            .take(sections[3].height as usize)
+            .map(|asset| {
+                ListItem::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        format!("#{}", asset.asset_id),
+                        Style::default().fg(SECONDARY_COLOR),
+                    ),
+                    Span::raw(": "),
+                    Span::styled(&asset.name, Style::default().fg(Color::White)),
+                    Span::raw(" ("),
+                    Span::styled(&asset.unit_name, Style::default().fg(MUTED_COLOR)),
+                    Span::raw(")"),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items).block(Block::default());
+        frame.render_widget(list, sections[3]);
+    }
+}
+
+/// Renders the Apps tab with opted-in and created applications.
+fn render_apps_tab(app: &App, account: &AccountDetails, frame: &mut Frame, area: Rect) {
+    // Split area for opted apps and created apps
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Opted header
+            Constraint::Min(8),    // Opted list
+            Constraint::Length(1), // Created header
+            Constraint::Min(4),    // Created list
+        ])
+        .split(area);
+
+    // Apps Opted In section
+    let opted_header = Paragraph::new(format!(
+        " Apps Opted In ({} total)",
+        account.total_apps_opted_in
+    ))
+    .style(
+        Style::default()
+            .fg(SECONDARY_COLOR)
+            .add_modifier(Modifier::BOLD),
+    );
+    frame.render_widget(opted_header, sections[0]);
+
+    if account.apps_local_state.is_empty() {
+        let empty_msg = Paragraph::new("  No apps opted into")
+            .style(Style::default().fg(MUTED_COLOR))
+            .alignment(Alignment::Left);
+        frame.render_widget(empty_msg, sections[1]);
+    } else {
+        let scroll_offset = app.nav.account_item_scroll as usize;
+        let visible_height = sections[1].height as usize;
+
+        let items: Vec<ListItem> = account
+            .apps_local_state
+            .iter()
+            .enumerate()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .map(|(i, app_state)| {
+                let is_selected = app.nav.account_item_index == Some(i)
+                    && app.nav.account_detail_tab == AccountDetailTab::Apps;
+                let indicator = if is_selected { "▶" } else { " " };
+
+                let style = if is_selected {
+                    Style::default().fg(Color::White).bg(Color::DarkGray)
+                } else {
+                    Style::default()
+                };
+
+                ListItem::new(Line::from(vec![
+                    Span::raw(format!("{} ", indicator)),
+                    Span::styled(
+                        format!("App #{}", app_state.app_id),
+                        Style::default().fg(PRIMARY_COLOR),
+                    ),
+                    Span::raw(" - "),
+                    Span::styled(
+                        format!(
+                            "{} uint, {} bytes",
+                            app_state.schema_num_uint, app_state.schema_num_byte_slice
+                        ),
+                        Style::default().fg(MUTED_COLOR),
+                    ),
+                ]))
+                .style(style)
+            })
+            .collect();
+
+        let list = List::new(items).block(Block::default());
+        frame.render_widget(list, sections[1]);
+    }
+
+    // Created Apps section
+    let created_header = Paragraph::new(format!(
+        " Created Apps ({} total)",
+        account.total_created_apps
+    ))
+    .style(
+        Style::default()
+            .fg(SECONDARY_COLOR)
+            .add_modifier(Modifier::BOLD),
+    );
+    frame.render_widget(created_header, sections[2]);
+
+    if account.created_apps.is_empty() {
+        let empty_msg = Paragraph::new("  No apps created")
+            .style(Style::default().fg(MUTED_COLOR))
+            .alignment(Alignment::Left);
+        frame.render_widget(empty_msg, sections[3]);
+    } else {
+        let items: Vec<ListItem> = account
+            .created_apps
+            .iter()
+            .take(sections[3].height as usize)
+            .map(|app_info| {
+                ListItem::new(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        format!("App #{}", app_info.app_id),
+                        Style::default().fg(PRIMARY_COLOR),
+                    ),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items).block(Block::default());
+        frame.render_widget(list, sections[3]);
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    use crate::client::AlgoClient;
+    use crate::domain::Network;
+    use crate::state::StartupOptions;
+
+    /// Helper to create a mock App for testing.
+    async fn create_mock_app() -> App {
+        let options = StartupOptions {
+            network: Some(Network::MainNet),
+            search: None,
+            graph_view: false,
+        };
+        App::new(options).await.expect("Failed to create app")
+    }
+
+    /// Snapshot test for account details popup - Info tab.
+    ///
+    /// Uses a mock account with various features (assets, apps, etc) to avoid flaky
+    /// balance changes from live participating accounts.
+    #[tokio::test]
+    async fn test_account_details_snapshot() {
+        use crate::domain::account::{AccountAssetHolding, AccountDetails};
+
+        // Use mock account data to avoid flaky balance changes from live consensus rewards
+        let account = AccountDetails {
+            address: "Y76M3MSY6DKBRHBL7C3NNDXGS5IIMQVQVUAB6MP4XEMMGVF2QWNPL226CA".to_string(),
+            balance: 17_398_150_061_870, // ~17.4M ALGO
+            min_balance: 100_000,
+            pending_rewards: 150_061_870,
+            rewards: 398_150_061_870,
+            status: "Online".to_string(),
+            total_apps_opted_in: 5,
+            total_assets_opted_in: 42,
+            total_created_apps: 3,
+            total_created_assets: 10,
+            assets: vec![
+                AccountAssetHolding {
+                    asset_id: 31566704,
+                    amount: 1_000_000_000,
+                    is_frozen: false,
+                },
+                AccountAssetHolding {
+                    asset_id: 312769,
+                    amount: 500_000_000,
+                    is_frozen: true,
+                },
+            ],
+            nfd: None,
+            ..Default::default()
+        };
+
+        let mut app = create_mock_app().await;
+        app.data.viewed_account = Some(account);
+        app.nav.show_account_details = true;
+        app.nav.account_detail_tab = AccountDetailTab::Info;
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_account_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("account_details", terminal.backend());
+    }
+
+    /// Snapshot test for account with NFD name.
+    ///
+    /// Tests that NFD names are displayed prominently.
+    /// Uses silvio.algo which is a real mainnet NFD.
+    #[tokio::test]
+    async fn test_account_details_with_nfd_snapshot() {
+        let client = AlgoClient::new(Network::MainNet);
+        // silvio.algo - a real mainnet NFD account
+        let account = client
+            .get_account_details("5NBAJP3FDBY4HXY3RZWRBE3VG4YJLXWOULC2QC4WM75KKCX4JZYG4ASVJ4")
+            .await
+            .expect("Failed to fetch account");
+
+        let mut app = create_mock_app().await;
+        app.data.viewed_account = Some(account);
+        app.nav.show_account_details = true;
+        app.nav.account_detail_tab = AccountDetailTab::Info;
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_account_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("account_details_with_nfd", terminal.backend());
+    }
 }

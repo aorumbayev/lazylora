@@ -718,10 +718,10 @@ impl TxnGraph {
                 ));
                 svg.push('\n');
 
-                // Key symbol
+                // Key symbol (rekey indicator)
                 let key_x = (x1 + x2) / 2;
                 svg.push_str(&format!(
-                    r#"<text x="{}" y="{}" fill="{}" font-family="sans-serif" font-size="10" text-anchor="middle">🔑</text>"#,
+                    r#"<text x="{}" y="{}" fill="{}" font-family="monospace" font-size="10" text-anchor="middle" font-weight="bold">KEY</text>"#,
                     key_x, rekey_y - 2, REKEY_COLOR
                 ));
                 svg.push('\n');
@@ -851,6 +851,7 @@ mod tests {
             amount: 5_000_000,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         }
@@ -869,6 +870,7 @@ mod tests {
             amount: 0,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         }
@@ -997,6 +999,7 @@ mod tests {
                     amount: 0,
                     asset_id: None,
                     rekey_to: None,
+                    group: None,
                     details: TransactionDetails::default(),
                     inner_transactions: Vec::new(),
                 },
@@ -1197,6 +1200,7 @@ mod tests {
             amount,
             asset_id,
             rekey_to: rekey_to.map(String::from),
+            group: None,
             details,
             inner_transactions: Vec::new(),
         }
@@ -1369,6 +1373,7 @@ mod tests {
             amount: 0,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: TransactionDetails::AppCall(AppCallDetails {
                 app_id: 1234567890,
                 created_app_id: None,

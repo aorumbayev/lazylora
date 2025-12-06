@@ -2,13 +2,13 @@
 source: src/widgets/graph/txn_graph.rs
 expression: terminal.backend()
 ---
+"                      ①          ②                          "
 "             TYP   SEN...4A   REC...TU                      "
+"                   Account    Account                       "
 "             ──────────┬──────────┬───                      "
 "                       │          │                         "
 "               PAY     ●──────────▶    5.00A                "
 "               AXF     ◀──────────●    1000000              "
-"                                                            "
-"                                                            "
 "                                                            "
 "                                                            "
 "                                                            "

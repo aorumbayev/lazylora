@@ -12,12 +12,57 @@ use ratatui::{
     widgets::{Block, Cell, Clear, Paragraph, Row, Table},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
 use crate::domain::{SearchResultItem, Transaction, TransactionDetails};
 use crate::state::{App, DetailViewMode};
 use crate::theme::{BG_COLOR, MUTED_COLOR, PRIMARY_COLOR, WARNING_COLOR};
 use crate::ui::helpers::create_popup_block;
 use crate::ui::layout::centered_popup_area;
 use crate::widgets::{TxnGraph, TxnGraphWidget, TxnVisualCard};
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Decode a Base64-encoded note to UTF-8 if possible, otherwise return truncated Base64.
+///
+/// # Arguments
+///
+/// * `note` - The note string (may be Base64 encoded)
+///
+/// # Returns
+///
+/// A displayable string - decoded UTF-8 if valid, or truncated Base64 with indicator.
+fn decode_note_for_display(note: &str) -> String {
+    // Try to decode as Base64
+    if let Ok(decoded) = BASE64.decode(note) {
+        // Try to convert to UTF-8 string
+        if let Ok(utf8) = String::from_utf8(decoded) {
+            // Successfully decoded - truncate if too long
+            let cleaned = utf8.replace('\n', " ").replace('\r', "");
+            if cleaned.len() > 50 {
+                format!("{}...", &cleaned[..47])
+            } else {
+                cleaned
+            }
+        } else {
+            // Binary data - show as truncated Base64
+            if note.len() > 30 {
+                format!("{}... (Base64)", &note[..27])
+            } else {
+                format!("{} (Base64)", note)
+            }
+        }
+    } else {
+        // Not valid Base64 - show as-is (truncated if needed)
+        if note.len() > 50 {
+            format!("{}...", &note[..47])
+        } else {
+            note.to_string()
+        }
+    }
+}
 
 /// Renders the transaction details popup with table or visual graph view.
 ///
@@ -449,6 +494,22 @@ fn render_table_mode(txn: &Transaction, app: &App, frame: &mut Frame, area: Rect
         ("From:".to_string(), txn.from.clone()),
     ];
 
+    // Add Group ID if present (shown early as it's important context)
+    if let Some(ref group) = txn.group {
+        // Truncate Base64 group ID for display
+        let group_display = if group.len() > 44 {
+            format!("{}...", &group[..44])
+        } else {
+            group.clone()
+        };
+        details.push(("Group:".to_string(), group_display));
+    }
+
+    // Add Rekey To if present (important security info)
+    if let Some(ref rekey_to) = txn.rekey_to {
+        details.push(("Rekey To:".to_string(), rekey_to.clone()));
+    }
+
     // Add type-specific fields
     match &txn.details {
         TransactionDetails::Payment(pay_details) => {
@@ -478,6 +539,21 @@ fn render_table_mode(txn: &Transaction, app: &App, frame: &mut Frame, area: Rect
         TransactionDetails::None => {
             render_default_details(&mut details, txn, &formatted_fee);
         }
+    }
+
+    // Add inner transaction count if any
+    if !txn.inner_transactions.is_empty() {
+        details.push((
+            "Inner Txns:".to_string(),
+            format!("{}", txn.inner_transactions.len()),
+        ));
+    }
+
+    // Add note if present and not "None"
+    if txn.note != "None" && !txn.note.is_empty() {
+        // Try to decode Base64 to UTF-8 for display
+        let note_display = decode_note_for_display(&txn.note);
+        details.push(("Note:".to_string(), note_display));
     }
 
     let rows: Vec<Row> = details

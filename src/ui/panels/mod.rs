@@ -406,6 +406,7 @@ mod tests {
             asset_id: None,
             note: String::new(),
             rekey_to: None,
+            group: None,
             details: TransactionDetails::None,
             inner_transactions: Vec::new(),
         }];

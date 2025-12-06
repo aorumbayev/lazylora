@@ -22,11 +22,12 @@ use crate::theme::{
     SUCCESS_COLOR, WARNING_COLOR,
 };
 use crate::ui::helpers::create_popup_block;
-use crate::ui::layout::centered_popup_area;
+use crate::ui::layout::{centered_popup_area, fullscreen_popup_area};
 
 /// Renders the block details popup with tabbed interface.
 ///
 /// Supports tabbed navigation between Info and Transactions views.
+/// Works with both selected blocks from the list and search results.
 ///
 /// # Arguments
 ///
@@ -34,17 +35,45 @@ use crate::ui::layout::centered_popup_area;
 /// * `frame` - Ratatui frame for rendering
 /// * `area` - Available screen area for rendering
 pub fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
-    let Some(index) = app.nav.selected_block_index else {
-        return;
-    };
-    let Some(block_data) = app.data.blocks.get(index) else {
-        return;
-    };
-
-    // Use block_details if loaded, otherwise show basic info
+    // Try to get block data from selected index, or create from block_details
     let block_details = app.data.block_details.as_ref();
 
-    let popup_area = centered_popup_area(area, 85, 32);
+    let block_data: AlgoBlock = if let Some(index) = app.nav.selected_block_index
+        && let Some(block) = app.data.blocks.get(index)
+    {
+        block.clone()
+    } else if let Some(details) = block_details {
+        // Create AlgoBlock from BlockDetails (for search results)
+        AlgoBlock {
+            id: details.info.id,
+            txn_count: details.info.txn_count,
+            timestamp: details.info.timestamp.clone(),
+        }
+    } else {
+        // Still loading - show loading state
+        let popup_area = if app.ui.detail_fullscreen {
+            fullscreen_popup_area(area)
+        } else {
+            centered_popup_area(area, 85, 32)
+        };
+        let popup_block = create_popup_block("Block Details");
+        frame.render_widget(Clear, popup_area);
+        frame.render_widget(popup_block.clone(), popup_area);
+        let inner = popup_block.inner(popup_area);
+        frame.render_widget(
+            Paragraph::new("Loading block details...")
+                .style(Style::default().fg(MUTED_COLOR))
+                .alignment(Alignment::Center),
+            inner,
+        );
+        return;
+    };
+
+    let popup_area = if app.ui.detail_fullscreen {
+        fullscreen_popup_area(area)
+    } else {
+        centered_popup_area(area, 85, 32)
+    };
     let popup_block = create_popup_block("Block Details");
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block.clone(), popup_area);
@@ -100,13 +129,13 @@ pub fn render_block_details(app: &App, frame: &mut Frame, area: Rect) {
     let content_area = content_layout[2];
 
     if is_info_tab {
-        render_block_info_tab(block_data, block_details, frame, content_area);
+        render_block_info_tab(&block_data, block_details, frame, content_area);
     } else {
         render_block_transactions_tab(app, block_details, frame, content_area);
     }
 
     // Help text
-    let help_text = "Tab: Switch Tab | ↑↓: Navigate | Enter: View Txn | Esc: Close";
+    let help_text = "[Tab] Switch  [↑↓] Navigate  [Enter] View  [C] Copy  [O] Open  [F] Fullscreen  [Esc] Close";
     frame.render_widget(
         Paragraph::new(help_text)
             .style(Style::default().fg(MUTED_COLOR))
@@ -182,9 +211,9 @@ fn render_block_info_tab(
                 Cell::from("").style(Style::default()),
             ]));
 
-            // Sort by count descending for better UX
+            // Sort by count descending, then by name for stable ordering
             let mut type_counts: Vec<_> = details.txn_type_counts.iter().collect();
-            type_counts.sort_by(|a, b| b.1.cmp(a.1));
+            type_counts.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.as_str().cmp(b.0.as_str())));
 
             for (txn_type, count) in type_counts {
                 rows.push(Row::new(vec![
@@ -310,5 +339,85 @@ fn render_block_transactions_tab(
             .position(app.nav.block_txn_scroll as usize);
 
         frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    use crate::client::AlgoClient;
+    use crate::domain::Network;
+    use crate::state::StartupOptions;
+
+    /// Helper to create a mock App for testing.
+    async fn create_mock_app() -> App {
+        let options = StartupOptions {
+            network: Some(Network::MainNet),
+            search: None,
+            graph_view: false,
+        };
+        App::new(options).await.expect("Failed to create app")
+    }
+
+    /// Snapshot test for block details popup - Info tab.
+    ///
+    /// Uses a real mainnet block to verify the Info tab layout.
+    #[tokio::test]
+    async fn test_block_details_info_tab_snapshot() {
+        let client = AlgoClient::new(Network::MainNet);
+        // Use a known block with transactions
+        let block_details = client
+            .get_block_details(50_000_000)
+            .await
+            .expect("Failed to fetch block")
+            .expect("Block not found");
+
+        let mut app = create_mock_app().await;
+        app.data.block_details = Some(block_details);
+        app.nav.show_block_details = true;
+        app.nav.block_detail_tab = BlockDetailTab::Info;
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_block_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("block_details_info_tab", terminal.backend());
+    }
+
+    /// Snapshot test for block details popup - Transactions tab.
+    ///
+    /// Uses a real mainnet block to verify the Transactions tab layout.
+    #[tokio::test]
+    async fn test_block_details_txns_tab_snapshot() {
+        let client = AlgoClient::new(Network::MainNet);
+        let block_details = client
+            .get_block_details(50_000_000)
+            .await
+            .expect("Failed to fetch block")
+            .expect("Block not found");
+
+        let mut app = create_mock_app().await;
+        app.data.block_details = Some(block_details);
+        app.nav.show_block_details = true;
+        app.nav.block_detail_tab = BlockDetailTab::Transactions;
+        app.nav.block_txn_index = Some(0);
+
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_block_details(&app, frame, frame.area());
+            })
+            .unwrap();
+
+        insta::assert_snapshot!("block_details_txns_tab", terminal.backend());
     }
 }

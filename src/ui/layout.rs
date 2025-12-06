@@ -7,10 +7,12 @@ use ratatui::layout::Rect;
 // ============================================================================
 
 /// Height of the header area in terminal rows.
+/// Contains: border + logo/live/network row + border
 pub const HEADER_HEIGHT: u16 = 3;
 
-/// Height of the title/explore section.
-pub const TITLE_HEIGHT: u16 = 3;
+/// Height of the search bar section in terminal rows.
+/// Contains: border + search input row + border
+pub const SEARCH_BAR_HEIGHT: u16 = 3;
 
 // ============================================================================
 // Layout Functions
@@ -26,6 +28,17 @@ pub fn centered_popup_area(parent: Rect, width: u16, height: u16) -> Rect {
     let popup_y = parent.y + (parent.height.saturating_sub(popup_height)) / 2;
 
     Rect::new(popup_x, popup_y, popup_width, popup_height)
+}
+
+/// Calculate a fullscreen popup area with small margin.
+#[must_use]
+pub fn fullscreen_popup_area(parent: Rect) -> Rect {
+    Rect::new(
+        parent.x + 1,
+        parent.y + 1,
+        parent.width.saturating_sub(2),
+        parent.height.saturating_sub(2),
+    )
 }
 
 // ============================================================================

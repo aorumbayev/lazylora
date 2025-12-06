@@ -46,7 +46,7 @@ use crate::client::AlgoClient;
 use crate::commands::{AppCommand, InputContext, map_key};
 use crate::constants::{
     BLOCK_HEIGHT, DEFAULT_TERMINAL_WIDTH, DEFAULT_VISIBLE_BLOCKS, DEFAULT_VISIBLE_TRANSACTIONS,
-    HEADER_HEIGHT, TITLE_HEIGHT, TXN_HEIGHT,
+    HEADER_HEIGHT, SEARCH_BAR_HEIGHT, TXN_HEIGHT,
 };
 use crate::domain::{
     AccountDetails, AlgoBlock, AssetDetails, BlockDetails, Network, SearchResultItem, Transaction,
@@ -70,7 +70,7 @@ pub mod ui_state;
 // ============================================================================
 
 // Navigation types
-pub use navigation::{BlockDetailTab, DetailViewMode, NavigationState};
+pub use navigation::{AccountDetailTab, BlockDetailTab, DetailViewMode, NavigationState};
 
 // Data types
 pub use data::DataState;
@@ -335,9 +335,11 @@ impl App {
                     self.merge_transactions(new_transactions);
                 }
                 AppMessage::SearchCompleted(Ok(results)) => {
+                    self.ui.set_search_loading(false);
                     self.handle_search_results(results);
                 }
                 AppMessage::SearchCompleted(Err(error)) => {
+                    self.ui.set_search_loading(false);
                     self.ui.show_message(format!("Search error: {error}"));
                 }
                 AppMessage::NetworkError(error) => {
@@ -662,10 +664,16 @@ impl App {
             PopupState::SearchResults(_) => InputContext::SearchResults,
             PopupState::Message(_) => InputContext::MessagePopup,
             PopupState::None => {
+                // Check if inline search is focused
+                if self.ui.is_search_focused() {
+                    return InputContext::InlineSearch;
+                }
                 // No popup - check if showing details
                 if self.nav.show_block_details {
                     InputContext::BlockDetailView
-                } else if self.nav.show_transaction_details {
+                } else if self.nav.show_account_details {
+                    InputContext::AccountDetailView
+                } else if self.nav.show_transaction_details || self.nav.show_asset_details {
                     InputContext::DetailView
                 } else {
                     InputContext::Main
@@ -694,6 +702,9 @@ impl App {
             // === Popup/Modal Control ===
             AppCommand::OpenSearch => {
                 self.ui.open_search();
+            }
+            AppCommand::FocusInlineSearch => {
+                self.ui.focus_search();
             }
             AppCommand::OpenNetworkSelect => {
                 let current_index = match self.network {
@@ -726,6 +737,12 @@ impl App {
                 if self.nav.show_transaction_details {
                     self.copy_transaction_id_to_clipboard();
                 }
+            }
+            AppCommand::CopyJson => {
+                self.copy_json_to_clipboard().await;
+            }
+            AppCommand::OpenInBrowser => {
+                self.open_in_browser();
             }
             AppCommand::ToggleDetailViewMode => {
                 if self.nav.is_showing_details() {
@@ -772,6 +789,11 @@ impl App {
                     self.export_transaction_svg();
                 }
             }
+            AppCommand::ToggleFullscreen => {
+                if self.nav.is_showing_details() {
+                    self.ui.toggle_fullscreen();
+                }
+            }
 
             // === Block Detail View Actions ===
             AppCommand::CycleBlockDetailTab => {
@@ -812,9 +834,32 @@ impl App {
                 }
             }
 
+            // === Account Detail View Actions ===
+            AppCommand::CycleAccountDetailTab => {
+                self.nav.cycle_account_detail_tab();
+            }
+            AppCommand::MoveAccountItemUp => {
+                self.nav.move_account_item_up();
+            }
+            AppCommand::MoveAccountItemDown => {
+                if let Some(account) = &self.data.viewed_account {
+                    let max = match self.nav.account_detail_tab {
+                        AccountDetailTab::Assets => account.assets.len().saturating_sub(1),
+                        AccountDetailTab::Apps => account.apps_local_state.len().saturating_sub(1),
+                        AccountDetailTab::Info => 0,
+                    };
+                    // Reasonable default visible height (~8 items in the list area)
+                    self.nav.move_account_item_down(max, 8);
+                }
+            }
+
             // === Search Input Actions ===
             AppCommand::TypeChar(c) => {
-                if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state {
+                // Handle inline search first
+                if self.ui.is_search_focused() {
+                    self.ui.search_type_char(c);
+                } else if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state
+                {
                     let mut new_query = query.clone();
                     new_query.push(c);
                     let search_type = *search_type;
@@ -822,7 +867,11 @@ impl App {
                 }
             }
             AppCommand::Backspace => {
-                if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state {
+                // Handle inline search first
+                if self.ui.is_search_focused() {
+                    self.ui.search_backspace();
+                } else if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state
+                {
                     let mut new_query = query.clone();
                     new_query.pop();
                     let search_type = *search_type;
@@ -830,18 +879,56 @@ impl App {
                 }
             }
             AppCommand::CycleSearchType => {
-                if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state {
+                // Handle inline search first
+                if self.ui.is_search_focused() {
+                    self.ui.cycle_inline_search_type();
+                } else if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state
+                {
                     let query = query.clone();
                     let search_type = *search_type;
                     self.ui.cycle_search_type(query, search_type);
                 }
             }
             AppCommand::SubmitSearch => {
-                if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state {
+                // Handle inline search first
+                if self.ui.is_search_focused() {
+                    let query = self.ui.search_query().to_string();
+                    if let Some(search_type) = self.ui.get_effective_search_type() {
+                        self.ui.add_to_search_history(&query);
+                        self.ui.unfocus_search();
+                        self.search_transactions(&query, search_type).await;
+                    } else if !query.is_empty() {
+                        // If we couldn't detect the type, show a message
+                        self.ui.show_message(
+                            "Could not determine search type. Try a complete ID or address.",
+                        );
+                    }
+                } else if let PopupState::SearchWithType(query, search_type) = &self.ui.popup_state
+                {
                     let query = query.clone();
                     let search_type = *search_type;
                     self.ui.dismiss_popup();
                     self.search_transactions(&query, search_type).await;
+                }
+            }
+            AppCommand::SearchHistoryPrev => {
+                if self.ui.is_search_focused() {
+                    self.ui.search_history_prev();
+                }
+            }
+            AppCommand::SearchHistoryNext => {
+                if self.ui.is_search_focused() {
+                    self.ui.search_history_next();
+                }
+            }
+            AppCommand::SearchCursorLeft => {
+                if self.ui.is_search_focused() {
+                    self.ui.search_cursor_left();
+                }
+            }
+            AppCommand::SearchCursorRight => {
+                if self.ui.is_search_focused() {
+                    self.ui.search_cursor_right();
                 }
             }
 
@@ -905,6 +992,13 @@ impl App {
 
     /// Handles the Dismiss command based on current context.
     fn handle_dismiss(&mut self) {
+        // Check if inline search is focused first
+        if self.ui.is_search_focused() {
+            self.ui.unfocus_search();
+            self.ui.clear_search();
+            return;
+        }
+
         if self.nav.is_showing_details() {
             self.nav.close_details();
             self.ui.viewing_search_result = false;
@@ -915,6 +1009,8 @@ impl App {
             // Reset graph scroll position
             self.nav.graph_scroll_x = 0;
             self.nav.graph_scroll_y = 0;
+            // Reset account detail view state
+            self.nav.reset_account_detail();
         } else {
             match &self.ui.popup_state {
                 PopupState::SearchWithType(_, _) | PopupState::SearchResults(_) => {
@@ -1112,11 +1208,13 @@ impl App {
     }
 
     fn handle_main_mouse_click(&mut self, mouse: MouseEvent) -> Result<()> {
-        if mouse.row <= (HEADER_HEIGHT + TITLE_HEIGHT) {
+        // Content starts after header + search bar
+        let top_area_height = HEADER_HEIGHT + SEARCH_BAR_HEIGHT;
+        if mouse.row <= top_area_height {
             return Ok(());
         }
 
-        let content_start_row = HEADER_HEIGHT + TITLE_HEIGHT;
+        let content_start_row = top_area_height;
         let content_row = mouse.row.saturating_sub(content_start_row);
 
         let terminal_width = DEFAULT_TERMINAL_WIDTH;
@@ -1342,16 +1440,8 @@ impl App {
             return;
         }
 
-        let search_type_str = match search_type {
-            SearchType::Transaction => "transactions",
-            SearchType::Asset => "assets",
-            SearchType::Account => "accounts",
-            SearchType::Block => "blocks",
-        };
-
-        self.ui.show_message(format!(
-            "Querying Algorand network APIs for {search_type_str}..."
-        ));
+        // Set loading state
+        self.ui.set_search_loading(true);
 
         let client = self.client.clone();
         let query_clone = query.to_string();
@@ -1425,7 +1515,7 @@ impl App {
             .or_else(|| self.get_current_transaction().map(|t| t.id.clone()));
 
         let Some(txn_id) = txn_id else {
-            self.ui.show_toast("✗ No transaction selected", 20);
+            self.ui.show_toast("[x] No transaction selected", 20);
             return;
         };
 
@@ -1434,7 +1524,7 @@ impl App {
         #[cfg(target_os = "linux")]
         {
             if self.try_copy_with_external_tool(&txn_id) {
-                self.ui.show_toast("✓ Transaction ID copied!", 20);
+                self.ui.show_toast("[+] Transaction ID copied!", 20);
                 return;
             }
             // Fall back to arboard if external tools fail
@@ -1443,13 +1533,13 @@ impl App {
         match Clipboard::new() {
             Ok(mut clipboard) => {
                 if clipboard.set_text(txn_id.clone()).is_ok() {
-                    self.ui.show_toast("✓ Transaction ID copied!", 20);
+                    self.ui.show_toast("[+] Transaction ID copied!", 20);
                 } else {
-                    self.ui.show_toast("✗ Failed to copy", 20);
+                    self.ui.show_toast("[x] Failed to copy", 20);
                 }
             }
             Err(_) => {
-                self.ui.show_toast("✗ Clipboard not available", 20);
+                self.ui.show_toast("[x] Clipboard not available", 20);
             }
         }
     }
@@ -1506,6 +1596,178 @@ impl App {
         }
 
         false
+    }
+
+    /// Copy raw JSON to clipboard for the currently viewed entity.
+    ///
+    /// Fetches the raw JSON from the indexer/algod and copies it to clipboard.
+    /// Works for transactions, blocks, accounts, and assets.
+    async fn copy_json_to_clipboard(&mut self) {
+        // Determine what entity we're viewing and fetch its JSON
+        if self.nav.show_transaction_details {
+            if let Some(txn) = self.get_current_transaction() {
+                self.fetch_and_copy_transaction_json(&txn.id).await;
+            } else {
+                self.ui.show_toast("[x] No transaction selected", 20);
+            }
+        } else if self.nav.show_block_details {
+            if let Some(block_id) = self.nav.selected_block_id {
+                self.fetch_and_copy_block_json(block_id).await;
+            } else {
+                self.ui.show_toast("[x] No block selected", 20);
+            }
+        } else if self.nav.show_account_details {
+            if let Some(account) = &self.data.viewed_account {
+                self.fetch_and_copy_account_json(&account.address.clone())
+                    .await;
+            } else {
+                self.ui.show_toast("[x] No account selected", 20);
+            }
+        } else if self.nav.show_asset_details {
+            if let Some(asset) = &self.data.viewed_asset {
+                self.fetch_and_copy_asset_json(asset.id).await;
+            } else {
+                self.ui.show_toast("[x] No asset selected", 20);
+            }
+        } else {
+            self.ui.show_toast("[x] No detail view open", 20);
+        }
+    }
+
+    /// Fetch transaction JSON from indexer and copy to clipboard.
+    async fn fetch_and_copy_transaction_json(&mut self, txn_id: &str) {
+        let url = format!("{}/v2/transactions/{}", self.network.indexer_url(), txn_id);
+        self.fetch_and_copy_json(&url, "Transaction").await;
+    }
+
+    /// Fetch block JSON from algod and copy to clipboard.
+    async fn fetch_and_copy_block_json(&mut self, round: u64) {
+        let url = format!("{}/v2/blocks/{}", self.network.algod_url(), round);
+        self.fetch_and_copy_json(&url, "Block").await;
+    }
+
+    /// Fetch account JSON from algod and copy to clipboard.
+    async fn fetch_and_copy_account_json(&mut self, address: &str) {
+        let url = format!("{}/v2/accounts/{}", self.network.algod_url(), address);
+        self.fetch_and_copy_json(&url, "Account").await;
+    }
+
+    /// Fetch asset JSON from indexer and copy to clipboard.
+    async fn fetch_and_copy_asset_json(&mut self, asset_id: u64) {
+        let url = format!("{}/v2/assets/{}", self.network.indexer_url(), asset_id);
+        self.fetch_and_copy_json(&url, "Asset").await;
+    }
+
+    /// Generic helper to fetch JSON from a URL and copy to clipboard.
+    async fn fetch_and_copy_json(&mut self, url: &str, entity_name: &str) {
+        self.ui
+            .show_toast(format!("Fetching {} JSON...", entity_name), 10);
+
+        let client = reqwest::Client::new();
+        let mut request = client.get(url).header("accept", "application/json");
+
+        // Add auth headers for localnet
+        if self.network == Network::LocalNet {
+            let token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            if url.contains(self.network.algod_url()) {
+                request = request.header("X-Algo-API-Token", token);
+            } else {
+                request = request.header("X-Indexer-API-Token", token);
+            }
+        }
+
+        match request.send().await {
+            Ok(response) if response.status().is_success() => {
+                match response.text().await {
+                    Ok(json_text) => {
+                        // Pretty-print the JSON
+                        let pretty_json =
+                            match serde_json::from_str::<serde_json::Value>(&json_text) {
+                                Ok(value) => {
+                                    serde_json::to_string_pretty(&value).unwrap_or(json_text)
+                                }
+                                Err(_) => json_text,
+                            };
+                        self.copy_text_to_clipboard(&pretty_json, &format!("{} JSON", entity_name));
+                    }
+                    Err(_) => {
+                        self.ui.show_toast("[x] Failed to read response", 20);
+                    }
+                }
+            }
+            Ok(response) => {
+                self.ui
+                    .show_toast(format!("[x] HTTP {}", response.status()), 20);
+            }
+            Err(e) => {
+                self.ui.show_toast(format!("[x] Network error: {}", e), 20);
+            }
+        }
+    }
+
+    /// Copy text to clipboard with platform-specific handling.
+    fn copy_text_to_clipboard(&mut self, text: &str, description: &str) {
+        #[cfg(target_os = "linux")]
+        {
+            if self.try_copy_with_external_tool(text) {
+                self.ui
+                    .show_toast(format!("[+] {} copied!", description), 20);
+                return;
+            }
+        }
+
+        match Clipboard::new() {
+            Ok(mut clipboard) => {
+                if clipboard.set_text(text).is_ok() {
+                    self.ui
+                        .show_toast(format!("[+] {} copied!", description), 20);
+                } else {
+                    self.ui.show_toast("[x] Failed to copy", 20);
+                }
+            }
+            Err(_) => {
+                self.ui.show_toast("[x] Clipboard not available", 20);
+            }
+        }
+    }
+
+    /// Open the current entity in the web browser (Lora explorer).
+    fn open_in_browser(&mut self) {
+        let url = if self.nav.show_transaction_details {
+            self.get_current_transaction()
+                .map(|txn| self.network.transaction_url(&txn.id))
+        } else if self.nav.show_block_details {
+            self.nav
+                .selected_block_id
+                .map(|block_id| self.network.block_url(block_id))
+        } else if self.nav.show_account_details {
+            self.data
+                .viewed_account
+                .as_ref()
+                .map(|account| self.network.account_url(&account.address))
+        } else if self.nav.show_asset_details {
+            self.data
+                .viewed_asset
+                .as_ref()
+                .map(|asset| self.network.asset_url(asset.id))
+        } else {
+            None
+        };
+
+        match url {
+            Some(url) => match open::that(&url) {
+                Ok(()) => {
+                    self.ui.show_toast("[+] Opened in browser", 20);
+                }
+                Err(e) => {
+                    self.ui
+                        .show_toast(format!("[x] Failed to open browser: {}", e), 30);
+                }
+            },
+            None => {
+                self.ui.show_toast("[x] No detail view open", 20);
+            }
+        }
     }
 
     /// Export the current transaction graph to SVG file.
@@ -1726,6 +1988,7 @@ mod tests {
             amount: 1_000_000,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: crate::domain::TransactionDetails::None,
             inner_transactions: Vec::new(),
         }
@@ -2405,6 +2668,20 @@ mod tests {
                 name: "transaction detail view",
                 setup: |app| {
                     app.nav.show_transaction_details = true;
+                },
+                expected: InputContext::DetailView,
+            },
+            TestCase {
+                name: "account detail view",
+                setup: |app| {
+                    app.nav.show_account_details = true;
+                },
+                expected: InputContext::AccountDetailView,
+            },
+            TestCase {
+                name: "asset detail view",
+                setup: |app| {
+                    app.nav.show_asset_details = true;
                 },
                 expected: InputContext::DetailView,
             },

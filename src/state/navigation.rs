@@ -104,6 +104,67 @@ impl BlockDetailTab {
 }
 
 // ============================================================================
+// Account Detail Tab
+// ============================================================================
+
+/// The tab in the account details popup.
+///
+/// Account details can show general info, asset holdings, or application opt-ins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AccountDetailTab {
+    /// General account information (balance, status, etc.).
+    #[default]
+    Info,
+    /// Asset holdings and created assets.
+    Assets,
+    /// Application opt-ins and created apps.
+    Apps,
+}
+
+impl AccountDetailTab {
+    /// Cycles to the next tab.
+    #[must_use]
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Info => Self::Assets,
+            Self::Assets => Self::Apps,
+            Self::Apps => Self::Info,
+        }
+    }
+
+    /// Cycles to the previous tab.
+    #[must_use]
+    pub const fn prev(self) -> Self {
+        match self {
+            Self::Info => Self::Apps,
+            Self::Assets => Self::Info,
+            Self::Apps => Self::Assets,
+        }
+    }
+
+    /// Returns `true` if showing the info tab.
+    #[must_use]
+    #[allow(dead_code)] // Part of navigation API
+    pub const fn is_info(self) -> bool {
+        matches!(self, Self::Info)
+    }
+
+    /// Returns `true` if showing the assets tab.
+    #[must_use]
+    #[allow(dead_code)] // Part of navigation API
+    pub const fn is_assets(self) -> bool {
+        matches!(self, Self::Assets)
+    }
+
+    /// Returns `true` if showing the apps tab.
+    #[must_use]
+    #[allow(dead_code)] // Part of navigation API
+    pub const fn is_apps(self) -> bool {
+        matches!(self, Self::Apps)
+    }
+}
+
+// ============================================================================
 // Navigation State
 // ============================================================================
 
@@ -162,6 +223,14 @@ pub struct NavigationState {
     /// Scroll position for block transactions list.
     pub block_txn_scroll: u16,
 
+    // === Account Detail View State ===
+    /// Current tab in account details popup.
+    pub account_detail_tab: AccountDetailTab,
+    /// Selected item index within account details list (assets or apps).
+    pub account_item_index: Option<usize>,
+    /// Scroll position for account details list.
+    pub account_item_scroll: u16,
+
     // === Graph View State ===
     /// Horizontal scroll offset for transaction graph view.
     pub graph_scroll_x: u16,
@@ -201,6 +270,9 @@ impl NavigationState {
         self.block_detail_tab = BlockDetailTab::default();
         self.block_txn_index = None;
         self.block_txn_scroll = 0;
+        self.account_detail_tab = AccountDetailTab::default();
+        self.account_item_index = None;
+        self.account_item_scroll = 0;
         self.graph_scroll_x = 0;
         self.graph_scroll_y = 0;
         self.graph_max_scroll_x = 0;
@@ -372,6 +444,71 @@ impl NavigationState {
     }
 
     // ========================================================================
+    // Account Detail Navigation
+    // ========================================================================
+
+    /// Cycles the account detail tab to the next tab.
+    pub fn cycle_account_detail_tab(&mut self) {
+        self.account_detail_tab = self.account_detail_tab.next();
+        // Reset item selection when switching tabs
+        self.account_item_index = None;
+        self.account_item_scroll = 0;
+    }
+
+    /// Cycles the account detail tab to the previous tab.
+    #[allow(dead_code)] // Part of navigation API
+    pub fn cycle_account_detail_tab_prev(&mut self) {
+        self.account_detail_tab = self.account_detail_tab.prev();
+        // Reset item selection when switching tabs
+        self.account_item_index = None;
+        self.account_item_scroll = 0;
+    }
+
+    /// Moves the account item selection up.
+    pub fn move_account_item_up(&mut self) {
+        if let Some(idx) = self.account_item_index
+            && idx > 0
+        {
+            self.account_item_index = Some(idx - 1);
+            // Adjust scroll if needed (each item is 1 line)
+            let new_pos = (idx - 1) as u16;
+            if new_pos < self.account_item_scroll {
+                self.account_item_scroll = new_pos;
+            }
+        }
+    }
+
+    /// Moves the account item selection down.
+    ///
+    /// # Arguments
+    ///
+    /// * `max` - Maximum valid index (length - 1)
+    /// * `visible_height` - Number of visible rows in the list area
+    pub fn move_account_item_down(&mut self, max: usize, visible_height: u16) {
+        if let Some(idx) = self.account_item_index {
+            if idx < max {
+                self.account_item_index = Some(idx + 1);
+                // Adjust scroll if needed
+                let new_pos = (idx + 1) as u16;
+                let visible_end = self.account_item_scroll + visible_height;
+                if new_pos >= visible_end {
+                    self.account_item_scroll = new_pos.saturating_sub(visible_height) + 1;
+                }
+            }
+        } else if max > 0 {
+            self.account_item_index = Some(0);
+            self.account_item_scroll = 0;
+        }
+    }
+
+    /// Resets account detail view state.
+    pub fn reset_account_detail(&mut self) {
+        self.account_detail_tab = AccountDetailTab::default();
+        self.account_item_index = None;
+        self.account_item_scroll = 0;
+    }
+
+    // ========================================================================
     // Graph Scrolling
     // ========================================================================
 
@@ -471,6 +608,7 @@ mod tests {
             amount: 1_000_000,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: crate::domain::TransactionDetails::None,
             inner_transactions: Vec::new(),
         }

@@ -353,6 +353,7 @@ mod tests {
             amount: 1_000_000,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: crate::domain::TransactionDetails::None,
             inner_transactions: Vec::new(),
         }

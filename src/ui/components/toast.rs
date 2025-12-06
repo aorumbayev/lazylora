@@ -41,8 +41,8 @@ const TOAST_WIDTH_PADDING: u16 = 4;
 ///
 /// This is a non-blocking overlay that doesn't prevent user interaction.
 /// The toast automatically determines its color based on the message prefix:
-/// - Messages starting with '✓' use success color (green)
-/// - Messages starting with '✗' use error color (red)
+/// - Messages starting with '[+]' use success color (green)
+/// - Messages starting with '[x]' use error color (red)
 /// - All other messages use white
 ///
 /// # Arguments
@@ -58,7 +58,7 @@ const TOAST_WIDTH_PADDING: u16 = 4;
 /// use lazylora::ui::components::toast::render_toast;
 ///
 /// fn render_ui(frame: &mut Frame, area: Rect) {
-///     render_toast(frame, area, "✓ Operation successful");
+///     render_toast(frame, area, "[+] Operation successful");
 /// }
 /// ```
 pub fn render_toast(frame: &mut Frame, area: Rect, message: &str) {
@@ -138,9 +138,9 @@ fn create_toast_block() -> Block<'static> {
 /// The appropriate `Color` for the message type.
 #[must_use]
 fn determine_text_color(message: &str) -> Color {
-    if message.starts_with('✓') {
+    if message.starts_with("[+]") {
         SUCCESS_COLOR
-    } else if message.starts_with('✗') {
+    } else if message.starts_with("[x]") {
         ERROR_COLOR
     } else {
         Color::White
@@ -257,11 +257,11 @@ mod tests {
 
         let cases = [
             TestCase {
-                message: "✓ Success",
+                message: "[+] Success",
                 expected: SUCCESS_COLOR,
             },
             TestCase {
-                message: "✗ Error",
+                message: "[x] Error",
                 expected: ERROR_COLOR,
             },
             TestCase {

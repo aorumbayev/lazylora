@@ -291,6 +291,7 @@ mod tests {
             asset_id: None,
             note: String::new(),
             rekey_to: None,
+            group: None,
             inner_transactions: Vec::new(),
             details: TransactionDetails::None,
         };

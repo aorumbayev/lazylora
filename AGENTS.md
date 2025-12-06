@@ -16,7 +16,7 @@
 
 Before writing any code, internalize these principles. They are the soul of this codebase.
 
-### The 18 Commandments
+### The 24 Commandments
 
 ```
 1.  Short comments over long explanations.
@@ -36,7 +36,13 @@ Before writing any code, internalize these principles. They are the soul of this
 15. `expect()` with context over bare `unwrap()`.
 16. Builder-lite pattern over mutable configuration.
 17. `let chains` over nested if-let (Rust 2024).
-18. Ship it over perfect it.
+18. State is data; UI is a function of state.
+19. Draw everything every frame; let the buffer diff.
+20. Layout once at the top, pass areas down.
+21. Async outside the render loop, sync inside.
+22. Design for 80×24 first, delight on larger.
+23. Color with purpose; one accent beats a rainbow.
+24. Ship it over perfect it.
 ```
 
 ### The Sniff Tests
@@ -50,6 +56,12 @@ Before writing any code, internalize these principles. They are the soul of this
 - You're using Strategy pattern where `if` would do
 - `Arc<Mutex<RefCell<T>>>` appears anywhere
 - More than 2 hops from input to output
+
+**Your error handling is probably wrong if:**
+- Bare `unwrap()` appears in library code
+- Errors are silently swallowed with `let _ = ...`
+- Panics happen in recoverable situations
+- Remember: Errors surface; panics sink ships
 
 **Your comment is probably AI-generated if it contains:**
 - "API surface" or "completeness"
@@ -151,6 +163,96 @@ paragraph.centered();  // This returns a NEW value, doesn't mutate!
 ```
 
 **Why?** Enables fluent API. Methods marked `#[must_use]` catch mistakes at compile time.
+
+### Explicit Mode State Machine
+
+Your app has modes. Make them explicit:
+
+```rust
+#[derive(Default, PartialEq, Eq)]
+enum Mode {
+    #[default]
+    Normal,
+    Editing,
+    Selecting,
+    Confirming,
+}
+
+impl App {
+    fn handle_key(&mut self, key: KeyEvent) {
+        match self.mode {
+            Mode::Normal => self.handle_normal_key(key),
+            Mode::Editing => self.handle_editing_key(key),
+            Mode::Selecting => self.handle_selecting_key(key),
+            Mode::Confirming => self.handle_confirming_key(key),
+        }
+    }
+}
+```
+
+**Why?** Explicit modes prevent impossible states. The compiler enforces your UI logic.
+
+### Keybinding Conventions
+
+Keybindings should feel like muscle memory:
+
+```rust
+fn handle_key(&mut self, key: KeyEvent) {
+    match key.code {
+        // Universal (these ALWAYS work)
+        KeyCode::Char('q') | KeyCode::Esc => self.quit(),
+        
+        // Vim-style navigation
+        KeyCode::Char('j') | KeyCode::Down => self.next(),
+        KeyCode::Char('k') | KeyCode::Up => self.prev(),
+        KeyCode::Char('h') | KeyCode::Left => self.collapse(),
+        KeyCode::Char('l') | KeyCode::Right => self.expand(),
+        
+        // Common actions
+        KeyCode::Enter => self.select(),
+        KeyCode::Char('g') => self.go_top(),
+        KeyCode::Char('G') => self.go_bottom(),
+        
+        // Ignore everything else - the _ => {} is intentional documentation
+        _ => {}
+    }
+}
+```
+
+**Why?** Users shouldn't read docs to quit your app. `q` and `Esc` just work.
+
+### TUI Anti-Patterns
+
+**Widget state outside app state:**
+```rust
+// Bad: State scattered across widgets
+struct App {
+    list: List<'static>,  // Widget holds state
+}
+
+// Good: State in App, widgets are ephemeral
+struct App {
+    items: Vec<String>,
+    list_state: ListState,
+}
+```
+
+**Blocking in event handlers:**
+```rust
+// Bad: Freezes UI
+fn handle_key(&mut self, key: KeyEvent) {
+    if key.code == KeyCode::Enter {
+        let data = reqwest::blocking::get(url)?;  // Blocks render loop!
+    }
+}
+
+// Good: Spawn async task
+fn handle_key(&mut self, key: KeyEvent) {
+    if key.code == KeyCode::Enter {
+        self.start_fetch();  // Returns immediately
+    }
+}
+```
 
 ---
 

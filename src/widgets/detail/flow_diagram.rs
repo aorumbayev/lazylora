@@ -318,6 +318,7 @@ mod tests {
             amount: 5_000_000,
             asset_id: None,
             rekey_to: None,
+            group: None,
             details: TransactionDetails::default(),
             inner_transactions: Vec::new(),
         }

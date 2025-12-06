@@ -22,6 +22,6 @@
 
 | Key | Action |
 |-----|--------|
-| `f` | Search transactions |
+| `f` | Focus search bar (auto-detects type) |
 | `n` | Switch network |
 | `Space` | Toggle live updates |

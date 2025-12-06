@@ -43,6 +43,22 @@ impl GraphEntityType {
         }
     }
 
+    /// Get a short type label for this entity type.
+    ///
+    /// Used in the subtitle row below column headers.
+    ///
+    /// # Returns
+    ///
+    /// A short label like "Account", "App", or "Asset"
+    #[must_use]
+    pub const fn type_label(&self) -> &'static str {
+        match self {
+            Self::Account => "Account",
+            Self::Application => "App",
+            Self::Asset => "Asset",
+        }
+    }
+
     /// Get the header color for this entity type.
     ///
     /// # Returns

@@ -124,6 +124,97 @@ impl SearchType {
 }
 
 // ============================================================================
+// Search Type Auto-Detection
+// ============================================================================
+
+/// Auto-detect the search type based on input pattern.
+///
+/// Uses the following heuristics:
+/// - 52-char uppercase alphanumeric → Transaction ID
+/// - Pure digits → Block number (small) or Asset ID (large)
+/// - 58-char uppercase alphanumeric → Account address
+/// - Contains ".algo" or looks like NFD name → Account (NFD)
+/// - Otherwise → None (unknown format)
+#[must_use]
+pub fn detect_search_type(query: &str) -> Option<SearchType> {
+    let trimmed = query.trim();
+
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Check for transaction ID (52 chars, uppercase alphanumeric)
+    if trimmed.len() == 52
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    {
+        return Some(SearchType::Transaction);
+    }
+
+    // Check for valid Algorand address (58 chars, uppercase alphanumeric)
+    if trimmed.len() == 58
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    {
+        return Some(SearchType::Account);
+    }
+
+    // Check for NFD name (contains .algo or looks like name)
+    if looks_like_nfd_name(trimmed) {
+        return Some(SearchType::Account);
+    }
+
+    // Check for pure integer (block or asset)
+    if let Ok(num) = trimmed.parse::<u64>() {
+        // Use heuristic: blocks are typically < 100M, assets can be much larger
+        // But really, both are valid - we'll default to Block for simplicity
+        // since blocks are more commonly searched by number
+        if num < 100_000_000 {
+            return Some(SearchType::Block);
+        }
+        return Some(SearchType::Asset);
+    }
+
+    // Partial transaction ID (40-60 chars, mostly uppercase)
+    if (40..=60).contains(&trimmed.len())
+        && trimmed.chars().filter(|c| c.is_ascii_uppercase()).count() > trimmed.len() / 2
+    {
+        return Some(SearchType::Transaction);
+    }
+
+    None
+}
+
+/// Check if a query string looks like an NFD name.
+#[must_use]
+fn looks_like_nfd_name(query: &str) -> bool {
+    let trimmed = query.trim().to_lowercase();
+
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // If it ends with .algo, it's definitely an NFD name
+    if let Some(name_part) = trimmed.strip_suffix(".algo") {
+        return !name_part.is_empty()
+            && name_part
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    }
+
+    // Could be just the name without .algo suffix
+    // It's likely an NFD if it's a short alphanumeric string that isn't a number
+    trimmed
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        && trimmed.parse::<u64>().is_err()
+        && trimmed.len() < 30  // NFD names are typically short
+        && trimmed.len() >= 2 // At least 2 chars for a name
+}
+
+// ============================================================================
 // Popup State
 // ============================================================================
 
@@ -217,6 +308,9 @@ impl PopupState {
 // UI State
 // ============================================================================
 
+/// Maximum number of recent searches to remember.
+const MAX_SEARCH_HISTORY: usize = 10;
+
 /// UI state: focus, popup state, and viewing flags.
 ///
 /// This struct manages all UI presentation concerns, keeping them
@@ -244,6 +338,26 @@ pub struct UiState {
     // === Popup State ===
     /// Current popup/modal state.
     pub popup_state: PopupState,
+
+    // === Inline Search ===
+    /// Current search input text (inline search bar in header).
+    pub search_input: String,
+    /// Cursor position within search input (byte offset).
+    pub search_cursor: usize,
+    /// Whether the inline search bar has focus.
+    pub search_focused: bool,
+    /// Auto-detected search type based on input pattern.
+    pub detected_search_type: Option<SearchType>,
+    /// User override for search type (Tab cycles through types).
+    pub search_type_override: Option<SearchType>,
+    /// Whether a search is currently in progress.
+    pub search_loading: bool,
+    /// Recent search history (most recent first).
+    pub search_history: Vec<String>,
+    /// Current position in search history (-1 = current input, 0+ = history index).
+    pub search_history_index: Option<usize>,
+    /// Saved current input when navigating history.
+    pub search_input_saved: Option<String>,
 
     // === View Flags ===
     /// Whether we're currently viewing a search result (affects transaction details display).
@@ -368,6 +482,220 @@ impl UiState {
     /// * `results` - The search results to display
     pub fn show_search_results(&mut self, results: Vec<(usize, crate::domain::SearchResultItem)>) {
         self.popup_state = PopupState::SearchResults(results);
+    }
+
+    // ========================================================================
+    // Inline Search
+    // ========================================================================
+
+    /// Focus the inline search bar.
+    pub fn focus_search(&mut self) {
+        self.search_focused = true;
+        self.search_cursor = self.search_input.len();
+        self.search_history_index = None;
+        self.search_input_saved = None;
+    }
+
+    /// Unfocus the inline search bar.
+    pub fn unfocus_search(&mut self) {
+        self.search_focused = false;
+        self.search_cursor = 0;
+        self.search_history_index = None;
+        self.search_input_saved = None;
+    }
+
+    /// Returns whether the inline search bar is focused.
+    #[must_use]
+    pub fn is_search_focused(&self) -> bool {
+        self.search_focused
+    }
+
+    /// Appends a character at cursor position.
+    pub fn search_type_char(&mut self, c: char) {
+        // Reset history navigation when typing
+        self.search_history_index = None;
+        self.search_input_saved = None;
+        self.search_input.insert(self.search_cursor, c);
+        self.search_cursor += c.len_utf8();
+        self.update_detected_search_type();
+        // Clear override when input changes
+        self.search_type_override = None;
+    }
+
+    /// Removes character before cursor.
+    pub fn search_backspace(&mut self) {
+        // Reset history navigation when typing
+        self.search_history_index = None;
+        self.search_input_saved = None;
+        if self.search_cursor > 0 {
+            // Find the previous char boundary
+            let prev = self.search_input[..self.search_cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.search_input.remove(prev);
+            self.search_cursor = prev;
+        }
+        self.update_detected_search_type();
+        // Clear override when input changes
+        self.search_type_override = None;
+    }
+
+    /// Clears the search input.
+    pub fn clear_search(&mut self) {
+        self.search_input.clear();
+        self.search_cursor = 0;
+        self.detected_search_type = None;
+        self.search_type_override = None;
+        self.search_history_index = None;
+        self.search_input_saved = None;
+    }
+
+    /// Gets the current search input text.
+    #[must_use]
+    pub fn search_query(&self) -> &str {
+        &self.search_input
+    }
+
+    /// Gets the current cursor position (byte offset).
+    #[must_use]
+    pub fn cursor_position(&self) -> usize {
+        self.search_cursor
+    }
+
+    /// Move cursor left by one character.
+    pub fn search_cursor_left(&mut self) {
+        if self.search_cursor > 0 {
+            self.search_cursor = self.search_input[..self.search_cursor]
+                .char_indices()
+                .next_back()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+    }
+
+    /// Move cursor right by one character.
+    pub fn search_cursor_right(&mut self) {
+        if self.search_cursor < self.search_input.len() {
+            self.search_cursor = self.search_input[self.search_cursor..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.search_cursor + i)
+                .unwrap_or(self.search_input.len());
+        }
+    }
+
+    /// Updates the detected search type based on the current input.
+    fn update_detected_search_type(&mut self) {
+        self.detected_search_type = detect_search_type(&self.search_input);
+    }
+
+    /// Gets a hint text for the current search input.
+    #[must_use]
+    #[allow(dead_code)] // Part of UI state API
+    pub fn search_hint(&self) -> &'static str {
+        match self.detected_search_type {
+            Some(SearchType::Transaction) => "Transaction ID",
+            Some(SearchType::Block) => "Block number",
+            Some(SearchType::Account) => "Account/NFD",
+            Some(SearchType::Asset) => "Asset ID",
+            None if self.search_input.is_empty() => "Search by ID or Address",
+            None => "Unknown format",
+        }
+    }
+
+    /// Cycle to the next search type (Tab key).
+    pub fn cycle_inline_search_type(&mut self) {
+        let current = self.get_effective_search_type();
+        let next = match current {
+            Some(t) => t.next(),
+            None => SearchType::Transaction,
+        };
+        self.search_type_override = Some(next);
+    }
+
+    /// Get the effective search type (override or auto-detected).
+    #[must_use]
+    pub fn get_effective_search_type(&self) -> Option<SearchType> {
+        self.search_type_override.or(self.detected_search_type)
+    }
+
+    /// Set search loading state.
+    pub fn set_search_loading(&mut self, loading: bool) {
+        self.search_loading = loading;
+    }
+
+    /// Add a search query to history.
+    pub fn add_to_search_history(&mut self, query: &str) {
+        if query.is_empty() {
+            return;
+        }
+        // Remove if already exists
+        self.search_history.retain(|q| q != query);
+        // Add to front
+        self.search_history.insert(0, query.to_string());
+        // Trim to max size
+        self.search_history.truncate(MAX_SEARCH_HISTORY);
+    }
+
+    /// Navigate to previous search in history (Up arrow).
+    pub fn search_history_prev(&mut self) {
+        if self.search_history.is_empty() {
+            return;
+        }
+
+        match self.search_history_index {
+            None => {
+                // Save current input and go to first history item
+                self.search_input_saved = Some(self.search_input.clone());
+                self.search_history_index = Some(0);
+                if let Some(query) = self.search_history.first() {
+                    self.search_input = query.clone();
+                    self.search_cursor = self.search_input.len();
+                    self.update_detected_search_type();
+                    self.search_type_override = None;
+                }
+            }
+            Some(idx) if idx + 1 < self.search_history.len() => {
+                // Go to next older item
+                self.search_history_index = Some(idx + 1);
+                if let Some(query) = self.search_history.get(idx + 1) {
+                    self.search_input = query.clone();
+                    self.search_cursor = self.search_input.len();
+                    self.update_detected_search_type();
+                    self.search_type_override = None;
+                }
+            }
+            _ => {} // At oldest item, do nothing
+        }
+    }
+
+    /// Navigate to next search in history (Down arrow).
+    pub fn search_history_next(&mut self) {
+        match self.search_history_index {
+            Some(0) => {
+                // At newest history item, restore saved input
+                self.search_history_index = None;
+                if let Some(saved) = self.search_input_saved.take() {
+                    self.search_input = saved;
+                    self.search_cursor = self.search_input.len();
+                    self.update_detected_search_type();
+                    self.search_type_override = None;
+                }
+            }
+            Some(idx) => {
+                // Go to next newer item
+                self.search_history_index = Some(idx - 1);
+                if let Some(query) = self.search_history.get(idx - 1) {
+                    self.search_input = query.clone();
+                    self.search_cursor = self.search_input.len();
+                    self.update_detected_search_type();
+                    self.search_type_override = None;
+                }
+            }
+            None => {} // Not in history navigation, do nothing
+        }
     }
 
     // ========================================================================
@@ -686,5 +1014,95 @@ mod tests {
         ui.detail_section_index = Some(2);
         ui.move_section_down(3);
         assert_eq!(ui.detail_section_index, Some(2));
+    }
+
+    #[test]
+    fn test_inline_search_lifecycle() {
+        let mut ui = UiState::new();
+
+        // Initially not focused
+        assert!(!ui.is_search_focused());
+        assert!(ui.search_query().is_empty());
+
+        // Focus the search bar
+        ui.focus_search();
+        assert!(ui.is_search_focused());
+
+        // Type characters
+        ui.search_type_char('a');
+        ui.search_type_char('b');
+        ui.search_type_char('c');
+        assert_eq!(ui.search_query(), "abc");
+
+        // Backspace
+        ui.search_backspace();
+        assert_eq!(ui.search_query(), "ab");
+
+        // Clear search
+        ui.clear_search();
+        assert!(ui.search_query().is_empty());
+        assert!(ui.detected_search_type.is_none());
+
+        // Unfocus
+        ui.unfocus_search();
+        assert!(!ui.is_search_focused());
+    }
+
+    #[test]
+    fn test_detect_search_type_all_cases() {
+        // Empty string
+        assert_eq!(detect_search_type(""), None);
+        assert_eq!(detect_search_type("   "), None);
+
+        // Transaction ID (52 chars)
+        let txn_id = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        assert_eq!(txn_id.len(), 52);
+        assert_eq!(detect_search_type(txn_id), Some(SearchType::Transaction));
+
+        // Account address (58 chars)
+        let address = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        assert_eq!(address.len(), 58);
+        assert_eq!(detect_search_type(address), Some(SearchType::Account));
+
+        // Block number (small integer)
+        assert_eq!(detect_search_type("12345"), Some(SearchType::Block));
+        assert_eq!(detect_search_type("1000000"), Some(SearchType::Block));
+
+        // Asset ID (large integer)
+        assert_eq!(detect_search_type("100000000"), Some(SearchType::Asset));
+        assert_eq!(detect_search_type("999999999"), Some(SearchType::Asset));
+
+        // NFD name
+        assert_eq!(detect_search_type("alice.algo"), Some(SearchType::Account));
+        assert_eq!(detect_search_type("bob"), Some(SearchType::Account));
+        assert_eq!(detect_search_type("my-nfd"), Some(SearchType::Account));
+    }
+
+    #[test]
+    fn test_search_hint_texts() {
+        let mut ui = UiState::new();
+
+        // Empty - show placeholder
+        assert_eq!(ui.search_hint(), "Search by ID or Address");
+
+        // Type a transaction ID
+        for c in "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".chars() {
+            ui.search_type_char(c);
+        }
+        assert_eq!(ui.search_hint(), "Transaction ID");
+
+        // Clear and type block number
+        ui.clear_search();
+        ui.search_type_char('1');
+        ui.search_type_char('2');
+        ui.search_type_char('3');
+        assert_eq!(ui.search_hint(), "Block number");
+
+        // Clear and type NFD
+        ui.clear_search();
+        for c in "alice.algo".chars() {
+            ui.search_type_char(c);
+        }
+        assert_eq!(ui.search_hint(), "Account/NFD");
     }
 }

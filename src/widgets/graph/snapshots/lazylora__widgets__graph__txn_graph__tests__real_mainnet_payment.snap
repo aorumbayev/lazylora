@@ -2,12 +2,12 @@
 source: src/widgets/graph/txn_graph.rs
 expression: terminal.backend()
 ---
+"                                ①          ②                                    "
 "                       TYP   M3I...XM   KIZ...BQ                                "
+"                             Account    Account                                 "
 "                       ──────────┬──────────┬───                                "
 "                                 │          │                                   "
 "                         PAY     ●──────────▶    236.07A                        "
-"                                                                                "
-"                                                                                "
 "                                                                                "
 "                                                                                "
 "                                                                                "

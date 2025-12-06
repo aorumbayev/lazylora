@@ -17,14 +17,30 @@ use crate::theme::MUTED_COLOR;
 // Footer Rendering
 // ============================================================================
 
-/// Renders the footer bar with keyboard shortcuts.
-pub fn render(frame: &mut Frame, area: Rect, _app: &App) {
-    let footer_text = "q:Quit  r:Refresh  f:Search  n:Network  Space:Live  Tab:Focus";
+/// Renders the footer bar with context-aware keyboard shortcuts.
+pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+    let footer_text = get_footer_text(app);
+
     let footer = Paragraph::new(footer_text)
         .style(Style::default().fg(MUTED_COLOR))
         .alignment(Alignment::Center);
 
     frame.render_widget(footer, area);
+}
+
+/// Returns context-appropriate footer hint text.
+fn get_footer_text(app: &App) -> &'static str {
+    if app.ui.is_search_focused() {
+        "Esc:Cancel  Tab:Type  ↑↓:History  ←→:Cursor  Enter:Search"
+    } else if app.nav.show_transaction_details {
+        "Esc:Close  Tab:Mode  c:Copy ID  y:JSON  o:Open  s:SVG  ↑↓←→:Scroll"
+    } else if app.nav.show_block_details {
+        "Esc:Close  Tab:Tab  y:JSON  o:Open  ↑↓:Navigate  Enter:Select"
+    } else if app.nav.show_account_details || app.nav.show_asset_details {
+        "Esc:Close  y:JSON  o:Open"
+    } else {
+        "q:Quit  r:Refresh  f:Search  n:Network  Space:Live  Tab:Focus"
+    }
 }
 
 // ============================================================================
@@ -54,7 +70,7 @@ mod tests {
             let buffer = terminal.backend().buffer();
             let content = buffer_to_string(buffer, 80, 1);
 
-            // All expected shortcuts must be present
+            // All expected shortcuts must be present (main context)
             let expected_shortcuts = [
                 "q:Quit",
                 "r:Refresh",
@@ -69,6 +85,111 @@ mod tests {
                     content.contains(shortcut),
                     "Footer should contain '{}', got: {}",
                     shortcut,
+                    content
+                );
+            }
+        });
+    }
+
+    /// Tests footer displays search-specific hints when search is focused.
+    #[test]
+    fn test_footer_displays_search_hints_when_focused() {
+        test_with_mock_app_mut(|app| {
+            app.ui.focus_search();
+
+            let backend = TestBackend::new(80, 1);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    render(frame, area, app);
+                })
+                .unwrap();
+
+            let buffer = terminal.backend().buffer();
+            let content = buffer_to_string(buffer, 80, 1);
+
+            // Search-specific hints
+            let expected_hints = ["Esc:Cancel", "Tab:Type", "Enter:Search"];
+
+            for hint in expected_hints {
+                assert!(
+                    content.contains(hint),
+                    "Footer should contain '{}' when search focused, got: {}",
+                    hint,
+                    content
+                );
+            }
+
+            // Should NOT show main hints
+            assert!(
+                !content.contains("q:Quit"),
+                "Footer should not show main hints when search focused"
+            );
+        });
+    }
+
+    /// Tests footer displays transaction detail view hints.
+    #[test]
+    fn test_footer_displays_transaction_detail_hints() {
+        test_with_mock_app_mut(|app| {
+            app.nav.show_transaction_details = true;
+
+            let backend = TestBackend::new(80, 1);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    render(frame, area, app);
+                })
+                .unwrap();
+
+            let buffer = terminal.backend().buffer();
+            let content = buffer_to_string(buffer, 80, 1);
+
+            // Transaction detail-specific hints
+            let expected_hints = ["Esc:Close", "y:JSON", "o:Open"];
+
+            for hint in expected_hints {
+                assert!(
+                    content.contains(hint),
+                    "Footer should contain '{}' in transaction detail view, got: {}",
+                    hint,
+                    content
+                );
+            }
+        });
+    }
+
+    /// Tests footer displays block detail view hints.
+    #[test]
+    fn test_footer_displays_block_detail_hints() {
+        test_with_mock_app_mut(|app| {
+            app.nav.show_block_details = true;
+
+            let backend = TestBackend::new(80, 1);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            terminal
+                .draw(|frame| {
+                    let area = frame.area();
+                    render(frame, area, app);
+                })
+                .unwrap();
+
+            let buffer = terminal.backend().buffer();
+            let content = buffer_to_string(buffer, 80, 1);
+
+            // Block detail-specific hints
+            let expected_hints = ["Esc:Close", "y:JSON", "o:Open"];
+
+            for hint in expected_hints {
+                assert!(
+                    content.contains(hint),
+                    "Footer should contain '{}' in block detail view, got: {}",
+                    hint,
                     content
                 );
             }
@@ -147,6 +268,27 @@ mod tests {
         });
 
         test_fn(&app);
+    }
+
+    // Helper function to run tests with a mutable mock App
+    fn test_with_mock_app_mut<F>(test_fn: F)
+    where
+        F: FnOnce(&mut App),
+    {
+        use crate::domain::Network;
+        use crate::state::StartupOptions;
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let mut app = rt.block_on(async {
+            let options = StartupOptions {
+                network: Some(Network::TestNet),
+                search: None,
+                graph_view: false,
+            };
+            App::new(options).await.unwrap()
+        });
+
+        test_fn(&mut app);
     }
 
     // Helper to convert buffer to string for assertions

@@ -24,14 +24,11 @@ pub mod popups;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
-    widgets::Paragraph,
 };
 
 use crate::state::{App, PopupState};
 
-use helpers::create_border_block;
-use layout::{HEADER_HEIGHT, TITLE_HEIGHT};
+use layout::{HEADER_HEIGHT, SEARCH_BAR_HEIGHT};
 
 // ============================================================================
 // Main Render Entry Point
@@ -40,7 +37,7 @@ use layout::{HEADER_HEIGHT, TITLE_HEIGHT};
 /// Main render function that orchestrates all UI rendering.
 ///
 /// This function is the entry point for the UI layer and handles:
-/// 1. Main layout (header, content, footer)
+/// 1. Main layout (header, search bar, content, footer)
 /// 2. Popup overlays based on current popup state
 /// 3. Detail views when viewing specific items
 /// 4. Toast notifications as non-blocking overlays
@@ -52,20 +49,22 @@ use layout::{HEADER_HEIGHT, TITLE_HEIGHT};
 pub fn render(app: &App, frame: &mut Frame) {
     let size = frame.area();
 
-    // Main layout: header, content, footer
+    // Main layout: header, search bar, content, footer
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(HEADER_HEIGHT),
+            Constraint::Length(SEARCH_BAR_HEIGHT),
             Constraint::Min(3),
             Constraint::Length(1),
         ])
         .split(size);
 
     // Render main UI structure
-    header::render(frame, chunks[0], app);
-    render_main_content(app, frame, chunks[1]);
-    footer::render(frame, chunks[2], app);
+    header::render_header(frame, chunks[0], app);
+    header::render_search_bar(frame, chunks[1], app);
+    render_main_content(app, frame, chunks[2]);
+    footer::render(frame, chunks[3], app);
 
     // Render popup overlays (if any)
     render_popups(app, frame, size);
@@ -85,41 +84,13 @@ pub fn render(app: &App, frame: &mut Frame) {
 // Internal Rendering Functions
 // ============================================================================
 
-/// Render the main content area (explore section with blocks and transactions)
+/// Render the main content area (blocks and transactions panels)
 fn render_main_content(app: &App, frame: &mut Frame, area: ratatui::layout::Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(TITLE_HEIGHT), Constraint::Min(10)])
-        .split(area);
-
-    // Render title section with "Explore" heading and live toggle
-    let title_block = create_border_block("", false);
-    frame.render_widget(title_block.clone(), chunks[0]);
-
-    let title = Paragraph::new("Explore").style(Style::default().add_modifier(Modifier::BOLD));
-    let title_area = ratatui::layout::Rect::new(chunks[0].x + 2, chunks[0].y + 1, 10, 1);
-    frame.render_widget(title, title_area);
-
-    // Live checkbox
-    let show_live = app.show_live;
-    let checkbox_text = format!("[{}] Show live", if show_live { "✓" } else { " " });
-    let checkbox_style = if show_live {
-        Style::default()
-            .fg(crate::theme::SUCCESS_COLOR)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(crate::theme::MUTED_COLOR)
-    };
-    let checkbox = Paragraph::new(checkbox_text).style(checkbox_style);
-
-    let checkbox_area = ratatui::layout::Rect::new(chunks[0].right() - 15, chunks[0].y + 1, 15, 1);
-    frame.render_widget(checkbox, checkbox_area);
-
-    // Split content area for blocks and transactions
+    // Split content area for blocks and transactions (50/50)
     let content_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-        .split(chunks[1]);
+        .split(area);
 
     // Render block and transaction panels
     panels::render_blocks(app, frame, content_chunks[0]);

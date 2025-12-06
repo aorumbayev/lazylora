@@ -2,12 +2,12 @@
 source: src/widgets/graph/txn_graph.rs
 expression: terminal.backend()
 ---
+"                                   ①          ②                                 "
 "                          TYP   SVZ...E4   GW3...IA                             "
+"                                Account    Account                              "
 "                          ──────────┬──────────┬───                             "
 "                                    │          │                                "
 "                            PAY     ●──────────▶    0A                          "
-"                                                                                "
-"                                                                                "
 "                                                                                "
 "                                                                                "
 "                                                                                "

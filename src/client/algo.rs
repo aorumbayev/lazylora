@@ -420,9 +420,11 @@ impl AlgoClient {
         let timestamp_secs = block_val["ts"].as_u64().unwrap_or(0);
         let formatted_time = format_timestamp(timestamp_secs);
 
-        let proposer = block_val["cert"]["prop"]["addr"]
+        // Try multiple paths: 'prp' (algod v2), 'proposer' (indexer), 'cert.prop.addr' (legacy)
+        let proposer = block_val["prp"]
             .as_str()
             .or_else(|| block_val["proposer"].as_str())
+            .or_else(|| block_val["cert"]["prop"]["addr"].as_str())
             .unwrap_or("unknown")
             .to_string();
 

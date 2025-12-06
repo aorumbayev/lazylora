@@ -27,13 +27,19 @@ pub const TXN_HEIGHT: u16 = 4;
 
 /// Height of the application header area (in rows).
 ///
-/// The header contains the logo and network status indicator.
+/// The header contains:
+/// - Border (top)
+/// - Row 1: Logo, Live indicator, Network status
+/// - Border (bottom)
 pub const HEADER_HEIGHT: u16 = 3;
 
-/// Height of the section title area (in rows).
+/// Height of the search bar section (in rows).
 ///
-/// Used for the "Explore" section title and live mode toggle.
-pub const TITLE_HEIGHT: u16 = 3;
+/// The search bar contains:
+/// - Border (top)
+/// - Row 1: Search input with type indicator
+/// - Border (bottom)
+pub const SEARCH_BAR_HEIGHT: u16 = 3;
 
 /// Default terminal width used for layout calculations.
 ///
@@ -74,10 +80,8 @@ pub struct Dimensions {
     pub block_height: u16,
     /// Height of each transaction item in the transactions list.
     pub txn_height: u16,
-    /// Height of the application header.
+    /// Height of the application header (includes search bar).
     pub header_height: u16,
-    /// Height of section titles.
-    pub title_height: u16,
 }
 
 impl Dimensions {
@@ -88,24 +92,17 @@ impl Dimensions {
     /// * `block_height` - Height for block list items
     /// * `txn_height` - Height for transaction list items
     /// * `header_height` - Height for the application header
-    /// * `title_height` - Height for section titles
     ///
     /// # Returns
     ///
     /// A new `Dimensions` instance.
     #[must_use]
     #[allow(dead_code)]
-    pub const fn new(
-        block_height: u16,
-        txn_height: u16,
-        header_height: u16,
-        title_height: u16,
-    ) -> Self {
+    pub const fn new(block_height: u16, txn_height: u16, header_height: u16) -> Self {
         Self {
             block_height,
             txn_height,
             header_height,
-            title_height,
         }
     }
 
@@ -146,7 +143,6 @@ impl Default for Dimensions {
             block_height: BLOCK_HEIGHT,
             txn_height: TXN_HEIGHT,
             header_height: HEADER_HEIGHT,
-            title_height: TITLE_HEIGHT,
         }
     }
 }

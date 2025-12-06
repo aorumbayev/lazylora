@@ -29,8 +29,8 @@ pub struct TxnGraphWidget<'a> {
 impl<'a> TxnGraphWidget<'a> {
     /// Row height for transactions (single line, no spacing)
     const ROW_HEIGHT: usize = 1;
-    /// Header height (label row + underline + connector row)
-    const HEADER_HEIGHT: usize = 3;
+    /// Header height (circled numbers + label row + type subtitle + underline + connector row)
+    const HEADER_HEIGHT: usize = 5;
 
     /// Create a new graph widget
     #[must_use]
@@ -151,7 +151,7 @@ impl<'a> TxnGraphWidget<'a> {
                 if row.depth == 0 {
                     0
                 } else {
-                    // Each depth level adds 2 spaces for visual nesting
+                    // Each depth level adds 2 characters ("│ " or "  " + "├─" or "└─")
                     // Must match generate_tree_prefix()
                     row.depth * 2
                 }
@@ -164,11 +164,47 @@ impl<'a> TxnGraphWidget<'a> {
     /// Format: up to 2 depth dots + 3-char type + 1 space = 6 chars fixed
     const SENDER_INDICATOR_WIDTH: usize = 6;
 
+    /// Circled numbers for column headers (①②③...)
+    const CIRCLED_NUMBERS: [&'static str; 10] = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+
     /// Render column headers with consistent padding for tree prefix alignment
     fn render_headers_with_padding(&self, prefix_padding: usize) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         let col_width = self.graph.column_width;
         let col_spacing = self.graph.column_spacing;
+
+        // Circled numbers row
+        let mut number_spans = Vec::new();
+        number_spans.push(Span::raw(" ".repeat(Self::SENDER_INDICATOR_WIDTH)));
+        if prefix_padding > 0 {
+            number_spans.push(Span::raw(" ".repeat(prefix_padding)));
+        }
+        for (i, _col) in self.graph.columns.iter().enumerate() {
+            if i > 0 {
+                number_spans.push(Span::raw(" ".repeat(col_spacing)));
+            }
+            let num = if i < Self::CIRCLED_NUMBERS.len() {
+                Self::CIRCLED_NUMBERS[i]
+            } else {
+                "⓪"
+            };
+            // Center the circled number
+            let num_len = 1; // Circled numbers are 1 char wide visually
+            let padding_total = col_width.saturating_sub(num_len);
+            let padding_left = padding_total / 2;
+            let padding_right = padding_total - padding_left;
+            let padded_num = format!(
+                "{}{}{}",
+                " ".repeat(padding_left),
+                num,
+                " ".repeat(padding_right)
+            );
+            number_spans.push(Span::styled(
+                padded_num,
+                Style::default().fg(Color::Rgb(122, 162, 247)), // Tokyo Night blue
+            ));
+        }
+        lines.push(Line::from(number_spans));
 
         // Header labels row - TYP + entity labels
         let mut header_spans = Vec::new();
@@ -213,6 +249,36 @@ impl<'a> TxnGraphWidget<'a> {
             ));
         }
         lines.push(Line::from(header_spans));
+
+        // Entity type subtitle row (Account, App, Asset)
+        let mut subtitle_spans = Vec::new();
+        subtitle_spans.push(Span::raw(" ".repeat(Self::SENDER_INDICATOR_WIDTH)));
+        if prefix_padding > 0 {
+            subtitle_spans.push(Span::raw(" ".repeat(prefix_padding)));
+        }
+        for (i, col) in self.graph.columns.iter().enumerate() {
+            if i > 0 {
+                subtitle_spans.push(Span::raw(" ".repeat(col_spacing)));
+            }
+            let type_label = col.entity_type.type_label();
+            let label_len = type_label.chars().count();
+            let padding_total = col_width.saturating_sub(label_len);
+            let padding_left = padding_total / 2;
+            let padding_right = padding_total - padding_left;
+            let padded_type = format!(
+                "{}{}{}",
+                " ".repeat(padding_left),
+                type_label,
+                " ".repeat(padding_right)
+            );
+            subtitle_spans.push(Span::styled(
+                padded_type,
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM),
+            ));
+        }
+        lines.push(Line::from(subtitle_spans));
 
         // Underline with column markers (┬)
         let mut underline_spans = Vec::new();
@@ -381,9 +447,55 @@ impl<'a> TxnGraphWidget<'a> {
             return String::new();
         }
 
-        // Simplified tree prefix - just use indentation based on depth
-        // Each depth level adds 2 spaces for visual nesting
-        " ".repeat(row.depth * 2)
+        let mut prefix = String::new();
+
+        // Build prefix based on ancestry - check siblings at each depth level
+        for d in 1..row.depth {
+            let has_sibling = self.has_sibling_at_depth(row, d);
+            if has_sibling {
+                prefix.push_str("│ ");
+            } else {
+                prefix.push_str("  ");
+            }
+        }
+
+        // Add connector for current level
+        if row.is_last_child {
+            prefix.push_str("└─");
+        } else {
+            prefix.push_str("├─");
+        }
+
+        prefix
+    }
+
+    /// Check if a row has siblings at a given depth level
+    fn has_sibling_at_depth(&self, row: &GraphRow, depth: usize) -> bool {
+        // Find the ancestor at the given depth
+        let mut ancestor_idx = row.parent_index;
+        let mut current_depth = row.depth - 1;
+
+        while current_depth > depth {
+            if let Some(idx) = ancestor_idx
+                && let Some(ancestor) = self.graph.rows.get(idx)
+            {
+                ancestor_idx = ancestor.parent_index;
+                current_depth -= 1;
+            } else {
+                break;
+            }
+        }
+
+        // Check if ancestor has more children after this row's branch
+        if let Some(idx) = ancestor_idx {
+            for (i, r) in self.graph.rows.iter().enumerate() {
+                if i > row.index && r.parent_index == Some(idx) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Render a vector (arrow) between two columns
