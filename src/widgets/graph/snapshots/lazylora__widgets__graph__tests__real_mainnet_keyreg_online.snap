@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/tests.rs
+expression: terminal.backend()
+---
+"                                ①                           "
+"                       Type  VAL...4A                       "
+"                             Account                        "
+"                       ──────────┬───                       "
+"                                 │                          "
+"                         KEY  ◉keyreg                       "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "

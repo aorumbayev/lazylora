@@ -1,0 +1,14 @@
+---
+source: src/widgets/graph/tests.rs
+expression: terminal.backend()
+---
+"                           ①                      "
+"                  Type  ACC...4A                  "
+"                        Account                   "
+"                  ──────────┬───                  "
+"                            │                     "
+"                    AXF ↺opt-in…                  "
+"                                                  "
+"                                                  "
+"                                                  "
+"                                                  "

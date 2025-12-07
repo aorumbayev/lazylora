@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/tests.rs
+expression: terminal.backend()
+---
+"                            ①          ②                              "
+"                   Type  FRE...4A   FRO...4A                          "
+"                         Account    Account                           "
+"                   ──────────┬──────────┬───                          "
+"                             │          │                             "
+"                     AFZ     ●──────────▶    freeze                   "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "

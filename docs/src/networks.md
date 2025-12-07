@@ -1,19 +1,38 @@
 # Networks
 
-LazyLora supports multiple Algorand networks:
+LazyLora connects to Algorand networks. Press `n` to switch.
 
 ## MainNet
 
-The production Algorand network. This is the default network when you start LazyLora.
+Production network. Real ALGO, real transactions. This is the default.
+
+```bash
+lazylora              # defaults to mainnet
+lazylora -n mainnet   # explicit
+```
 
 ## TestNet
 
-The Algorand test network for development and testing. Useful for exploring test transactions without real ALGO.
+Test network for development. Free test ALGO from the [faucet](https://bank.testnet.algorand.network/).
+
+```bash
+lazylora -n testnet
+```
 
 ## LocalNet
 
-Connect to a local Algorand node running on your machine. This is useful for developers running [AlgoKit LocalNet](https://github.com/algorandfoundation/algokit-cli) or a custom local node.
+Your local Algorand node. Useful with [AlgoKit LocalNet](https://github.com/algorandfoundation/algokit-cli).
 
-## Switching Networks
+```bash
+# Start LocalNet first
+algokit localnet start
 
-Press `n` while in the main view to cycle through available networks. The current network is displayed in the status bar.
+# Then connect
+lazylora -n localnet
+```
+
+LocalNet connects to `http://localhost:4001` (algod) and `http://localhost:8980` (indexer).
+
+## Current Network
+
+The header shows which network you're connected to. Live updates indicator shows connection status.

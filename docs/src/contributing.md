@@ -1,34 +1,45 @@
 # Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome!
 
-## Getting Started
-
-1. Fork the repository
-2. Clone your fork
-3. Create a new branch for your feature
-4. Make your changes
-5. Submit a Pull Request
-
-## Development Setup
+## Setup
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/lazylora.git
 cd lazylora
-cargo build
+
+# Install nextest for faster tests
+cargo install cargo-nextest
+```
+
+## Workflow
+
+1. Fork the repo
+2. Create a branch: `git checkout -b my-feature`
+3. Make changes
+4. Test: `cargo t --all-features`
+5. Lint: `cargo clippy --all-features -- -D warnings`
+6. Format: `cargo fmt`
+7. Submit PR
+
+## Testing
+
+```bash
+cargo t --all-features          # All tests
+cargo t <test_name>             # Single test
+cargo insta review              # Review snapshot changes
 ```
 
 ## Guidelines
 
-- Follow Rust best practices and idioms
 - Add tests for new functionality
-- Update documentation as needed
-- Keep commits focused and atomic
+- Update docs if user-facing behavior changes
+- Keep commits focused
 
-## Reporting Issues
+## Issues
 
-Found a bug or have a feature request? Please [open an issue](https://github.com/aorumbayev/lazylora/issues/new) on GitHub.
+Found a bug? [Open an issue](https://github.com/aorumbayev/lazylora/issues/new).
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+Contributions are MIT licensed.

@@ -2,21 +2,17 @@
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) (latest stable)
-- Git
+- [Rust](https://rustup.rs/) (stable)
 
-## Clone and Build
+## Build
 
 ```bash
-# Clone the repository
 git clone https://github.com/aorumbayev/lazylora.git
 cd lazylora
-
-# Build in release mode
 cargo build --release
 ```
 
-The binary will be available at `target/release/lazylora`.
+Binary: `target/release/lazylora`
 
 ## Install Locally
 
@@ -24,18 +20,24 @@ The binary will be available at `target/release/lazylora`.
 cargo install --path .
 ```
 
-## Development Build
+## Run Tests
 
 ```bash
-# Build with debug symbols
-cargo build
+# Install nextest (faster test runner)
+cargo install cargo-nextest
 
-# Run directly
-cargo run
+# Run all tests
+cargo t --all-features
+
+# Run specific test
+cargo t <test_name>
 ```
 
-## Running Tests
+## Development
 
 ```bash
-cargo test
+cargo build          # debug build
+cargo run            # run debug build
+cargo clippy         # lint
+cargo fmt            # format
 ```
