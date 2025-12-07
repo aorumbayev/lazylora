@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/tests.rs
+expression: terminal.backend()
+---
+"                  ①          ②          ③          ④                  "
+"       Type    CAL...AA   App #12…   APP...BI   REC...TU              "
+"               Account      App      Account    Account               "
+"       ────────────┬──────────┬──────────┬──────────┬───              "
+"                   │          │          │          │                 "
+"         APP       ●──────────▶          │          │    NoOp         "
+"        ·PAY ├─    │          │          ●──────────▶    5.00A        "
+"        ·AXF └─    │          │          ●──────────▶    500000       "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "

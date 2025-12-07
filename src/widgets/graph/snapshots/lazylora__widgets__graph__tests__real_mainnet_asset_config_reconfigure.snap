@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/tests.rs
+expression: terminal.backend()
+---
+"                       ①          ②                         "
+"              Type  MAN...4A   ASA #12…                     "
+"                    Account     Asset                       "
+"              ──────────┬──────────┬───                     "
+"                        │          │                        "
+"                ACF     ●──────────▶    config              "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "

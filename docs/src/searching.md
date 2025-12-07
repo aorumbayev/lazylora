@@ -1,23 +1,48 @@
 # Searching
 
-LazyLora allows you to search for transactions using various criteria.
+Press `f` to focus the search bar. Type your query and press `Enter`.
 
-## How to Search
+## Auto-Detection
 
-1. Press `f` to open the search dialog
-2. Enter your search query
-3. Press `Enter` to execute the search
+LazyLora detects what you're searching for:
 
-## Search Types
+| You type | Detected as | Example |
+|----------|-------------|---------|
+| 52-char string | Transaction ID | `AAAAAAA...` (52 chars) |
+| 58-char string | Account Address | `AAAAAAAA...` (58 chars) |
+| Number < 100M | Block Number | `12345678` |
+| Number >= 100M | Asset ID | `31566704` |
+| Contains `.algo` | NFD Name | `alice.algo` |
+| Short text | NFD Name | `alice` |
 
-You can search by:
+## Type Indicator
 
-- **Transaction ID**: The unique identifier of a transaction
-- **Address**: An Algorand wallet address (sender or receiver)
-- **Asset ID**: Search for transactions involving a specific ASA (Algorand Standard Asset)
+While typing, a badge shows the detected type:
 
-## Tips
+- `[TXN]` - Transaction
+- `[BLK]` - Block
+- `[ACC]` - Account/NFD
+- `[AST]` - Asset
+- `[???]` - Unknown (won't search)
 
-- Search results will be displayed in the transactions view
-- Press `Esc` to cancel a search
-- Press `r` to refresh and return to the latest transactions
+## Search Keys
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit search |
+| `Esc` | Cancel |
+| `Tab` | Force different search type |
+| `Up` / `Down` | Browse history |
+| `Left` / `Right` | Move cursor |
+
+## CLI Search
+
+Skip the TUI and go directly to results:
+
+```bash
+lazylora -t <TXID>           # Transaction
+lazylora -a <ADDRESS>        # Account
+lazylora -b <BLOCK>          # Block
+lazylora -s <ASSET_ID>       # Asset
+lazylora -t <TXID> -g        # Transaction in graph view
+```

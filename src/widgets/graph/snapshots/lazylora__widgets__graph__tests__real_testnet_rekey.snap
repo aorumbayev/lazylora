@@ -1,0 +1,19 @@
+---
+source: src/widgets/graph/tests.rs
+expression: terminal.backend()
+---
+"                                    ①          ②                                "
+"                           Type  WK3...TM   QUA...SA                            "
+"                                 Account    Account                             "
+"                           ──────────┬──────────┬───                            "
+"                                     │          │                               "
+"                             PAY    ↺0A         │                               "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "

@@ -5,14 +5,17 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/aorumbayev/lazylora)](https://github.com/aorumbayev/lazylora/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-LazyLora is a terminal user interface for exploring the Algorand blockchain. It provides a simple and intuitive way to browse blocks and transactions.
+LazyLora is a terminal user interface for exploring the Algorand blockchain. Browse blocks, transactions, accounts, assets, and applications - all from your terminal.
 
 ![LazyLora Screenshot](./assets/lazylora.png)
 
-## Features
+## What You Can Do
 
-- Browse latest blocks and transactions
-- Search transactions by address, transaction ID, or asset ID
-- View detailed transaction information
-- Live updates of new blocks and transactions
-- Support for MainNet, TestNet, and LocalNet
+- **Browse** the latest blocks and transactions in real-time
+- **Search** by transaction ID, account address, block number, asset ID, or NFD name
+- **Inspect** transactions with visual graph view showing inner transactions and asset flows
+- **Explore** accounts (balances, assets, apps), assets (supply, metadata), and applications (state, programs)
+- **Export** transaction graphs as SVG files
+- **Copy** transaction IDs, addresses, or raw JSON to clipboard
+- **Open** any entity directly in your browser (Lora explorer)
+- **Switch** between MainNet, TestNet, and LocalNet

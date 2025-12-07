@@ -63,10 +63,16 @@ jobs:
                   token: ${{ secrets.GITHUB_TOKEN }}
             - name: Install Rust stable
               uses: dtolnay/rust-toolchain@stable
-            - name: Run tests
-              run: cargo test --all-features
             - name: Cache Cargo dependencies
               uses: Swatinem/rust-cache@v2
+            - name: Install cargo-nextest
+              uses: taiki-e/install-action@nextest
+            - name: Install cargo-insta
+              run: cargo install cargo-insta
+            - name: Check for unreferenced snapshots
+              run: cargo insta test --all-features --unreferenced=reject --check
+            - name: Run tests
+              run: cargo t --all-features
 
     build:
         name: build
