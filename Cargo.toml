@@ -38,7 +38,7 @@ self_update = { version = "0.42.0", features = [
   "compression-flate2",
   "rustls",
 ] }
-git2 = { version = "0.20.2", optional = true }
+git2 = { version = "0.20.3", optional = true }
 
 [profile.release]
 opt-level = 3
