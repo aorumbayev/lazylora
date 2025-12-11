@@ -17,8 +17,10 @@ mod updater;
 mod widgets;
 
 use boot_screen::BootScreen;
+use client::AlgoClient;
 use domain::Network;
-use state::{App, StartupOptions, StartupSearch};
+use state::{App, StartupOptions, StartupSearch, prefetch_initial_data};
+use tokio::sync::mpsc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -179,20 +181,39 @@ async fn main() -> Result<()> {
         }
     }
 
+    color_eyre::install()?;
+
     let startup_options = cli.into_startup_options();
 
+    // Load config and create client before boot screen
+    let config = state::AppConfig::load();
+    let network_config = if let Some(network) = startup_options.network {
+        domain::NetworkConfig::BuiltIn(network)
+    } else {
+        config.network.clone()
+    };
+    let client = AlgoClient::from_config(&network_config)?;
+
+    // Create message channels for async communication
+    let (message_tx, message_rx) = mpsc::unbounded_channel();
+
+    // Spawn prefetch task in parallel with boot screen
+    tokio::spawn(prefetch_initial_data(client.clone(), message_tx.clone()));
+
+    // Run boot screen with fixed 2s duration
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
     let mut boot = BootScreen::new((cols, rows));
-    let should_continue = boot.run(|screen, frame| screen.draw(frame)).await;
+    let should_continue = boot
+        .run_fixed_duration(std::time::Duration::from_secs(2))
+        .await;
 
     if let Ok(false) = should_continue {
         return Ok(());
     }
 
-    color_eyre::install()?;
-
+    // Initialize TUI and create app with prefetched data
     let mut terminal = tui::init()?;
-    let mut app = App::new(startup_options).await?;
+    let mut app = App::new_with_prefetch(startup_options, message_tx, message_rx).await?;
     let app_result = app.run(&mut terminal).await;
 
     let _ = tui::restore();

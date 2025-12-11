@@ -23,11 +23,44 @@ use super::{App, AppConfig, AppMessage, NavigationState, StartupOptions, Startup
 // Lifecycle Methods
 // ============================================================================
 
+/// Prefetch initial data during boot screen.
+/// Sends results to the provided channel for later consumption.
+pub async fn prefetch_initial_data(
+    client: AlgoClient,
+    message_tx: mpsc::UnboundedSender<AppMessage>,
+) {
+    // Check network status first
+    match client.get_network_status().await {
+        Err(error_msg) => {
+            let _ = message_tx.send(AppMessage::NetworkError(error_msg));
+            return;
+        }
+        Ok(()) => {
+            let _ = message_tx.send(AppMessage::NetworkConnected);
+        }
+    }
+
+    // Fetch blocks and transactions in parallel
+    let (blocks_result, transactions_result) = tokio::join!(
+        client.get_latest_blocks(5),
+        client.get_latest_transactions(5)
+    );
+
+    if let Ok(blocks) = blocks_result {
+        let _ = message_tx.send(AppMessage::BlocksUpdated(blocks));
+    }
+
+    if let Ok(transactions) = transactions_result {
+        let _ = message_tx.send(AppMessage::TransactionsUpdated(transactions));
+    }
+}
+
 impl App {
     /// Creates a new App instance, loading configuration from disk.
     ///
     /// # Errors
     /// Returns an error if initialization fails.
+    #[allow(dead_code)]
     pub async fn new(startup_options: StartupOptions) -> Result<Self> {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let (live_updates_tx, _live_updates_rx) = tokio::sync::watch::channel(true);
@@ -79,13 +112,97 @@ impl App {
         })
     }
 
+    /// Creates a new App instance with pre-created channels and prefetched data.
+    ///
+    /// Drains prefetched messages from the channel and applies them to initial state.
+    /// Skips initial data fetch since data is already loaded.
+    ///
+    /// # Errors
+    /// Returns an error if initialization fails.
+    pub async fn new_with_prefetch(
+        startup_options: StartupOptions,
+        message_tx: mpsc::UnboundedSender<AppMessage>,
+        mut message_rx: mpsc::UnboundedReceiver<AppMessage>,
+    ) -> Result<Self> {
+        let (live_updates_tx, _live_updates_rx) = tokio::sync::watch::channel(true);
+        let (network_tx, _network_rx) =
+            tokio::sync::watch::channel(NetworkConfig::BuiltIn(crate::domain::Network::MainNet));
+
+        // Load configuration
+        let config = AppConfig::load();
+
+        // Build network config from startup options or config
+        let network_config = startup_options
+            .network
+            .map(NetworkConfig::BuiltIn)
+            .unwrap_or_else(|| config.network.clone());
+
+        // Get built-in Network for client (custom networks use their own URLs)
+        let network = match &network_config {
+            NetworkConfig::BuiltIn(net) => *net,
+            NetworkConfig::Custom(_) => crate::domain::Network::MainNet, // Placeholder for legacy display
+        };
+
+        let show_live = config.show_live;
+        let client = AlgoClient::from_config(&network_config)?;
+
+        // Cache available networks
+        let available_networks = config.get_all_networks();
+
+        // Set initial state from config
+        // Watch channel sends: receivers subscribe later, ok if no subscribers yet
+        let _ = live_updates_tx.send(show_live);
+        let _ = network_tx.send(network_config.clone());
+
+        // Create initial data state and drain prefetched messages
+        let mut data = super::DataState::new();
+        while let Ok(message) = message_rx.try_recv() {
+            match message {
+                AppMessage::BlocksUpdated(blocks) => {
+                    data.blocks = blocks;
+                }
+                AppMessage::TransactionsUpdated(transactions) => {
+                    data.transactions = transactions;
+                }
+                AppMessage::NetworkError(_) | AppMessage::NetworkConnected => {
+                    // Network status handled by background tasks
+                }
+                _ => {
+                    // Other messages not expected during prefetch, ignore
+                }
+            }
+        }
+
+        Ok(Self {
+            nav: NavigationState::new(),
+            data,
+            ui: super::UiState::new(),
+            network,
+            network_config,
+            available_networks,
+            show_live,
+            exit: false,
+            animation_tick: 0,
+            message_tx,
+            message_rx,
+            live_updates_tx,
+            network_tx,
+            client,
+            startup_options: Some(startup_options),
+        })
+    }
+
     /// Runs the main application loop.
     ///
     /// # Errors
     /// Returns an error if the terminal operations fail.
     pub async fn run(&mut self, terminal: &mut Tui) -> Result<()> {
         self.start_background_tasks().await;
-        self.initial_data_fetch().await;
+
+        // Skip initial fetch if data already prefetched
+        if self.data.blocks.is_empty() && self.data.transactions.is_empty() {
+            self.initial_data_fetch().await;
+        }
 
         // Process startup search if provided
         self.process_startup_search().await;

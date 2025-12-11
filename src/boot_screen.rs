@@ -58,12 +58,76 @@ impl BootScreen {
         }
     }
 
+    /// Run boot screen for a fixed duration (no skip).
+    /// Only Ctrl+C exits the application.
+    ///
+    /// # Returns
+    /// * `Ok(true)` - Continue to main application
+    /// * `Ok(false)` - Exit application (user pressed Ctrl+C)
+    /// * `Err(_)` - Terminal error occurred
+    pub async fn run_fixed_duration(&mut self, duration: Duration) -> Result<bool> {
+        // Skip boot screen if not in interactive TTY
+        if !std::io::stdout().is_tty() {
+            sleep(duration).await;
+            return Ok(true);
+        }
+
+        // Setup terminal for boot screen
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+        terminal.clear()?;
+
+        let frame_duration = Duration::from_millis(100);
+
+        loop {
+            let elapsed = self.start_time.elapsed();
+
+            // Handle user input - only Ctrl+C exits
+            if poll(Duration::from_millis(0))?
+                && let Event::Key(KeyEvent {
+                    code, modifiers, ..
+                }) = read()?
+                && let KeyCode::Char('c') = code
+                && modifiers.contains(KeyModifiers::CONTROL)
+            {
+                disable_raw_mode()?;
+                execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+                return Ok(false);
+            }
+
+            // Update animation state
+            self.update_animation_phase(elapsed);
+
+            // Render current frame
+            terminal.draw(|frame| {
+                self.draw(frame);
+            })?;
+
+            // Check for completion
+            if elapsed >= duration {
+                break;
+            }
+
+            sleep(frame_duration).await;
+        }
+
+        // Cleanup terminal
+        disable_raw_mode()?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+        Ok(true)
+    }
+
     /// Run the boot screen animation.
     ///
     /// # Returns
     /// * `Ok(true)` - Continue to main application
     /// * `Ok(false)` - Exit application (user pressed Ctrl+C)
     /// * `Err(_)` - Terminal error occurred
+    #[allow(dead_code)]
     pub async fn run<F>(&mut self, draw_fn: F) -> Result<bool>
     where
         F: Fn(&mut Self, &mut Frame) + Send + 'static,
