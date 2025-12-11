@@ -50,6 +50,9 @@ pub mod ui_state;
 // Re-exports
 // ============================================================================
 
+// Lifecycle functions
+pub use app_lifecycle::prefetch_initial_data;
+
 // Navigation types
 pub use navigation::{
     AccountDetailTab, AppDetailTab, BlockDetailTab, DetailViewMode, NavigationState,
