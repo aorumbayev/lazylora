@@ -11,26 +11,26 @@ repository = "https://github.com/aorumbayev/lazylora"
 crossterm = "0.29.0"
 ratatui = "0.30.0"
 color-eyre = "0.6.5"
-tokio = { version = "1.49.0", features = [
+tokio = { version = "1.50.0", features = [
   "rt-multi-thread",
   "time",
   "sync",
   "macros",
   "signal",
 ] }
-reqwest = { version = "0.13.1", features = ["json"] }
+reqwest = { version = "0.13.2", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-chrono = "0.4.43"
+chrono = "0.4.44"
 thiserror = "2.0"
 arboard = "3.6.1"
-clap = { version = "4.5.54", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 dirs = "5.0"
 semver = "1.0"
 open = "5.3"
 base64 = "0.22"
 sha2 = "0.10"
-data-encoding = "2.10"
+data-encoding = "2.11"
 tracing = "0.1"
 self_update = { version = "0.42.0", features = [
   "archive-tar",
@@ -38,7 +38,7 @@ self_update = { version = "0.42.0", features = [
   "compression-flate2",
   "rustls",
 ] }
-git2 = { version = "0.20.3", optional = true }
+git2 = { version = "0.20.4", optional = true }
 
 [profile.release]
 opt-level = 3
@@ -62,7 +62,7 @@ It provides a simple and intuitive way to browse blocks and transactions.
 """
 
 [dev-dependencies]
-insta = "1.46"
+insta = "1.47"
 rstest = "0.26"
 
 [features]
