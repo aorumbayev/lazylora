@@ -454,7 +454,7 @@ jobs:
             --force
 
       - name: Publish source package to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: lazylora
           pkgbuild: ./aur-packages/PKGBUILD-source
@@ -465,7 +465,7 @@ jobs:
           ssh_keyscan_types: rsa,ecdsa,ed25519
 
       - name: Publish binary package to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: lazylora-bin
           pkgbuild: ./aur-packages/PKGBUILD-bin
