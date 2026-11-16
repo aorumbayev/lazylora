@@ -63,7 +63,7 @@ It provides a simple and intuitive way to browse blocks and transactions.
 
 [dev-dependencies]
 insta = "1.47"
-rstest = "0.26"
+rstest = "0.28"
 
 [features]
 default = []
