@@ -25,7 +25,7 @@ chrono = "0.4.44"
 thiserror = "2.0"
 arboard = "3.6.1"
 clap = { version = "4.5.60", features = ["derive"] }
-dirs = "5.0"
+dirs = "7.0"
 semver = "1.0"
 open = "5.3"
 base64 = "0.23"
